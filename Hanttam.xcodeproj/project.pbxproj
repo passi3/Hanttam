@@ -6,6 +6,12 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		4016F6022F73C83700BC0F12 /* RxCocoa in Frameworks */ = {isa = PBXBuildFile; productRef = 4016F6012F73C83700BC0F12 /* RxCocoa */; };
+		4016F6042F73C83700BC0F12 /* RxSwift in Frameworks */ = {isa = PBXBuildFile; productRef = 4016F6032F73C83700BC0F12 /* RxSwift */; };
+		4016F6072F73C85100BC0F12 /* SnapKit in Frameworks */ = {isa = PBXBuildFile; productRef = 4016F6062F73C85100BC0F12 /* SnapKit */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
 		4060D5452EEAAB2D00329FC8 /* Hanttam.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Hanttam.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -36,6 +42,9 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				4016F6072F73C85100BC0F12 /* SnapKit in Frameworks */,
+				4016F6042F73C83700BC0F12 /* RxSwift in Frameworks */,
+				4016F6022F73C83700BC0F12 /* RxCocoa in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -78,6 +87,9 @@
 			);
 			name = Hanttam;
 			packageProductDependencies = (
+				4016F6012F73C83700BC0F12 /* RxCocoa */,
+				4016F6032F73C83700BC0F12 /* RxSwift */,
+				4016F6062F73C85100BC0F12 /* SnapKit */,
 			);
 			productName = Hanttam;
 			productReference = 4060D5452EEAAB2D00329FC8 /* Hanttam.app */;
@@ -107,6 +119,10 @@
 			);
 			mainGroup = 4060D53C2EEAAB2D00329FC8;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				4016F6002F73C83700BC0F12 /* XCRemoteSwiftPackageReference "RxSwift" */,
+				4016F6052F73C85100BC0F12 /* XCRemoteSwiftPackageReference "SnapKit" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 4060D5462EEAAB2D00329FC8 /* Products */;
 			projectDirPath = "";
@@ -143,16 +159,22 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = Hanttam/Hanttam.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 29MZ57KJPA;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Hanttam/Info.plist;
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "한땀이 운동 기록 및 경로를 조회하기 위해 건강 데이터에 대한 접근이 필요합니다.";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "한땀이 현재 위치를 지도에 표시하기 위해 접근이 필요합니다.";
+				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "한땀이 편집한 사진을 사진첩에 저장하기 위해 사진 라이브러리 저장 접근이 필요합니다.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "한땀이 사용자의 사진을 표시하기 위해 사진 라이브러리 접근이 필요합니다.";
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
-				INFOPLIST_KEY_UIMainStoryboardFile = Main;
+				INFOPLIST_KEY_UIStatusBarStyle = UIStatusBarStyleLightContent;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -161,6 +183,10 @@
 				PRODUCT_BUNDLE_IDENTIFIER = passi3.Hanttam;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -175,16 +201,22 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = Hanttam/Hanttam.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 29MZ57KJPA;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Hanttam/Info.plist;
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "한땀이 운동 기록 및 경로를 조회하기 위해 건강 데이터에 대한 접근이 필요합니다.";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "한땀이 현재 위치를 지도에 표시하기 위해 접근이 필요합니다.";
+				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "한땀이 편집한 사진을 사진첩에 저장하기 위해 사진 라이브러리 저장 접근이 필요합니다.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "한땀이 사용자의 사진을 표시하기 위해 사진 라이브러리 접근이 필요합니다.";
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
-				INFOPLIST_KEY_UIMainStoryboardFile = Main;
+				INFOPLIST_KEY_UIStatusBarStyle = UIStatusBarStyleLightContent;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -193,6 +225,10 @@
 				PRODUCT_BUNDLE_IDENTIFIER = passi3.Hanttam;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -345,6 +381,43 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		4016F6002F73C83700BC0F12 /* XCRemoteSwiftPackageReference "RxSwift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/ReactiveX/RxSwift";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 6.10.2;
+			};
+		};
+		4016F6052F73C85100BC0F12 /* XCRemoteSwiftPackageReference "SnapKit" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/SnapKit/SnapKit";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 5.7.1;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		4016F6012F73C83700BC0F12 /* RxCocoa */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 4016F6002F73C83700BC0F12 /* XCRemoteSwiftPackageReference "RxSwift" */;
+			productName = RxCocoa;
+		};
+		4016F6032F73C83700BC0F12 /* RxSwift */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 4016F6002F73C83700BC0F12 /* XCRemoteSwiftPackageReference "RxSwift" */;
+			productName = RxSwift;
+		};
+		4016F6062F73C85100BC0F12 /* SnapKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 4016F6052F73C85100BC0F12 /* XCRemoteSwiftPackageReference "SnapKit" */;
+			productName = SnapKit;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 4060D53D2EEAAB2D00329FC8 /* Project object */;
 }
