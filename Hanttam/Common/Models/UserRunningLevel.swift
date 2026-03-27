@@ -28,7 +28,7 @@ enum UserRunningLevel: String, CaseIterable {
         }
     }
 
-    var labelColor: Color {
+    var accentColor: Color {
         switch self {
         case .yellow: return .yellow
         case .orange: return .orange
