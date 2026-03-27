@@ -50,10 +50,10 @@ struct KmSplit: Identifiable {
     var avgHeartRate          : Double?     //bpm
     var avgCadence            : Double?     //spm
     var avgStrideLength       : Double?     //meter
-    var avgVerticalOscillaion : Double?     //cm
     var avgPower              : Double?     //W
     var avgSpeed              : Double?     //mps
     var avgGroundContactTime  : Double?     //mps
     var avgVerticalOscillation: Double?     //meter
+    var elevationChange       : Double?     //meter
 }
 
