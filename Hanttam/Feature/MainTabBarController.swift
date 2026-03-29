@@ -14,6 +14,11 @@ final class MainTabBarController: UITabBarController {
         super.viewDidLoad()
         setupTabs()
         
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(levelDidChange),
+            name: RunningLevelManager.levelDidCahngeNotification,
+            object: nil)
     }
     
     override func viewWillAppear(_ animated: Bool) {
@@ -24,7 +29,7 @@ final class MainTabBarController: UITabBarController {
     private func setupTabs() {
         let dashboardNav = UINavigationController(rootViewController: DashboardViewController())
         dashboardNav.tabBarItem = UITabBarItem(
-            title: "Analyst",
+            title: "분석",
             image: UIImage(systemName: "chart.line.text.clipboard.fill"),
             tag: 0
         )
@@ -48,6 +53,10 @@ final class MainTabBarController: UITabBarController {
     
     private func updateAppearance() {
         tabBar.tintColor = RunningLevelManager.shared.accentUIColor
+    }
+    
+    @objc private func levelDidChange() {
+        DispatchQueue.main.async { self.updateAppearance() }
     }
     
 }
