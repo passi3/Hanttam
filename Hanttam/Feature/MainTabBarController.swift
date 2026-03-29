@@ -18,13 +18,14 @@ final class MainTabBarController: UITabBarController {
     
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
+        updateAppearance()
     }
     
     private func setupTabs() {
         let dashboardNav = UINavigationController(rootViewController: DashboardViewController())
         dashboardNav.tabBarItem = UITabBarItem(
-            title: "홈",
-            image: UIImage(systemName: "person"),
+            title: "Analyst",
+            image: UIImage(systemName: "chart.line.text.clipboard.fill"),
             tag: 0
         )
         
@@ -44,4 +45,9 @@ final class MainTabBarController: UITabBarController {
         
         viewControllers = [dashboardNav, workoutVC, recordsNav]
     }
+    
+    private func updateAppearance() {
+        tabBar.tintColor = RunningLevelManager.shared.accentUIColor
+    }
+    
 }
