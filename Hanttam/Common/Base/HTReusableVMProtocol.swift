@@ -13,7 +13,5 @@ protocol HTReusableVMProtocol {
     associatedtype Input
     associatedtype Output
     
-    var disposeBag: DisposeBag { get set }
-    
     func transform(input: Input) -> Output
 }
