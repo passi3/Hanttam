@@ -10,6 +10,7 @@ import HealthKit
 import CoreLocation
 
 final class HealthKitStore {
+    
     static let shared = HealthKitStore()
     
     private var store              : HKHealthStore?
@@ -92,7 +93,7 @@ final class HealthKitStore {
                     endDate : w.endDate,
                     duration: w.duration,
                     distance: w.totalDistance?.doubleValue(for: .meter()) ?? 0,
-                    calories: w.totalEnergyBurned?.doubleValue(for: .meter()) ?? 0,
+                    calories: w.totalEnergyBurned?.doubleValue(for: .kilocalorie()) ?? 0,
                     workout : w)
             } ?? []
             DispatchQueue.main.async {
@@ -268,10 +269,10 @@ final class HealthKitStore {
         }
     
     //MARK: - 스플릿 계산
-    func calculateSplits(from samples: [DistanceSample]) -> [KmSplit] {
+    func calculateSplits(from samples: [DistanceSample]) -> [DistSplit] {
         guard !samples.isEmpty else { return [] }
         
-        var splits: [KmSplit] = []
+        var splits: [DistSplit] = []
         var accumulated = 0.0
         var kmStart = samples[0].startDate
         var currentKm = 1
@@ -287,7 +288,7 @@ final class HealthKitStore {
                 let crossingTime = sample.startDate.addingTimeInterval(sampleDuration * fraction)
                 
                 let pace = crossingTime.timeIntervalSince(kmStart)
-                splits.append(KmSplit(
+                splits.append(DistSplit(
                     id: currentKm,
                     pace: pace,
                     distance: 1000,
@@ -305,7 +306,7 @@ final class HealthKitStore {
             if remaining > 100 {
                 let elapsed = last.endDate.timeIntervalSince(kmStart)
                 let actualPace = elapsed / (remaining / 1000)
-                splits.append(KmSplit(
+                splits.append(DistSplit(
                     id: currentKm,
                     pace: actualPace,
                     distance: remaining,
@@ -318,7 +319,7 @@ final class HealthKitStore {
     
     //스플릿 보강
     func enrichSplits(
-        _ splits: inout [KmSplit],
+        _ splits: inout [DistSplit],
         heartRates: [HeartRateSample],
         steps: [QuantitySamplePoint],
         strideLengths: [QuantitySamplePoint],
