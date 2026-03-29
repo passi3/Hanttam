@@ -27,16 +27,30 @@ enum UserRunningLevel: String, CaseIterable {
         default:           return .volt
         }
     }
-
-    var accentColor: Color {
+    
+    #if os(iOS)
+    var accentColor: UIColor {
         switch self {
-        case .yellow: return .yellow
-        case .orange: return .orange
-        case .green:  return .green
-        case .blue:   return .blue
-        case .purple: return .purple
-        case .black:  return .primary
-        case .volt:   return Color(red: 0.8, green: 1.0, blue: 0.0)
+        case .yellow: return AppColor.UI.yellow
+        case .orange: return AppColor.UI.orange
+        case .green:  return AppColor.UI.green
+        case .blue:   return AppColor.UI.blue
+        case .purple: return AppColor.UI.purple
+        case .black:  return AppColor.UI.black
+        case .volt:   return AppColor.UI.volt
+        }
+    }
+    #endif
+    
+    var swiftUIColor: Color {
+        switch self {
+        case .yellow: return AppColor.levelYellow
+        case .orange: return AppColor.levelOrange
+        case .green:  return AppColor.levelGreen
+        case .blue:   return AppColor.levelBlue
+        case .purple: return AppColor.levelPurple
+        case .black:  return AppColor.levelBlack
+        case .volt:   return AppColor.levelVolt
         }
     }
     
