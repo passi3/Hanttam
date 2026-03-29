@@ -41,7 +41,7 @@ struct AltitudePoint {
     let longitude: Double
 }
 
-struct KmSplit: Identifiable {
+struct DistSplit: Identifiable {
     let id                    : Int
     let pace                  : TimeInterval
     let distance              : Double
