@@ -23,7 +23,10 @@ final class RunningLevelManager: ObservableObject {
         }
     }
     
-    var accentColor: Color { level.accentColor }
+    var accentColor: Color { level.swiftUIColor }
+    #if os(iOS)
+    var accentUIColor: UIColor { level.accentColor}
+    #endif
     
     var progress: Double {
         guard let next = level.nextThreshold else { return 1.0 }
