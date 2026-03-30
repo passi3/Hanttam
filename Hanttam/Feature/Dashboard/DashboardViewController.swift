@@ -47,8 +47,9 @@ final class DashboardViewController: HTViewController {
         return l
     }()
     
-    private var chartHostController: UIHostingController<CumulativeChartView>?
+    private var chartHostController   : UIHostingController<CumulativeChartView>?
     private var calendarHostController: UIHostingController<WorkoutCalendarView>?
+    private var runningGradeView = RunningGradeView()
     
     //MARK: - Lifecycle
     override func viewDidLoad() {
@@ -90,6 +91,7 @@ final class DashboardViewController: HTViewController {
         
     }
     override func configView() {
+        view.backgroundColor = AppColor.UI.dashboardBg
         let headerStack     = UIStackView(arrangedSubviews: [headerLabel, titleLabel])
         headerStack.axis    = .vertical
         headerStack.spacing = 4
@@ -102,6 +104,8 @@ final class DashboardViewController: HTViewController {
         let calendarPlaceholder = UIView()
         calendarPlaceholder.tag = 200
         contentStack.addArrangedSubview(calendarPlaceholder)
+        
+        contentStack.addArrangedSubview(runningGradeView)
     }
     
     private func bind() {
@@ -110,7 +114,7 @@ final class DashboardViewController: HTViewController {
         
         output.level
             .drive(onNext: { [weak self] level in
-                let color = level.accentColor
+                let color = level.gradeColor
                 self?.headerLabel.textColor = color
             })
             .disposed(by: disposeBag)
@@ -136,7 +140,7 @@ final class DashboardViewController: HTViewController {
             })
             .disposed(by: disposeBag)
         
-        // 등급 위젯
+        // 등급뷰
         Driver.combineLatest(
             output.level,
             output.totalDistance,
@@ -144,8 +148,21 @@ final class DashboardViewController: HTViewController {
             output.remainingDist
         )
         .drive(onNext: { [weak self] level, total, progress, remaining in
-            
+            self?.runningGradeView.configure(
+                level: level,
+                totalDistance: total,
+                progress: progress,
+                remainingDistance: remaining)
         })
+        .disposed(by: disposeBag)
+        
+        runningGradeView.tapEvent
+            .subscribe(onNext: { [weak self] in
+                    let vc = RunningLevelViewController()
+                vc.title = "러닝 등급"
+                self?.navigationController?.pushViewController(vc, animated: true)
+            })
+            .disposed(by: disposeBag)
     }
     
     private func updateChart(thisDaily: [DailyCumulativeDistance],
@@ -190,7 +207,12 @@ final class DashboardViewController: HTViewController {
         
         addChild(host)
         
-        let insertIndex = min(3, contentStack.arrangedSubviews.count)
+        let insertIndex: Int
+        if let gradeIndex = contentStack.arrangedSubviews.firstIndex(of: runningGradeView) {
+            insertIndex = gradeIndex
+        } else {
+            insertIndex = contentStack.arrangedSubviews.count
+        }
         contentStack.insertArrangedSubview(host.view, at: insertIndex)
         host.didMove(toParent: self)
         calendarHostController = host
