@@ -72,7 +72,7 @@ struct CumulativeChartView: View {
             
             HStack(spacing: 20) {
                 legendItem(color: accentColor, label: thisMonthName)
-                legendItem(color: accentColor, label: lastMonthName)
+                legendItem(color: neutralGray, label: lastMonthName)
             }
         }
         .padding(32)
@@ -140,7 +140,7 @@ struct CumulativeChartView: View {
             )
             .foregroundStyle(
                 LinearGradient(
-                    colors: [accentColor, accentColor.opacity(0.5)],
+                    colors: [accentColor.opacity(0.5), accentColor],
                     startPoint: .leading,
                     endPoint: .trailing
                 )
