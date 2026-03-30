@@ -29,7 +29,7 @@ enum UserRunningLevel: String, CaseIterable {
     }
     
     #if os(iOS)
-    var accentColor: UIColor {
+    var gradeColor: UIColor {
         switch self {
         case .yellow: return AppColor.UI.yellow
         case .orange: return AppColor.UI.orange

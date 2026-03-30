@@ -81,23 +81,23 @@ enum AppColor {
     
     // MARK: - Feature: Dashboard
     
-    static let dashboardAccent = Palette.chartAccent
-    static let dashboardNeutral = Palette.chartNeutral
-    static let dashboardLabel = Palette.chartLabel
-    static let dashboardTextDark = Palette.chartTextDark
-    static let dashboardTooltipBg = Palette.chartTooltipBg
-    static let dashboardBg = Palette.chartTooltipBg // #F6F6F9
+    static let dashboardAccent      = Palette.chartAccent
+    static let dashboardNeutral     = Palette.chartNeutral
+    static let dashboardLabel       = Palette.chartLabel
+    static let dashboardTextDark    = Palette.chartTextDark
+    static let dashboardTooltipBg   = Palette.chartTooltipBg
+    static let dashboardBg          = Palette.chartTooltipBg // #F6F6F9
     static let dashboardSecondaryBg = Color(red: 0.94, green: 0.94, blue: 0.95)
-    static let dashboardVolt = Color(red: 0.765, green: 0.957, blue: 0)
+    static let dashboardVolt        = Color(red: 0.765, green: 0.957, blue: 0)
 
     // MARK: - Feature: Workout
     
     static let workoutBackground = Palette.workoutF6
-    static let workoutControlBg = Palette.workoutF6
-    static let workoutPause = Palette.orangeFF8
-    static let workoutResume = Color.green
-    static let workoutStop = Color.red
-    static let workoutRoute = Color.blue
+    static let workoutControlBg  = Palette.workoutF6
+    static let workoutPause      = Palette.orangeFF8
+    static let workoutResume     = Color.green
+    static let workoutStop       = Color.red
+    static let workoutRoute      = Color.blue
 }
 
 //MARK: - UIKit Bridge
@@ -107,21 +107,21 @@ extension AppColor {
     enum UI {
         static let yellow = UIColor.systemYellow
         static let orange = UIColor.systemOrange
-        static let green = UIColor.systemGreen
-        static let blue = UIColor.systemBlue
+        static let green  = UIColor.systemGreen
+        static let blue   = UIColor.systemBlue
         static let purple = UIColor.systemPurple
-        static let black = UIColor.label
-        static let volt = UIColor(red: 0.8, green: 1.0, blue: 0.0, alpha: 1.0)
-        static let red = UIColor.systemRed
+        static let black  = UIColor.label
+        static let volt   = UIColor(red: 0.8, green: 1.0, blue: 0.0, alpha: 1.0)
+        static let red    = UIColor.systemRed
         
-        static let backgroundPrimary = UIColor.systemBackground
+        static let backgroundPrimary   = UIColor.systemBackground
         static let backgroundSecondary = UIColor.secondarySystemBackground
-        static let backgroundTertiary = UIColor.tertiarySystemGroupedBackground
-        static let backgroundGrouped = UIColor.systemGroupedBackground
+        static let backgroundTertiary  = UIColor.tertiarySystemGroupedBackground
+        static let backgroundGrouped   = UIColor.systemGroupedBackground
         
-        static let textPrimary = UIColor.label
+        static let textPrimary   = UIColor.label
         static let textSecondary = UIColor.secondaryLabel
-        static let textTertiary = UIColor.tertiaryLabel
+        static let textTertiary  = UIColor.tertiaryLabel
         
         static let separator = UIColor.separator
         static let tertiarySystemFill = UIColor.tertiarySystemFill

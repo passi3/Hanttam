@@ -25,7 +25,7 @@ final class RunningLevelManager: ObservableObject {
     
     var accentColor: Color { level.swiftUIColor }
     #if os(iOS)
-    var accentUIColor: UIColor { level.accentColor}
+    var accentUIColor: UIColor { level.gradeColor}
     #endif
     
     var progress: Double {
