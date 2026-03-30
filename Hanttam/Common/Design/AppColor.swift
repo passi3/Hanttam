@@ -64,7 +64,7 @@ enum AppColor {
     
     //MARK: - Semantic Colors
     //Text
-    static let textLabel      = Color.primary
+    static let textPrimary      = Color.primary
     static let textSecondary  = Color.secondary
     
     #if os(iOS)

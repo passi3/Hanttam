@@ -29,7 +29,7 @@ struct WorkoutCalendarView: View {
                         .foregroundStyle(accentColor)
                     Text("\(AppFormatter.yearMonth.string(from: displayedMonth))")
                         .font(.system(size: 20, weight: .bold))
-                        .foregroundStyle(AppColor.bgSecondary)
+                        .foregroundStyle(AppColor.textPrimary)
                 }
                 
                 Spacer()
@@ -38,7 +38,7 @@ struct WorkoutCalendarView: View {
                     Button { changeMonth(by: -1) } label: {
                         Image(systemName: "chevron.left")
                             .font(.system(size: 14, weight: .semibold))
-                            .foregroundStyle(AppColor.bgSecondary)
+                            .foregroundStyle(.secondary)
                     }
                     Button { changeMonth(by: 1) } label: {
                         Image(systemName: "chevron.right")
@@ -168,7 +168,7 @@ struct WorkoutCalendarView: View {
         if isFuture { return AppColor.textSecondary.opacity(0.3) }
         if intensity == .hard || intensity == .intense { return .white}
         if isToday { return accentColor }
-        return AppColor.textLabel
+        return AppColor.textPrimary
     }
     
     //MARK: - Date 헬퍼
