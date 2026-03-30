@@ -381,5 +381,4 @@ final class HealthKitStore {
             guard !inRange.isEmpty else { return nil }
             return inRange.reduce(0) { $0 + $1.value } / Double(inRange.count)
         }
-    
 }

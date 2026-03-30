@@ -183,7 +183,7 @@ struct CumulativeChartView: View {
             AxisMarks(values: .stride(by: 5)) { value in
                 AxisValueLabel {
                     if let day = value.as(Int.self) {
-                        Text("\(day)")
+                        Text("\(day)일")
                             .font(.system(size: 10, weight: .medium))
                             .foregroundStyle(labelGray)
                     }
