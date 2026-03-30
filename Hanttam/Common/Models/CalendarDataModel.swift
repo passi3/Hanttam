@@ -42,4 +42,14 @@ enum WorkoutIntensity: Int, CaseIterable {
         case .intense  : return "고강도"
         }
     }
+    
+    var distanceLabel: String {
+        switch self {
+        case .light    : return "<10km"
+        case .moderate : return "10km+"
+        case .hard     : return "20km+"
+        case .intense  : return "30km+"
+        default        : return ""
+        }
+    }
 }
