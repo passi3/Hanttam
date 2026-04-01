@@ -41,7 +41,7 @@ final class DashboardViewController: HTViewController {
     
     private let titleLabel: UILabel = {
         let l = UILabel()
-        l.text      = "Training Center"
+        l.text      = "Anayltics Center"
         l.font      = .systemFont(ofSize: 32, weight: .black)
         l.textColor = UIColor(red: 0.18, green: 0.18, blue: 0.19, alpha: 1)
         return l
@@ -52,12 +52,15 @@ final class DashboardViewController: HTViewController {
     private var runningGradeView = RunningGradeView()
     
     //MARK: - Lifecycle
+    
     override func viewDidLoad() {
         super.viewDidLoad()
         setupNavigationBar()
         bind()
         viewDidLoadTrigger.onNext(())
     }
+    
+    //MARK: - ConfigUI
     
     private func setupNavigationBar() {
         navigationController?.navigationBar.prefersLargeTitles = false
@@ -88,13 +91,12 @@ final class DashboardViewController: HTViewController {
             make.bottom.equalToSuperview().inset(120)
             make.width.equalToSuperview().offset(-48)
         }
-        
     }
     override func configView() {
         view.backgroundColor = AppColor.UI.dashboardBg
         let headerStack     = UIStackView(arrangedSubviews: [headerLabel, titleLabel])
         headerStack.axis    = .vertical
-        headerStack.spacing = 4
+        headerStack.spacing = 16
         contentStack.addArrangedSubview(headerStack)
         
         let chartPlaceholder = UIView()
@@ -106,6 +108,14 @@ final class DashboardViewController: HTViewController {
         contentStack.addArrangedSubview(calendarPlaceholder)
         
         contentStack.addArrangedSubview(runningGradeView)
+        contentStack.spacing = 20
+        
+        headerStack.layer.shadowPath = UIBezierPath(rect: headerStack.bounds).cgPath
+        headerStack.layer.shadowOpacity = 0.8
+        chartPlaceholder.layer.shadowPath = UIBezierPath(rect: chartPlaceholder.bounds).cgPath
+        chartPlaceholder.layer.shadowOpacity = 0.8
+        calendarPlaceholder.layer.shadowPath = UIBezierPath(rect: calendarPlaceholder.bounds).cgPath
+        calendarPlaceholder.layer.shadowOpacity = 0.8
     }
     
     private func bind() {
