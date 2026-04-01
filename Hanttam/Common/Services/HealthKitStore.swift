@@ -61,6 +61,17 @@ final class HealthKitStore {
         }
     }
     
+    //MARK: - 기록 삭제
+    func deleteWorkout(_ workout: HKWorkout, completion: @escaping (Bool, Error?) -> Void) {
+        guard let store else {
+            completion(false, nil)
+            return
+        }
+        store.delete(workout) { success, error in
+            DispatchQueue.main.async { completion(success, error) }
+        }
+    }
+    
     //MARK: - 데이터 조회
     //러닝 기록 조회
     func fetchRunningWorkouts(completion: @escaping ([RunningRecord]) -> Void
@@ -87,19 +98,34 @@ final class HealthKitStore {
             limit: HKObjectQueryNoLimit,
             sortDescriptors: [sort]
         ) { _, samples, _ in
-            let records = (samples as? [HKWorkout])?.map { w in
-                RunningRecord(
-                    date    : w.startDate,
-                    endDate : w.endDate,
+            let workouts = samples as? [HKWorkout] ?? []
+            let records: [RunningRecord] = workouts.map { (w: HKWorkout) -> RunningRecord in
+                // 1. 소스(앱) 이름 추출
+                let source = w.sourceRevision.source.name
+                let isManual = w.metadata?[HKMetadataKeyWasUserEntered] as? Bool ?? false
+                let appName = isManual ? "\(source) (수동)" : source
+
+                // 2. 디바이스 이름 추출 (Apple Watch, iPhone 등)
+                let device = w.device?.name ?? w.device?.model
+
+                // 3. 실내 운동 판별
+                let indoor = w.metadata?[HKMetadataKeyIndoorWorkout] as? Bool ?? false
+
+                return RunningRecord(
+                    date: w.startDate,
+                    endDate: w.endDate,
                     duration: w.duration,
                     distance: w.totalDistance?.doubleValue(for: .meter()) ?? 0,
                     calories: w.totalEnergyBurned?.doubleValue(for: .kilocalorie()) ?? 0,
-                    workout : w)
-            } ?? []
-            DispatchQueue.main.async {
-                completion(records)
+                    workout: w,
+                    sourceName: appName,
+                    deviceName: device,
+                    isIndoor: indoor
+                )
             }
+            DispatchQueue.main.async { completion(records) }
         }
+
         store.execute(query)
     }
     
@@ -381,4 +407,21 @@ final class HealthKitStore {
             guard !inRange.isEmpty else { return nil }
             return inRange.reduce(0) { $0 + $1.value } / Double(inRange.count)
         }
+    
+    //루트 디버깅
+    func debugAllRoutes() {
+        guard let store else { return }
+        let routeType = HKSeriesType.workoutRoute()
+        let query = HKSampleQuery(
+            sampleType: routeType,
+            predicate: nil,
+            limit: 5,
+            sortDescriptors: [NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: false)]
+        ) { _, samples, error in
+            if let error { print("[Route Debug] ❌ 전체 루트 조회 실패: \(error)") }
+            let count = samples?.count ?? 0
+            samples?.forEach { print("[Route Debug] 📍 루트 발견: \($0.startDate) ~ \($0.endDate)") }
+        }
+        store.execute(query)
+    }
 }
