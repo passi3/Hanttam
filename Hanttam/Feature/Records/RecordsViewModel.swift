@@ -14,30 +14,30 @@ import HealthKit
 final class RecordsViewModel: HTReusableVMProtocol, ObservableObject {
     
     struct Input {
-        let viewDidLoad: Observable<Void>
-        let refresh: Observable<Void>
+        let viewDidLoad : Observable<Void>
+        let refresh     : Observable<Void>
         let selectRecord: Observable<Int>
     }
 
     struct Output {
-        let records: Driver<[RunningRecord]>
+        let records        : Driver<[RunningRecord]>
         let filteredRecords: Driver<[RunningRecord]>
-        let isLoading: Driver<Bool>
-        let selectedRecord: Driver<RunningRecord>
+        let isLoading      : Driver<Bool>
+        let selectedRecord : Driver<RunningRecord>
     }
 
     @Published var records: [RunningRecord] = []
-    @Published var period: ChartPeriod = .weekly {
+    @Published var period : ChartPeriod = .monthly {
         didSet { periodRelay.accept(period) }
     }
-    @Published var offset: Int = 0 {
+    @Published var offset : Int = 0 {
         didSet { offsetRelay.accept(offset) }
     }
     @Published private(set) var filteredRecords: [RunningRecord] = []
 
     private let recordsRelay = BehaviorRelay<[RunningRecord]>(value: [])
     private let filteredRecordsRelay = BehaviorRelay<[RunningRecord]>(value: [])
-    private let periodRelay = BehaviorRelay<ChartPeriod>(value: .weekly)
+    private let periodRelay = BehaviorRelay<ChartPeriod>(value: .monthly)
     private let offsetRelay = BehaviorRelay<Int>(value: 0)
     private let isLoadingRelay = BehaviorRelay<Bool>(value: false)
     private let selectedRecordRelay = PublishRelay<RunningRecord>()
@@ -85,10 +85,10 @@ final class RecordsViewModel: HTReusableVMProtocol, ObservableObject {
             .disposed(by: disposeBag)
 
         return Output(
-            records: recordsRelay.asDriver(),
+            records        : recordsRelay.asDriver(),
             filteredRecords: filteredRecordsRelay.asDriver(),
-            isLoading: isLoadingRelay.asDriver(),
-            selectedRecord: selectedRecordRelay.asDriver(onErrorDriveWith: .empty())
+            isLoading      : isLoadingRelay.asDriver(),
+            selectedRecord : selectedRecordRelay.asDriver(onErrorDriveWith: .empty())
         )
     }
 
