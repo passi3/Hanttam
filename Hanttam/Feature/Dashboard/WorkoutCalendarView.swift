@@ -60,8 +60,9 @@ struct WorkoutCalendarView: View {
             
             let days = daysInMonth()
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 0), count: 7), spacing: 6) {
-                ForEach(days, id: \.self) { day in
-                    dayCell(for: day)
+                ForEach(days.indices, id: \.self) { index in
+                    let date = days[index]
+                    dayCell(for: date)
                 }
             }
             
