@@ -48,7 +48,3 @@ struct HanttamCirclesView: View {
     }
 }
 
-// MARK: - 미리보기
-#Preview {
-    HanttamCirclesView(topCircleOffsetY: -25)
-}

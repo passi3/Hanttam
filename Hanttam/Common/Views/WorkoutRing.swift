@@ -6,17 +6,15 @@
 //
 import SwiftUI
 
-struct RippleBaseRing: Shape {
+// MARK: - 1. 배경 링 (구멍 뚫린 타원)
+struct OriginRippleBaseRing: Shape {
     let outerDiameter: CGFloat
     let innerDiameter: CGFloat
     let holeOffset: CGFloat
     let heightRatio: CGFloat
     var yOffset: CGFloat
 
-    var animatableData: CGFloat {
-        get { yOffset }
-        set { yOffset = newValue }
-    }
+    // 사용되지 않던 animatableData 제거 완료
 
     func path(in rect: CGRect) -> Path {
         let cx = rect.midX
@@ -41,23 +39,20 @@ struct RippleBaseRing: Shape {
                                     width: outerDiameter, height: outerH))
         
         // 펀치홀 추가
-        path.addEllipse(in: CGRect(x: cx - holeR + 15, y: cy - holeH / 2 + 4 + yOffset,
-                                    width: holeDiameter - 30, height: holeH - 8))
+        path.addEllipse(in: CGRect(x: cx - holeR + 15, y: cy - holeH / 2 + 6 + yOffset,
+                                    width: holeDiameter - 30, height: holeH - 10))
         
         return path
     }
 }
 
 // MARK: - 2. 위에 올려진 타원 (솔리드)
-struct RippleTopEllipse: Shape {
+struct OriginRippleTopEllipse: Shape {
     let innerDiameter: CGFloat
     let heightRatio: CGFloat
     var yOffset: CGFloat
 
-    var animatableData: CGFloat {
-        get { yOffset }
-        set { yOffset = newValue }
-    }
+    // 사용되지 않던 animatableData 제거 완료
 
     func path(in rect: CGRect) -> Path {
         let cx = rect.midX
@@ -77,87 +72,27 @@ struct RippleTopEllipse: Shape {
     }
 }
 
-struct RippleRingView: View {
-    let outerD: CGFloat = 200
+// MARK: - 메인 뷰
+struct OriginRippleRingView: View {
+    let outerD: CGFloat = 220
     let innerD: CGFloat = 100
     let offset: CGFloat = 30
-    var onAnimationComplete: (() -> Void)? = nil
 
-    // 각 링의 원래 yOffset 값 (바깥쪽 → 안쪽 순서)
-    private let originalOffsets: [CGFloat] = [1, -2, -5, -8, -11, -14, -17, -25]
-
-    // 애니메이션용 yOffset 상태 (원래 위치에서 시작)
-    @State private var animatedOffsets: [CGFloat] = [1, -2, -5, -8, -11, -14, -17, -25]
-    @State private var hasAppeared = false
+    // 불필요한 애니메이션 변수(animatedOffsets 등), onAppear, DispatchQueue 로직 모두 제거 완료
 
     var body: some View {
         ZStack {
-            RippleBaseRing(outerDiameter: outerD + 100, innerDiameter: innerD + 110, holeOffset: offset, heightRatio: 0.3, yOffset: animatedOffsets[0])
-                .fill(Color.yellow, style: FillStyle(eoFill: true))
+            OriginRippleBaseRing(outerDiameter: outerD - 80, innerDiameter: innerD - 10, holeOffset: offset - 24, heightRatio: 0.3, yOffset: -17)
+                .stroke(.white, lineWidth: 2)
+                .fill(Color(red: 151/255, green: 42/255, blue: 0), style: FillStyle(eoFill: true))
 
-            RippleBaseRing(outerDiameter: outerD + 70, innerDiameter: innerD + 80, holeOffset: offset, heightRatio: 0.3, yOffset: animatedOffsets[1])
-                .fill(Color.orange, style: FillStyle(eoFill: true))
-
-            RippleBaseRing(outerDiameter: outerD + 40, innerDiameter: innerD + 50, holeOffset: offset, heightRatio: 0.3, yOffset: animatedOffsets[2])
-                .fill(Color.green, style: FillStyle(eoFill: true))
-
-            RippleBaseRing(outerDiameter: outerD + 10, innerDiameter: innerD + 50, holeOffset: offset - 10, heightRatio: 0.3, yOffset: animatedOffsets[3])
-                .fill(Color.blue, style: FillStyle(eoFill: true))
-
-            RippleBaseRing(outerDiameter: outerD - 20, innerDiameter: innerD + 20, holeOffset: offset - 10, heightRatio: 0.3, yOffset: animatedOffsets[4])
-                .fill(Color.purple, style: FillStyle(eoFill: true))
-
-            RippleBaseRing(outerDiameter: outerD - 50, innerDiameter: innerD + 20, holeOffset: offset - 20, heightRatio: 0.3, yOffset: animatedOffsets[5])
-                .fill(Color.black, style: FillStyle(eoFill: true))
-
-            RippleBaseRing(outerDiameter: outerD - 80, innerDiameter: innerD - 10, holeOffset: offset - 20, heightRatio: 0.3, yOffset: animatedOffsets[6])
-                .fill(Color.pink, style: FillStyle(eoFill: true))
-
-            RippleTopEllipse(innerDiameter: innerD - 30, heightRatio: 0.3, yOffset: animatedOffsets[7])
-                .fill(Color.cyan)
+            OriginRippleTopEllipse(innerDiameter: innerD - 30, heightRatio: 0.3, yOffset: -22)
+                .fill(Color(red: 240/255, green: 240/255, blue: 245/255))
         }
         .frame(width: outerD + 60, height: 150)
-        .onAppear {
-            guard !hasAppeared else { return }
-            hasAppeared = true
-            startRippleAnimation()
-        }
-    }
-
-    private func startRippleAnimation() {
-        let ringCount = originalOffsets.count
-        let delayPerRing: Double = 0.12
-        let toZeroDuration: Double = 0.25
-        let returnDuration: Double = 0.35
-
-        // 안쪽(인덱스 큰 쪽)부터 바깥쪽으로 순차 애니메이션
-        for i in 0..<ringCount {
-            let reverseIndex = ringCount - 1 - i
-            let delay = Double(i) * delayPerRing
-
-            // Phase 1: 원래 위치 → 0으로
-            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-                withAnimation(.easeIn(duration: toZeroDuration)) {
-                    animatedOffsets[reverseIndex] = 0
-                }
-            }
-
-            // Phase 2: 0 → 원래 위치로 복귀
-            DispatchQueue.main.asyncAfter(deadline: .now() + delay + toZeroDuration) {
-                withAnimation(.easeOut(duration: returnDuration)) {
-                    animatedOffsets[reverseIndex] = originalOffsets[reverseIndex]
-                }
-
-                // 마지막 링 애니메이션 완료 후 콜백
-                if i == ringCount - 1 {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + returnDuration) {
-                        onAnimationComplete?()
-                    }
-                }
-            }
-        }
     }
 }
+
 #Preview {
-    RippleRingView()
+    OriginRippleRingView()
 }
