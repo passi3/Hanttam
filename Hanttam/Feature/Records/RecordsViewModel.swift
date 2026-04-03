@@ -99,18 +99,18 @@ final class RecordsViewModel: HTReusableVMProtocol, ObservableObject {
         let now = Date()
         switch period {
         case .weekly:
-            let today = cal.startOfDay(for: now)
-            let weekday = cal.component(.weekday, from: today)
+            let today          = cal.startOfDay(for: now)
+            let weekday        = cal.component(.weekday, from: today)
             let daysFromMonday = (weekday + 5) % 7
-            let currentMonday = cal.date(byAdding: .day, value: -daysFromMonday, to: today)!
-            let monday = cal.date(byAdding: .weekOfYear, value: offset, to: currentMonday)!
-            let sunday = cal.date(byAdding: .day, value: 7, to: monday)!
+            let currentMonday  = cal.date(byAdding: .day, value: -daysFromMonday, to: today)!
+            let monday         = cal.date(byAdding: .weekOfYear, value: offset, to: currentMonday)!
+            let sunday         = cal.date(byAdding: .day, value: 7, to: monday)!
             return records.filter { $0.date >= monday && $0.date < sunday }
         case .monthly:
-            let comps = cal.dateComponents([.year, .month], from: now)
-            let baseMonth = cal.date(from: comps)!
+            let comps       = cal.dateComponents([.year, .month], from: now)
+            let baseMonth   = cal.date(from: comps)!
             let targetMonth = cal.date(byAdding: .month, value: offset, to: baseMonth)!
-            let nextMonth = cal.date(byAdding: .month, value: 1, to: targetMonth)!
+            let nextMonth   = cal.date(byAdding: .month, value: 1, to: targetMonth)!
             return records.filter { $0.date >= targetMonth && $0.date < nextMonth }
         case .yearly:
             let targetYear = cal.component(.year, from: now) + offset

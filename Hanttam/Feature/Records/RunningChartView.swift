@@ -228,10 +228,10 @@ struct RunningChartView: View {
     // MARK: - 월별 X축 라벨
 
     private var monthlyVisibleLabels: Set<String> {
-        let cal = Calendar.current
-        let now = Date()
-        let comps = cal.dateComponents([.year, .month], from: now)
-        let baseMonth = cal.date(from: comps)!
+        let cal         = Calendar.current
+        let now         = Date()
+        let comps       = cal.dateComponents([.year, .month], from: now)
+        let baseMonth   = cal.date(from: comps)!
         let targetMonth = cal.date(byAdding: .month, value: offset, to: baseMonth)!
         let daysInMonth = cal.range(of: .day, in: .month, for: targetMonth)!.count
         return ["1", "15", "\(daysInMonth)"]
@@ -240,14 +240,14 @@ struct RunningChartView: View {
     // MARK: - 주별
 
     private func aggregateWeek(offset: Int) -> [ChartDataPoint] {
-        let cal = Calendar.current
-        let today = cal.startOfDay(for: Date())
+        let cal            = Calendar.current
+        let today          = cal.startOfDay(for: Date())
 
-        let weekday = cal.component(.weekday, from: today)
+        let weekday        = cal.component(.weekday, from: today)
         let daysFromMonday = (weekday + 5) % 7
-        let currentMonday = cal.date(byAdding: .day, value: -daysFromMonday, to: today)!
-        let monday = cal.date(byAdding: .weekOfYear, value: offset, to: currentMonday)!
-        let sunday = cal.date(byAdding: .day, value: 7, to: monday)!
+        let currentMonday  = cal.date(byAdding: .day, value: -daysFromMonday, to: today)!
+        let monday         = cal.date(byAdding: .weekOfYear, value: offset, to: currentMonday)!
+        let sunday         = cal.date(byAdding: .day, value: 7, to: monday)!
 
         let dayNames = ["월", "화", "수", "목", "금", "토", "일"]
         var distMap: [Int: Double] = [:]

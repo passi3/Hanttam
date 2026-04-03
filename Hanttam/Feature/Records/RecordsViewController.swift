@@ -315,7 +315,7 @@ extension RecordsViewController: UITableViewDelegate {
             isExpanded = true
             applySnapshot()
         case .interval(let interval):
-            let vc = RunDetailViewController()
+            let vc = IntervalDetailViewController(record: interval)
             present(vc, animated: true)
         case .record(let record):
             if let index = records.firstIndex(of: record) {
@@ -325,20 +325,57 @@ extension RecordsViewController: UITableViewDelegate {
     }
 
     func tableView(_ tableView: UITableView, trailingSwipeActionsConfigurationForRowAt indexPath: IndexPath) -> UISwipeActionsConfiguration? {
-        guard let item = dataSource.itemIdentifier(for: indexPath),
-              case .record(let record) = item else { return nil }
+        guard let item = dataSource.itemIdentifier(for: indexPath) else { return nil }
 
-        let deleteAction = UIContextualAction(style: .destructive, title: "삭제") { [weak self] _, _, done in
-            self?.confirmDelete(record: record, completion: done)
+        switch item {
+        case .record(let record):
+            let deleteAction = UIContextualAction(style: .destructive, title: "삭제") { [weak self] _, _, done in
+                self?.confirmDelete(record: record, completion: done)
+            }
+            deleteAction.image = UIImage(systemName: "trash")
+            return UISwipeActionsConfiguration(actions: [deleteAction])
+
+        case .interval(let interval):
+            let deleteAction = UIContextualAction(style: .destructive, title: "삭제") { [weak self] _, _, done in
+                self?.confirmDeleteInterval(interval: interval, completion: done)
+            }
+            deleteAction.image = UIImage(systemName: "trash")
+            return UISwipeActionsConfiguration(actions: [deleteAction])
+
+        default:
+            return nil
         }
-        deleteAction.image = UIImage(systemName: "trash")
-        return UISwipeActionsConfiguration(actions: [deleteAction])
+    }
+
+    private func confirmDeleteInterval(interval: IntervalRecord, completion: @escaping (Bool) -> Void) {
+        let alert = UIAlertController(
+            title: "인터벌 기록 삭제",
+            message: "이 기록을 시스템에서 영구 삭제합니다.\n되돌릴 수 없습니다.",
+            preferredStyle: .alert
+        )
+        alert.addAction(UIAlertAction(title: "취소", style: .cancel) { _ in completion(false) })
+        alert.addAction(UIAlertAction(title: "삭제", style: .destructive) { [weak self] _ in
+            guard let workout = interval.workout else {
+                completion(false)
+                return
+            }
+            HealthKitStore.shared.deleteWorkout(workout) { [weak self] success, _ in
+                guard success, let self else {
+                    completion(false)
+                    return
+                }
+                self.intervalRecords.removeAll { $0 == interval }
+                self.applySnapshot(animated: true)
+                completion(true)
+            }
+        })
+        present(alert, animated: true)
     }
 
     private func confirmDelete(record: RunningRecord, completion: @escaping (Bool) -> Void) {
         let alert = UIAlertController(
             title: "운동 기록 삭제",
-            message: "이 기록을 헬스킷에서 영구 삭제합니다.\n되돌릴 수 없습니다.",
+            message: "이 기록을 시스템에서 영구 삭제합니다.\n되돌릴 수 없습니다.",
             preferredStyle: .alert
         )
         alert.addAction(UIAlertAction(title: "취소", style: .cancel) { _ in completion(false) })
