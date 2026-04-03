@@ -238,17 +238,3 @@ struct RippleRingView: View {
         }
     }
 }
-
-// MARK: - Preview
-
-#Preview("기본 (전체 활성)") {
-    RippleRingView()
-}
-
-#Preview("Blue 등급 강조") {
-    RippleRingView(highlightedLevel: .blue)
-}
-
-#Preview("Volt 등급 강조") {
-    RippleRingView(highlightedLevel: .black)
-}

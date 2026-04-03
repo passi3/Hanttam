@@ -40,11 +40,38 @@ struct PunchedBigCircle: Shape {
 // MARK: - 메인 뷰
 struct HanttamCirclesView: View {
     var topCircleOffsetY: CGFloat = -25
-    
+    var size: CGFloat = 200
+    var color: Color = AppColor.hanttamRing
+
+    // hole 내부 아이콘 / 보더 (nil이면 표시 안 함)
+    var icon: String? = nil
+    var iconColor: Color = RunningLevelManager.shared.accentColor
+
+    private var holeSize: CGFloat { 130 * size / 200 }
+    private var holeOffY: CGFloat { topCircleOffsetY * size / 200 }
+    private var iconSize: CGFloat { size * 32 / 280 }
+
     var body: some View {
-        PunchedBigCircle(holeSize: 130, holeOffsetY: topCircleOffsetY)
-            .fill(Color(red: 151/255, green: 42/255, blue: 0), style: FillStyle(eoFill: true))
-            .frame(width: 200, height: 200)
+        ZStack {
+            PunchedBigCircle(holeSize: holeSize, holeOffsetY: holeOffY)
+                .fill(color, style: FillStyle(eoFill: true))
+                .frame(width: size, height: size)
+
+            if let icon {
+
+                // 글로우 레이어
+                Image(systemName: icon)
+                    .font(.system(size: iconSize * 1.3, weight: .medium, design: .default))
+                    .foregroundStyle(iconColor.opacity(0.8))
+                    .blur(radius: iconSize * 0.4)
+                    .offset(y: holeOffY / 2)
+
+                Image(systemName: icon)
+                    .font(.system(size: iconSize, weight: .medium, design: .default))
+                    .foregroundStyle(iconColor)
+                    .offset(y: holeOffY / 2)
+            }
+        }
+        .frame(width: size, height: size)
     }
 }
-
