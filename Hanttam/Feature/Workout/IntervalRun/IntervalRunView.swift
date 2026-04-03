@@ -27,14 +27,18 @@ class IntervalRunViewController: UIViewController, CLLocationManagerDelegate, MK
 
     // MARK: - Init Params
 
-    private let totalSets: Int
-    private let lapDistance: Double
-    private let restDuration: TimeInterval
+    private let totalSets     : Int
+    private let lapDistance   : Double
+    private let restDuration  : TimeInterval
+    private let isIndoor      : Bool
+    private let isWatchPrimary: Bool
 
-    init(sets: Int, lapDistance: Double, restDuration: TimeInterval) {
-        self.totalSets = sets
-        self.lapDistance = lapDistance
-        self.restDuration = restDuration
+    init(sets: Int, lapDistance: Double, restDuration: TimeInterval, isIndoor: Bool = false, isWatchPrimary: Bool = false) {
+        self.totalSets      = sets
+        self.lapDistance    = lapDistance
+        self.restDuration   = restDuration
+        self.isIndoor       = isIndoor
+        self.isWatchPrimary = isWatchPrimary
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -42,13 +46,13 @@ class IntervalRunViewController: UIViewController, CLLocationManagerDelegate, MK
 
     // MARK: - State
 
-    private var phase: Phase = .preparing
-    private var currentSet: Int = 1
-    private var elapsed: TimeInterval = 0
-    private var lapElapsed: TimeInterval = 0
-    private var lapDistance_: Double = 0  // current lap distance accumulated
+    private var phase: Phase                = .preparing
+    private var currentSet: Int             = 1
+    private var elapsed: TimeInterval       = 0
+    private var lapElapsed: TimeInterval    = 0
+    private var lapDistance_: Double        = 0  // current lap distance accumulated
     private var restRemaining: TimeInterval = 0
-    private var countdown: Int = 3
+    private var countdown: Int              = 3
     private var timer: Timer?
 
     // location
@@ -64,31 +68,32 @@ class IntervalRunViewController: UIViewController, CLLocationManagerDelegate, MK
 
     // MARK: - UI Components
 
-    private let mapView = MKMapView()
-    private let statsPanel = UIStackView()
+    private let mapView         = MKMapView()
+    private let statsPanel      = UIStackView()
     private let buttonContainer = UIView()
 
-    private let durationLabel = UILabel()
+    private let durationLabel    = UILabel()
     private let lapDistanceLabel = UILabel()
-    private let avgPaceLabel = UILabel()
-    private let currPaceLabel = UILabel()
-    private let setLabel = UILabel()
+    private let avgPaceLabel     = UILabel()
+    private let currPaceLabel    = UILabel()
+    private let setLabel         = UILabel()
 
-    private let pauseButton = UIButton()
-    private let resumeButton = UIButton()
-    private let stopButton = UIButton()
+    private let pauseButton     = UIButton()
+    private let resumeButton    = UIButton()
+    private let stopButton      = UIButton()
     private let manualLapButton = UIButton()
 
     private let countdownContainer = UIView()
-    private let countdownLabel = UILabel()
-    private let countdownSubLabel = UILabel()
+    private let countdownLabel     = UILabel()
+    private let countdownSubLabel  = UILabel()
 
-    private let restOverlay = UIView()
+    private let restOverlay        = UIView()
     private let restCountdownLabel = UILabel()
-    private let restTitleLabel = UILabel()
+    private let restTitleLabel     = UILabel()
 
     private let pausedOverlay = UIView()
-    private let pausedLabel = UILabel()
+    private let pausedLabel   = UILabel()
+    private let sourceBadge   = UILabel()
 
     // MARK: - Lifecycle
 
@@ -119,6 +124,7 @@ class IntervalRunViewController: UIViewController, CLLocationManagerDelegate, MK
         config.pointOfInterestFilter = .excludingAll
         mapView.preferredConfiguration = config
         view.addSubview(mapView)
+        view.addSubview(sourceBadge)
 
         // Stats Panel
         statsPanel.axis = .vertical
@@ -161,8 +167,8 @@ class IntervalRunViewController: UIViewController, CLLocationManagerDelegate, MK
 
         // Manual Lap Button
         manualLapButton.setImage(UIImage(systemName: "forward.end.fill", withConfiguration: UIImage.SymbolConfiguration(pointSize: 18, weight: .bold)), for: .normal)
-        manualLapButton.tintColor = .white
-        manualLapButton.backgroundColor = AppColor.UI.systemBlue
+        manualLapButton.tintColor = AppColor.UI.textInverse
+        manualLapButton.backgroundColor = AppColor.UI.primary
         manualLapButton.layer.cornerRadius = 28
         manualLapButton.addTarget(self, action: #selector(manualLapTapped), for: .touchUpInside)
         manualLapButton.isHidden = true
@@ -171,47 +177,60 @@ class IntervalRunViewController: UIViewController, CLLocationManagerDelegate, MK
         // Countdown
         countdownContainer.backgroundColor = AppColor.UI.workoutBg
         view.addSubview(countdownContainer)
-        countdownLabel.font = .monospacedDigitSystemFont(ofSize: 96, weight: .bold)
+        countdownLabel.font = AppFont.UI.metricDisplayXL
         countdownLabel.textColor = AppColor.UI.workoutPause
         countdownLabel.textAlignment = .center
         countdownLabel.text = "3"
         countdownContainer.addSubview(countdownLabel)
-        countdownSubLabel.font = .systemFont(ofSize: 16, weight: .medium)
+        countdownSubLabel.font = AppFont.UI.titleSM
         countdownSubLabel.textColor = AppColor.UI.textSecondary
         countdownSubLabel.textAlignment = .center
         countdownSubLabel.text = "준비하세요"
         countdownContainer.addSubview(countdownSubLabel)
 
         // Rest Overlay
-        restOverlay.backgroundColor = UIColor.black.withAlphaComponent(0.55)
+        restOverlay.backgroundColor = AppColor.UI.overlayStrong
         restOverlay.isHidden = true
         view.addSubview(restOverlay)
 
         restTitleLabel.text = "REST"
-        restTitleLabel.font = .systemFont(ofSize: 16, weight: .bold)
-        restTitleLabel.textColor = .white.withAlphaComponent(0.7)
+        restTitleLabel.font = AppFont.UI.titleSM
+        restTitleLabel.textColor = AppColor.UI.textInverseSecondary
         restTitleLabel.textAlignment = .center
         restOverlay.addSubview(restTitleLabel)
 
-        restCountdownLabel.font = .monospacedDigitSystemFont(ofSize: 72, weight: .bold)
-        restCountdownLabel.textColor = .white
+        restCountdownLabel.font = AppFont.UI.metricDisplayLG
+        restCountdownLabel.textColor = AppColor.UI.textInverse
         restCountdownLabel.textAlignment = .center
         restOverlay.addSubview(restCountdownLabel)
 
         // Paused Overlay
-        pausedOverlay.backgroundColor = UIColor.black.withAlphaComponent(0.4)
+        pausedOverlay.backgroundColor = AppColor.UI.overlay
         pausedOverlay.isHidden = true
         view.addSubview(pausedOverlay)
         pausedLabel.text = "일시정지"
-        pausedLabel.font = .systemFont(ofSize: 28, weight: .bold)
-        pausedLabel.textColor = .white
+        pausedLabel.font = AppFont.UI.headlineLG
+        pausedLabel.textColor = AppColor.UI.textInverse
         pausedLabel.textAlignment = .center
         pausedOverlay.addSubview(pausedLabel)
+
+        sourceBadge.font = AppFont.UI.labelSM
+        sourceBadge.textColor = AppColor.UI.success
+        sourceBadge.backgroundColor = AppColor.UI.cardBackground.withAlphaComponent(0.92)
+        sourceBadge.layer.cornerRadius = 12
+        sourceBadge.layer.masksToBounds = true
+        sourceBadge.textAlignment = .center
+        sourceBadge.text = " Apple Watch에서 센서 측정 중 "
+        sourceBadge.isHidden = !isWatchPrimary
 
         // Layout
         mapView.snp.makeConstraints { make in
             make.top.leading.trailing.equalToSuperview()
             make.bottom.equalTo(statsPanel.snp.top)
+        }
+        sourceBadge.snp.makeConstraints { make in
+            make.top.equalTo(view.safeAreaLayoutGuide.snp.top).offset(10)
+            make.centerX.equalToSuperview()
         }
         statsPanel.snp.makeConstraints { make in
             make.leading.trailing.equalToSuperview()
@@ -286,28 +305,28 @@ class IntervalRunViewController: UIViewController, CLLocationManagerDelegate, MK
 
     private func configureButton(_ button: UIButton, systemName: String, color: UIColor, action: Selector) {
         button.setImage(UIImage(systemName: systemName, withConfiguration: UIImage.SymbolConfiguration(pointSize: 26, weight: .bold)), for: .normal)
-        button.tintColor = .white
-        button.backgroundColor = color
+        button.tintColor          = AppColor.UI.textInverse
+        button.backgroundColor    = color
         button.layer.cornerRadius = 38
         button.addTarget(self, action: action, for: .touchUpInside)
     }
 
     private func createStatRow(label: String, valueLabel: UILabel) -> UIView {
-        let container = UIView()
+        let container             = UIView()
         container.backgroundColor = AppColor.UI.workoutBg
 
-        let lLabel = UILabel()
-        lLabel.text = label
-        lLabel.font = .systemFont(ofSize: 10, weight: .regular)
-        lLabel.textColor = AppColor.UI.textSecondary
+        let lLabel           = UILabel()
+        lLabel.text          = label
+        lLabel.font          = AppFont.UI.captionMD
+        lLabel.textColor     = AppColor.UI.textSecondary
         lLabel.textAlignment = .center
 
-        valueLabel.font = .monospacedDigitSystemFont(ofSize: 18, weight: .medium)
-        valueLabel.textColor = AppColor.UI.textPrimary
+        valueLabel.font          = AppFont.UI.metricBody
+        valueLabel.textColor     = AppColor.UI.textPrimary
         valueLabel.textAlignment = .center
 
         let stack = UIStackView(arrangedSubviews: [lLabel, valueLabel])
-        stack.axis = .vertical
+        stack.axis    = .vertical
         stack.spacing = 3
         container.addSubview(stack)
         stack.snp.makeConstraints { make in
@@ -319,7 +338,7 @@ class IntervalRunViewController: UIViewController, CLLocationManagerDelegate, MK
     }
 
     private func createDivider(isVertical: Bool = false) -> UIView {
-        let divider = UIView()
+        let divider             = UIView()
         divider.backgroundColor = AppColor.UI.separator
         if !isVertical {
             divider.snp.makeConstraints { make in make.height.equalTo(0.5) }
@@ -330,16 +349,16 @@ class IntervalRunViewController: UIViewController, CLLocationManagerDelegate, MK
     // MARK: - Location
 
     private func setupLocationManager() {
-        locationManager.delegate = self
+        locationManager.delegate        = self
         locationManager.desiredAccuracy = kCLLocationAccuracyBestForNavigation
-        locationManager.distanceFilter = 5
+        locationManager.distanceFilter  = 5
     }
 
     // MARK: - Countdown
 
     private func beginCountdown() {
-        phase = .preparing
-        countdown = 3
+        phase               = .preparing
+        countdown           = 3
         countdownLabel.text = "3"
 
         Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] t in
@@ -356,8 +375,8 @@ class IntervalRunViewController: UIViewController, CLLocationManagerDelegate, MK
 
     private func animateCountdown(_ value: Int) {
         countdownLabel.transform = CGAffineTransform(scaleX: 1.5, y: 1.5)
-        countdownLabel.alpha = 0
-        countdownLabel.text = "\(value)"
+        countdownLabel.alpha     = 0
+        countdownLabel.text      = "\(value)"
         UIView.animate(withDuration: 0.4, delay: 0, usingSpringWithDamping: 0.6, initialSpringVelocity: 0, options: []) {
             self.countdownLabel.transform = .identity
             self.countdownLabel.alpha = 1
@@ -367,10 +386,10 @@ class IntervalRunViewController: UIViewController, CLLocationManagerDelegate, MK
     private func countdownFinished() {
         UIView.animate(withDuration: 0.3) {
             self.countdownContainer.alpha = 0
-            self.statsPanel.alpha = 1
+            self.statsPanel.alpha         = 1
         } completion: { _ in
             self.countdownContainer.isHidden = true
-            self.buttonContainer.isHidden = false
+            self.buttonContainer.isHidden    = false
         }
         startRunningLap()
     }
@@ -378,18 +397,18 @@ class IntervalRunViewController: UIViewController, CLLocationManagerDelegate, MK
     // MARK: - State Transitions
 
     private func startRunningLap() {
-        phase = .runningLap
-        lapElapsed = 0
-        lapDistance_ = 0
-        lapLocations = []
-        lapStartDate = Date()
+        phase           = .runningLap
+        lapElapsed      = 0
+        lapDistance_    = 0
+        lapLocations    = []
+        lapStartDate    = Date()
         recentLocations = []
 
         locationManager.startUpdatingLocation()
         startTimer()
         showRunningButtons()
         manualLapButton.isHidden = false
-        restOverlay.isHidden = true
+        restOverlay.isHidden     = true
 
         triggerHaptic(.success)
     }
@@ -398,14 +417,14 @@ class IntervalRunViewController: UIViewController, CLLocationManagerDelegate, MK
         // record run lap
         recordLap(type: .run)
 
-        phase = .resting
+        phase         = .resting
         restRemaining = restDuration
-        lapStartDate = Date()
+        lapStartDate  = Date()
 
         locationManager.stopUpdatingLocation()
         manualLapButton.isHidden = true
 
-        restOverlay.isHidden = false
+        restOverlay.isHidden    = false
         restCountdownLabel.text = "\(Int(restRemaining))"
 
         triggerHaptic(.success)
@@ -556,17 +575,24 @@ class IntervalRunViewController: UIViewController, CLLocationManagerDelegate, MK
         locationManager.stopUpdatingLocation()
 
         let totalDist = laps.filter { $0.type == .run }.reduce(0) { $0 + $1.distance }
-        let record = IntervalRecord(
-            id: UUID(),
-            date: Date(),
-            settings: IntervalSettings(sets: totalSets, lapDistance: lapDistance, restDuration: restDuration),
+        let endDate = Date()
+        let startDate = endDate.addingTimeInterval(-elapsed)
+        let settings = IntervalSettings(sets: totalSets, lapDistance: lapDistance, restDuration: restDuration)
+
+        HealthKitStore.shared.saveIntervalWorkout(
+            start: startDate,
+            end: endDate,
+            distance: totalDist,
+            calories: nil,
             laps: laps,
-            totalDistance: totalDist,
-            totalDuration: elapsed,
-            routeLatitudes: routeCoordinates.map(\.latitude),
-            routeLongitudes: routeCoordinates.map(\.longitude)
-        )
-        IntervalStore.shared.save(record)
+            settings: settings,
+            routeLocations: allLocations,
+            isIndoor: isIndoor
+        ) { success, error in
+            if !success {
+                print("[Interval] HealthKit 저장 실패: \(error?.localizedDescription ?? "")")
+            }
+        }
     }
 
     private func finishAndShowResult() {
@@ -577,19 +603,26 @@ class IntervalRunViewController: UIViewController, CLLocationManagerDelegate, MK
         let avgPace: TimeInterval? = totalDist > 10 ? elapsed / (totalDist / 1000) : nil
 
         // 인터벌에서는 세트별 페이스를 스플릿으로 표시
-        let splits: [WorkoutResultData.SplitData] = runLaps.enumerated().map { i, lap in
+        let splits: [WorkoutResultDataModel.SplitData] = runLaps.enumerated().map { i, lap in
             let pace = lap.avgPace ?? (lap.duration / max(0.001, lap.distance / 1000))
-            return WorkoutResultData.SplitData(km: i + 1, pace: pace, distance: lap.distance)
+            return WorkoutResultDataModel.SplitData(km: i + 1, pace: pace, distance: lap.distance)
         }
 
         let coords = routeCoordinates.map { (lat: $0.latitude, lng: $0.longitude) }
-        let resultData = WorkoutResultData(
+        let endDate = Date()
+        let startDate = endDate.addingTimeInterval(-elapsed)
+        let resultData = WorkoutResultDataModel(
+            startDate: startDate,
+            endDate: endDate,
             totalDistance: totalDist,
             totalDuration: elapsed,
             avgPace: avgPace,
             calories: nil,
             splits: splits,
-            routeCoordinates: coords
+            routeCoordinates: coords,
+            routeLocations: allLocations,
+            isIndoor: isIndoor,
+            alreadySaved: true
         )
         let resultVC = WorkoutResultViewController(data: resultData)
         resultVC.modalPresentationStyle = .fullScreen
@@ -738,9 +771,17 @@ struct IntervalRunView: UIViewControllerRepresentable {
     let sets: Int
     let lapDistance: Double
     let restDuration: TimeInterval
+    var isIndoor: Bool = false
+    var isWatchPrimary: Bool = false
 
     func makeUIViewController(context: Context) -> IntervalRunViewController {
-        IntervalRunViewController(sets: sets, lapDistance: lapDistance, restDuration: restDuration)
+        IntervalRunViewController(
+            sets: sets,
+            lapDistance: lapDistance,
+            restDuration: restDuration,
+            isIndoor: isIndoor,
+            isWatchPrimary: isWatchPrimary
+        )
     }
 
     func updateUIViewController(_ uiViewController: IntervalRunViewController, context: Context) {}
