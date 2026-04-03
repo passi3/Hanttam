@@ -20,19 +20,19 @@ final class RunningLevelViewController: HTViewController {
     private let stackView  = UIStackView()
     
     // 현재 레벨 카드
-    private let levelIconView = UIImageView()
-    private let levelIconBg = UIView()
+    private let levelIconView  = UIImageView()
+    private let levelIconBg    = UIView()
     private let levelNameLabel = UILabel()
     private let totalDistLabel = UILabel()
     
     // 진행도
-    private let progressContainer = UIView()
-    private let nextLevelLabel = UILabel()
-    private let remainingLabel = UILabel()
-    private let progressTrack = UIView()
-    private let progressFill = UIView()
+    private let progressContainer   = UIView()
+    private let nextLevelLabel      = UILabel()
+    private let remainingLabel      = UILabel()
+    private let progressTrack       = UIView()
+    private let progressFill        = UIView()
     private let thresholdStartLabel = UILabel()
-    private let thresholdEndLabel = UILabel()
+    private let thresholdEndLabel   = UILabel()
     private var progressFillWidthConstraint: Constraint?
     
     // 레벨 목록
@@ -101,7 +101,6 @@ final class RunningLevelViewController: HTViewController {
         view.backgroundColor = AppColor.UI.backgroundGrouped
         stackView.axis    = .vertical
         stackView.spacing = 32
-        
     }
     
     //MARK: - Level Card

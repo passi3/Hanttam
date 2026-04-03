@@ -5,7 +5,6 @@
 //  Created by passi on 4/2/26.
 //
 
-import Foundation
 import WatchConnectivity
 import Combine
 
