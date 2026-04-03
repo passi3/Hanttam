@@ -6,7 +6,7 @@
 //
 
 import UIKit
-import HealthKit
+internal import HealthKit
 import RxCocoa
 import RxSwift
 import WidgetKit

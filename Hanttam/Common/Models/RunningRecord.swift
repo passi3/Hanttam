@@ -6,7 +6,7 @@
 //
 
 import Foundation
-import HealthKit
+internal import HealthKit
 
 struct RunningRecord: Hashable {
     let date      : Date

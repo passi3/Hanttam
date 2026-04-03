@@ -9,7 +9,7 @@ import Foundation
 import Combine
 import RxCocoa
 import RxSwift
-import HealthKit
+internal import HealthKit
 
 final class RecordsViewModel: HTReusableVMProtocol, ObservableObject {
     

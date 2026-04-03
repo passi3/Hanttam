@@ -6,7 +6,7 @@
 //
 
 import Foundation
-import HealthKit
+internal import HealthKit
 import CoreLocation
 
 final class HealthKitStore {
@@ -439,14 +439,14 @@ final class HealthKitStore {
     
     //범용 샘플 조회
     func fetchQuantitySamples(
-        identifider: HKQuantityTypeIdentifier,
+        identifier: HKQuantityTypeIdentifier,
         unit: HKUnit,
         from start: Date,
         to end: Date,
         completion: @escaping ([QuantitySamplePoint]) -> Void
     ) {
         guard let store,
-              let type = HKQuantityType.quantityType(forIdentifier: identifider)
+              let type = HKQuantityType.quantityType(forIdentifier: identifier)
         else { completion([]); return }
         
         let predicate = HKQuery.predicateForSamples(withStart: start, end: end)

@@ -7,6 +7,7 @@
 
 import UIKit
 import SwiftUI
+internal import HealthKit
 import MapKit
 import RxCocoa
 import RxSwift
@@ -184,12 +185,15 @@ final class RecordsViewController: HTViewController {
             .drive(onNext: { [weak self] records in
                 guard let self else { return }
                 self.records = records
-                self.intervalRecords = IntervalStore.shared.fetchAll()
-                self.isExpanded = false
-                self.applySnapshot(animated: true)
+                HealthKitStore.shared.fetchIntervalWorkouts { [weak self] intervals in
+                    guard let self else { return }
+                    self.intervalRecords = intervals
+                    self.isExpanded = false
+                    self.applySnapshot(animated: true)
+                }
             })
             .disposed(by: disposeBag)
-
+        
         output.isLoading
             .drive(onNext: { [weak self] loading in
                 if !loading { self?.tableView.refreshControl?.endRefreshing() }
@@ -206,7 +210,7 @@ final class RecordsViewController: HTViewController {
     // MARK: - Navigation
 
     private func navigateToDetail(_ record: RunningRecord) {
-        let vc = RunDetailViewController()
+        let vc = RunDetailTabViewController(record: record)
         present(vc, animated: true)
     }
 
@@ -315,8 +319,19 @@ extension RecordsViewController: UITableViewDelegate {
             isExpanded = true
             applySnapshot()
         case .interval(let interval):
-            let vc = IntervalDetailViewController(record: interval)
-            present(vc, animated: true)
+            guard let workout = interval.workout else { return }
+            let record = RunningRecord(
+                date: interval.date,
+                endDate: workout.endDate,
+                duration: interval.totalDuration,
+                distance: interval.totalDistance,
+                calories: workout.totalEnergyBurned?.doubleValue(for: .kilocalorie()) ?? 0,
+                workout: workout,
+                sourceName: workout.sourceRevision.source.name,
+                deviceName: workout.device?.name ?? workout.device?.model,
+                isIndoor: workout.metadata?[HKMetadataKeyIndoorWorkout] as? Bool ?? false
+            )
+            navigateToDetail(record)
         case .record(let record):
             if let index = records.firstIndex(of: record) {
                 selectRecordSubject.onNext(index)
