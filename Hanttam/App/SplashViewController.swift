@@ -36,7 +36,7 @@ final class SplashViewController: UIViewController {
 
         let mainTabBar = MainTabBarController()
 
-        UIView.transition(with: window, duration: 0.1) {
+        UIView.transition(with: window, duration: 0.5) {
             window.rootViewController = mainTabBar
         }
     }
