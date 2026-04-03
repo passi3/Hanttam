@@ -7,9 +7,9 @@
 
 import UIKit
 import SwiftUI
+import Combine
 import Photos
 import AVFoundation
-import Combine
 
 // MARK: - Overlay Text Color Environment
 
@@ -119,7 +119,7 @@ struct ChartPhotoShareView<ChartContent: View>: View {
                     photoPicker
                 }
             }
-            .background(AppColor.bgTertiary)
+            .background(AppColor.backgroundTertiary)
             .navigationTitle("공유 카드")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
