@@ -12,7 +12,7 @@ import Combine
 
 final class RunningLevelManager: ObservableObject {
     static let shared = RunningLevelManager()
-    static let levelDidCahngeNotification = Notification.Name("RunningLevelDidChange")
+    static let levelDidChangeNotification = Notification.Name("RunningLevelDidChange")
     
     private static let levelKey = "userRunningLevel"
     
@@ -54,9 +54,10 @@ final class RunningLevelManager: ObservableObject {
         DispatchQueue.main.async {
             self.totalDistance = total
             self.level = newLevel
-            NotificationCenter.default.post(
-                name: Self.levelDidCahngeNotification,
-                object: nil)
+            NotificationCenter.default.post(name: Self.levelDidChangeNotification, object: nil)
+            #if os(iOS)
+            WatchBridge.shared.sendLevel(newLevel)
+            #endif
             completion?()
         }
     }
