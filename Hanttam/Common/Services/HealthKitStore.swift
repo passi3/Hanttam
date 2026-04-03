@@ -54,14 +54,199 @@ final class HealthKitStore {
             }
         }
         
-        store.requestAuthorization(toShare: nil, read: readTypes) { ok, _ in
-            DispatchQueue.main.async {
-                completion(ok)
+        let shareTypes: Set<HKSampleType> = [
+            HKObjectType.workoutType(),
+            HKObjectType.quantityType(forIdentifier: .distanceWalkingRunning)!,
+            HKObjectType.quantityType(forIdentifier: .activeEnergyBurned)!,
+            HKSeriesType.workoutRoute()
+        ]
+        
+        store.requestAuthorization(toShare: shareTypes, read: readTypes) { ok, _ in
+            DispatchQueue.main.async { completion(ok) }
+        }
+    }
+    
+    // MARK: - Write
+    //자유 러닝
+    func saveRunningWorkout(
+        start: Date,
+        end: Date,
+        distance: Double,
+        calories: Double?,
+        routeLocations: [CLLocation],
+        isIndoor: Bool = false,
+        completion: @escaping (Bool, Error?) -> Void
+    ) {
+        guard let store else { completion(false, nil); return }
+
+        let distanceQuantity = HKQuantity(unit: .meter(), doubleValue: distance)
+        let caloriesQuantity = calories.map { HKQuantity(unit: .kilocalorie(), doubleValue: $0) }
+
+        // 거리 샘플
+        let distType = HKQuantityType.quantityType(forIdentifier: .distanceWalkingRunning)!
+        let distSample = HKQuantitySample(type: distType, quantity: distanceQuantity, start: start, end: end)
+
+        // 워크아웃 빌더 사용
+        let config = HKWorkoutConfiguration()
+        config.activityType = .running
+        config.locationType = isIndoor ? .indoor : .outdoor
+
+        let builder = HKWorkoutBuilder(healthStore: store, configuration: config, device: .local())
+
+        builder.beginCollection(withStart: start) { ok, error in
+            guard ok else { completion(false, error); return }
+
+            var samples: [HKSample] = [distSample]
+
+            if let cal = calories, cal > 0 {
+                let calType = HKQuantityType.quantityType(forIdentifier: .activeEnergyBurned)!
+                let calSample = HKQuantitySample(
+                    type: calType,
+                    quantity: HKQuantity(unit: .kilocalorie(), doubleValue: cal),
+                    start: start, end: end
+                )
+                samples.append(calSample)
+            }
+
+            builder.add(samples) { ok, error in
+                guard ok else { completion(false, error); return }
+
+                builder.endCollection(withEnd: end) { ok, error in
+                    guard ok else { completion(false, error); return }
+
+                    builder.finishWorkout { workout, error in
+                        guard let workout else { completion(false, error); return }
+
+                        // 경로 저장
+                        if !routeLocations.isEmpty {
+                            let routeBuilder = HKWorkoutRouteBuilder(healthStore: store, device: .local())
+                            routeBuilder.insertRouteData(routeLocations) { ok, error in
+                                guard ok else {
+                                    print("[HealthKit] Route insert failed: \(error?.localizedDescription ?? "")")
+                                    completion(true, nil) // 워크아웃은 저장됨
+                                    return
+                                }
+                                routeBuilder.finishRoute(with: workout, metadata: nil) { _, error in
+                                    if let error {
+                                        print("[HealthKit] Route finish failed: \(error.localizedDescription)")
+                                    }
+                                    DispatchQueue.main.async { completion(true, nil) }
+                                }
+                            }
+                        } else {
+                            DispatchQueue.main.async { completion(true, nil) }
+                        }
+                    }
+                }
             }
         }
     }
     
-    //MARK: - 기록 삭제
+    //인터벌 운동
+    func saveIntervalWorkout(
+        start: Date,
+        end: Date,
+        distance: Double,
+        calories: Double?,
+        laps: [IntervalLap],
+        settings: IntervalSettings,
+        routeLocations: [CLLocation],
+        isIndoor: Bool = false,
+        completion: @escaping (Bool, Error?) -> Void
+    ) {
+        guard let store else { completion(false, nil); return }
+
+        let config = HKWorkoutConfiguration()
+        config.activityType = .running
+        config.locationType = isIndoor ? .indoor : .outdoor
+
+        let builder = HKWorkoutBuilder(healthStore: store, configuration: config, device: .local())
+
+        builder.beginCollection(withStart: start) { ok, error in
+            guard ok else { completion(false, error); return }
+
+            // 거리 + 칼로리 샘플
+            let distType = HKQuantityType.quantityType(forIdentifier: .distanceWalkingRunning)!
+            let distSample = HKQuantitySample(
+                type: distType,
+                quantity: HKQuantity(unit: .meter(), doubleValue: distance),
+                start: start, end: end
+            )
+            var samples: [HKSample] = [distSample]
+
+            if let cal = calories, cal > 0 {
+                let calType = HKQuantityType.quantityType(forIdentifier: .activeEnergyBurned)!
+                samples.append(HKQuantitySample(
+                    type: calType,
+                    quantity: HKQuantity(unit: .kilocalorie(), doubleValue: cal),
+                    start: start, end: end
+                ))
+            }
+
+            builder.add(samples) { ok, error in
+                guard ok else { completion(false, error); return }
+
+                // 각 랩을 HKWorkoutActivity로 추가
+                let group = DispatchGroup()
+                for lap in laps {
+                    group.enter()
+                    let activityConfig = HKWorkoutConfiguration()
+                    activityConfig.activityType = .running
+                    activityConfig.locationType = isIndoor ? .indoor : .outdoor
+
+                    let metadata: [String: Any] = [
+                        "intervalLapType": lap.type.rawValue,
+                        "intervalLapNumber": lap.id,
+                        "intervalLapDistance": lap.distance
+                    ]
+                    let activity = HKWorkoutActivity(
+                        workoutConfiguration: activityConfig,
+                        start: lap.startDate,
+                        end: lap.endDate,
+                        metadata: metadata
+                    )
+                    builder.addWorkoutActivity(activity) { _, _ in group.leave() }
+                }
+
+                group.notify(queue: .global()) {
+                    // 메타데이터에 인터벌 설정 저장
+                    let workoutMeta: [String: Any] = [
+                        "isInterval": true,
+                        "intervalSets": settings.sets,
+                        "intervalLapDistance": settings.lapDistance,
+                        "intervalRestDuration": settings.restDuration
+                    ]
+                    builder.addMetadata(workoutMeta) { _, _ in
+                        builder.endCollection(withEnd: end) { ok, error in
+                            guard ok else { completion(false, error); return }
+
+                            builder.finishWorkout { workout, error in
+                                guard let workout else { completion(false, error); return }
+
+                                if !routeLocations.isEmpty {
+                                    let routeBuilder = HKWorkoutRouteBuilder(healthStore: store, device: .local())
+                                    routeBuilder.insertRouteData(routeLocations) { ok, _ in
+                                        guard ok else {
+                                            DispatchQueue.main.async { completion(true, nil) }
+                                            return
+                                        }
+                                        routeBuilder.finishRoute(with: workout, metadata: nil) { _, _ in
+                                            DispatchQueue.main.async { completion(true, nil) }
+                                        }
+                                    }
+                                } else {
+                                    DispatchQueue.main.async { completion(true, nil) }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    //MARK: - Delete
+    
     func deleteWorkout(_ workout: HKWorkout, completion: @escaping (Bool, Error?) -> Void) {
         guard let store else {
             completion(false, nil)
@@ -72,7 +257,7 @@ final class HealthKitStore {
         }
     }
     
-    //MARK: - 데이터 조회
+    //MARK: - Read
     //러닝 기록 조회
     func fetchRunningWorkouts(completion: @escaping ([RunningRecord]) -> Void
     ) {
@@ -129,19 +314,111 @@ final class HealthKitStore {
         store.execute(query)
     }
     
+    //인터벌 러닝 조회
+    func fetchIntervalWorkouts(completion: @escaping ([IntervalRecord]) -> Void) {
+        guard let store else { completion([]); return }
+
+        let workoutType = HKObjectType.workoutType()
+        let runningPredicate = HKQuery.predicateForWorkouts(with: .running)
+        let sort = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: false)
+
+        let query = HKSampleQuery(
+            sampleType: workoutType,
+            predicate: runningPredicate,
+            limit: HKObjectQueryNoLimit,
+            sortDescriptors: [sort]
+        ) { _, samples, _ in
+            let workouts = samples as? [HKWorkout] ?? []
+            let intervalWorkouts = workouts.filter { w in
+                w.metadata?["isInterval"] as? Bool == true
+            }
+
+            let records: [IntervalRecord] = intervalWorkouts.compactMap { w in
+                guard let sets = w.metadata?["intervalSets"] as? Int,
+                      let lapDist = w.metadata?["intervalLapDistance"] as? Double,
+                      let restDur = w.metadata?["intervalRestDuration"] as? Double
+                else { return nil }
+
+                let settings = IntervalSettings(sets: sets, lapDistance: lapDist, restDuration: restDur)
+
+                let laps: [IntervalLap] = w.workoutActivities.compactMap { activity in
+                    guard let typeRaw = activity.metadata?["intervalLapType"] as? String,
+                          let type = IntervalLap.LapType(rawValue: typeRaw),
+                          let lapNum = activity.metadata?["intervalLapNumber"] as? Int,
+                          let lapEndDate = activity.endDate
+                    else { return nil }
+                    let dist = activity.metadata?["intervalLapDistance"] as? Double ?? 0
+                    let duration = lapEndDate.timeIntervalSince(activity.startDate)
+                    let pace: TimeInterval? = (type == .run && dist > 0)
+                        ? duration / (dist / 1000)
+                        : nil
+                    return IntervalLap(
+                        id: lapNum, type: type, duration: duration,
+                        distance: dist, startDate: activity.startDate,
+                        endDate: lapEndDate, avgPace: pace
+                    )
+                }.sorted { $0.id < $1.id }
+
+                let totalDist = laps.filter { $0.type == .run }.reduce(0) { $0 + $1.distance }
+                return IntervalRecord(
+                    id: UUID(),
+                    date: w.startDate,
+                    settings: settings,
+                    laps: laps,
+                    totalDistance: totalDist,
+                    totalDuration: w.duration,
+                    routeLatitudes: [],
+                    routeLongitudes: [],
+                    workout: w
+                )
+            }
+            DispatchQueue.main.async { completion(records) }
+        }
+        store.execute(query)
+    }
+    
+    //인터벌용 거리 샘플 조회
+    func fetchDistanceSamples(for workout: HKWorkout?, from start: Date, to end: Date, completion: @escaping ([DistanceSample]) -> Void) {
+        guard let store else { completion([]); return }
+
+        let distType = HKQuantityType.quantityType(forIdentifier: .distanceWalkingRunning)!
+        let timePredicate = HKQuery.predicateForSamples(withStart: start, end: end)
+        let predicate: NSPredicate
+        if let workout {
+            let workoutPredicate = HKQuery.predicateForObjects(from: workout)
+            predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [timePredicate, workoutPredicate])
+        } else {
+            predicate = timePredicate
+        }
+        let sort = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: true)
+
+        let query = HKSampleQuery(
+            sampleType: distType,
+            predicate: predicate,
+            limit: HKObjectQueryNoLimit,
+            sortDescriptors: [sort]
+        ) { _, samples, _ in
+            let results = (samples as? [HKQuantitySample])?.map { s in
+                DistanceSample(
+                    startDate: s.startDate,
+                    endDate: s.endDate,
+                    distance: s.quantity.doubleValue(for: .meter())
+                )
+            } ?? []
+            DispatchQueue.main.async { completion(results) }
+        }
+
+        store.execute(query)
+    }
+    
     //심박수 조회
-    func fetchHeartRateSamples(
-        from start: Date,
-        to   end  : Date,
-        completion: @escaping ([HeartRateSample]) -> Void
+    func fetchHeartRateSamples(from start: Date, to end: Date, completion: @escaping ([HeartRateSample]) -> Void
     ) {
         guard let store else { completion([]); return }
         
         let hrType = HKQuantityType.quantityType(forIdentifier: .heartRate)!
         let predicate = HKQuery.predicateForSamples(withStart: start, end: end)
-        let sort = NSSortDescriptor(
-            key: HKSampleSortIdentifierStartDate,
-            ascending: true)
+        let sort = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: true)
         
         let query = HKSampleQuery(
             sampleType: hrType,
@@ -194,9 +471,7 @@ final class HealthKitStore {
     }
     
     //고도 조회
-    func fetchAltitudeData(
-        for workout: HKWorkout,
-        completion : @escaping ([AltitudePoint]) -> Void) {
+    func fetchAltitudeData(for workout: HKWorkout, completion : @escaping ([AltitudePoint]) -> Void) {
             guard let store else { completion([]); return }
             
             let routeStatus   = store.authorizationStatus(for: HKSeriesType.workoutRoute())
@@ -205,9 +480,8 @@ final class HealthKitStore {
             fetchRouteLocations(for: workout, completion: completion)
         }
     
-    private func fetchRouteLocations(
-        for workout: HKWorkout,
-        completion: @escaping ([AltitudePoint]) -> Void) {
+    //경로 조회
+    private func fetchRouteLocations(for workout: HKWorkout, completion: @escaping ([AltitudePoint]) -> Void) {
             guard let store else { completion([]); return }
             
             let routeType = HKSeriesType.workoutRoute()
@@ -230,9 +504,7 @@ final class HealthKitStore {
             store.execute(query)
         }
     
-    private func fetchRouteByDate(
-        for workout: HKWorkout,
-        completion: @escaping ([AltitudePoint]) -> Void) {
+    private func fetchRouteByDate(for workout: HKWorkout, completion: @escaping ([AltitudePoint]) -> Void) {
             guard let store else { completion([]); return }
             
             let routeType = HKSeriesType.workoutRoute()
@@ -262,9 +534,7 @@ final class HealthKitStore {
             store.execute(query)
         }
     
-    private func fetchLocations(
-        from route: HKWorkoutRoute,
-        completion: @escaping ([AltitudePoint]) -> Void) {
+    private func fetchLocations(from route: HKWorkoutRoute, completion: @escaping ([AltitudePoint]) -> Void) {
             var allPoints: [AltitudePoint] = []
             
             let query = HKWorkoutRouteQuery(route: route) { [weak self] q, locations, done, error in
@@ -359,13 +629,13 @@ final class HealthKitStore {
             let start = splits[i].startDate
             let end = splits[i].endDate
             
-            //heartRate
+            //심박수
             let hrInRange = heartRates.filter { $0.date >= start && $0.date < end }
             if !hrInRange.isEmpty {
                 splits[i].avgHeartRate = hrInRange.reduce(0) { $0 + $1.bpm } / Double(hrInRange.count)
             }
             
-            //cadence
+            //케이던스
             let stepsInRange = steps.filter { $0.startDate >= start && $0.startDate < end }
             if !stepsInRange.isEmpty {
                 let totalSteps = stepsInRange.reduce(0) { $0 + $1.value }
@@ -375,23 +645,23 @@ final class HealthKitStore {
                 }
             }
             
-            //strideLength
+            //보폭
             splits[i].avgStrideLength = averageValue(
                 of: strideLengths, from: start, to: end)
-            //verticalOscillation
+            //수직진폭
             splits[i].avgVerticalOscillation = averageValue(
                 of: verticalOscillations, from: start, to: end)
-            //power
+            //파워
             splits[i].avgPower = averageValue(
                 of: powers, from: start, to: end)
-            //speed
+            //속도
             splits[i].avgSpeed = averageValue(
                 of: speeds, from: start, to: end)
-            //groundContactTime
+            //지면 접촉 시간
             splits[i].avgGroundContactTime = averageValue(
                 of: groundContactTimes, from: start, to: end)
             
-            // altitude
+            //고도
             let altsInRange = altitudes.filter { $0.date >= start && $0.date <= end }
             if altsInRange.count >= 2 {
                 splits[i].elevationChange = (altsInRange.last!.altitude) - (altsInRange.first!.altitude)
@@ -399,10 +669,7 @@ final class HealthKitStore {
         }
     }
 
-    private func averageValue(
-        of samples: [QuantitySamplePoint],
-        from start: Date,
-        to end: Date) -> Double? {
+    private func averageValue(of samples: [QuantitySamplePoint], from start: Date, to end: Date) -> Double? {
             let inRange = samples.filter { $0.startDate >= start && $0.startDate < end }
             guard !inRange.isEmpty else { return nil }
             return inRange.reduce(0) { $0 + $1.value } / Double(inRange.count)
