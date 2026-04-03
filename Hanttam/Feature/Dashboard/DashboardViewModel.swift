@@ -9,6 +9,7 @@ import UIKit
 import HealthKit
 import RxCocoa
 import RxSwift
+import WidgetKit
 
 final class DashboardViewModel: HTReusableVMProtocol {
     

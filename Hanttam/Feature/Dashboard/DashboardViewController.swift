@@ -17,6 +17,15 @@ final class DashboardViewController: HTViewController {
     private let disposeBag         = DisposeBag()
     private let viewDidLoadTrigger = PublishSubject<Void>()
     
+    // MARK: - Colors (sPQ7E style)
+
+    private let bgColor = AppColor.UI.dashboardBg
+    private let secondaryBg = AppColor.UI.dashboardSecondaryBg
+    private let textDark = AppColor.UI.dashboardTextDark
+    private let textGray = AppColor.UI.dashboardTextGray
+    
+    // MARK: - Subviews
+    
     private lazy var scrollView: UIScrollView = {
         let sv = UIScrollView()
         sv.showsVerticalScrollIndicator   = false
@@ -33,17 +42,17 @@ final class DashboardViewController: HTViewController {
     
     private let headerLabel: UILabel = {
         let l = UILabel()
-        l.text      = "My Insights"
-        l.font      = .systemFont(ofSize: 10, weight: .heavy)
-        l.textColor = UIColor(red: 0, green: 0.31, blue: 0.83, alpha: 1)
+        l.text = "PERFORMANCE INSIGHTS"
+        l.font = AppFont.UI.labelSM
+        l.textColor = AppColor.UI.textSecondary
         return l
     }()
     
     private let titleLabel: UILabel = {
         let l = UILabel()
-        l.text      = "Anayltics Center"
-        l.font      = .systemFont(ofSize: 32, weight: .black)
-        l.textColor = UIColor(red: 0.18, green: 0.18, blue: 0.19, alpha: 1)
+        l.text = "Analytics"
+        l.font = AppFont.UI.displaySM
+        l.textColor = AppColor.UI.textPrimary
         return l
     }()
     
@@ -67,10 +76,10 @@ final class DashboardViewController: HTViewController {
         
         let appearance = UINavigationBarAppearance()
         appearance.configureWithDefaultBackground()
-        appearance.backgroundColor = UIColor.white.withAlphaComponent(0.81)
+        appearance.backgroundColor = UIColor.white.withAlphaComponent(0.92)
         appearance.titleTextAttributes = [
-            .font: UIFont.systemFont(ofSize: 17, weight: .bold),
-            .foregroundColor: UIColor.systemGray
+            .font: AppFont.UI.titleMD,
+            .foregroundColor: textDark
         ]
         navigationItem.standardAppearance = appearance
         navigationItem.scrollEdgeAppearance = appearance
@@ -158,11 +167,8 @@ final class DashboardViewController: HTViewController {
             output.remainingDist
         )
         .drive(onNext: { [weak self] level, total, progress, remaining in
-            self?.runningGradeView.configure(
-                level: level,
-                totalDistance: total,
-                progress: progress,
-                remainingDistance: remaining)
+            self?.runningGradeView.configure(level: level, totalDistance: total,
+                                             progress: progress, remainingDistance: remaining)
         })
         .disposed(by: disposeBag)
         
@@ -175,6 +181,7 @@ final class DashboardViewController: HTViewController {
             .disposed(by: disposeBag)
     }
     
+    //MARK: - Update
     private func updateChart(thisDaily: [DailyCumulativeDistance],
                              lastDaily: [DailyCumulativeDistance],
                              thisTotal: Double, lastToal: Double, accentColor: Color) {

@@ -42,6 +42,7 @@ struct CumulativeChartView: View {
     }
     
     //MARK: - Selected day data
+    
     private var selectedThisDist: Double? {
         guard let day = selectedDay else { return nil }
         return thisMonthDist.first(where: { $0.day == day })?.cumulativeDistance
@@ -64,7 +65,6 @@ struct CumulativeChartView: View {
             
             chart
                 .chartXSelection(value: $rawSelectedDay)
-            
             if let day = selectedDay {
                 tooltipView(day: day)
                     .transition(.opacity.combined(with: .scale(scale: 0.95)))
@@ -76,7 +76,7 @@ struct CumulativeChartView: View {
             }
         }
         .padding(32)
-        .background(AppColor.bgPrimary)
+        .background(AppColor.backgroundPrimary)
         .clipShape(RoundedRectangle(cornerRadius: 24))
         .shadow(color: .black.opacity(0.05), radius: 1.75, y: 1)
         .animation(.easeOut(duration: 0.15), value: rawSelectedDay)
@@ -105,12 +105,12 @@ struct CumulativeChartView: View {
                 
                 Text(String(format: "%@%.1fkm", diffSign, diff))
                     .font(.system(size: 13, weight: .bold))
-                    .foregroundStyle(diff >= 0 ? accentColor : AppColor.textSecondary)
+                    .foregroundStyle(diff >= 0 ? accentColor : AppColor.red)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 4)
                     .background(
                         Capsule()
-                            .fill(diff >= 0 ? accentColor.opacity(0.1) : AppColor.bgTertiary.opacity(0.1))
+                            .fill(diff >= 0 ? accentColor.opacity(0.1) : AppColor.red.opacity(0.1))
                     )
             }
         }
