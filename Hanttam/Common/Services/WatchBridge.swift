@@ -11,6 +11,30 @@ import Foundation
 internal import HealthKit
 
 final class WatchBridge: NSObject, ObservableObject {
+    struct WatchConnectionInfo {
+        var isPaired: Bool = false
+        var isAppInstalled: Bool = false
+        var isReachable: Bool = false
+    }
+
+    struct PendingStartRequest {
+        let requestID: String
+        let kind: WorkoutKind
+        let sets: Int?
+        let lapDistance: Double?
+        let restDuration: Double?
+
+        var asApplicationContext: [String: Any] {
+            var context: [String: Any] = [
+                AppContextKey.startRequestID: requestID,
+                AppContextKey.startKind: kind.rawValue
+            ]
+            if let sets { context[AppContextKey.startSets] = sets }
+            if let lapDistance { context[AppContextKey.startLapDistance] = lapDistance }
+            if let restDuration { context[AppContextKey.startRestDuration] = restDuration }
+            return context
+        }
+    }
 
     enum WorkoutKind: String {
         case freeRun
@@ -30,22 +54,16 @@ final class WatchBridge: NSObject, ObservableObject {
     static let workoutLaunchRequestedNotification = Notification.Name("WatchBridgeWorkoutLaunchRequested")
     static let workoutSnapshotNotification        = Notification.Name("WatchBridgeWorkoutSnapshot")
     static let remoteCommandNotification          = Notification.Name("WatchBridgeRemoteCommand")
+    static let watchFailedFallbackNotification    = Notification.Name("WatchBridgeWatchFailed")
 
-#if os(iOS)
-    struct WatchConnectionInfo {
-        let isPaired: Bool
-        let isAppInstalled: Bool
-        let isReachable: Bool
+    private enum AppContextKey {
+        static let level = "level"
+        static let startRequestID = "pendingStartRequestID"
+        static let startKind = "pendingStartKind"
+        static let startSets = "pendingStartSets"
+        static let startLapDistance = "pendingStartLapDistance"
+        static let startRestDuration = "pendingStartRestDuration"
     }
-
-    private var pendingLevel: UserRunningLevel?
-    private var watchStartTimeout: DispatchWorkItem?
-    private let healthStore = HKHealthStore()
-    @Published private(set) var mirroredSession: HKWorkoutSession?
-    @Published private(set) var watchConnectionInfo = WatchConnectionInfo(
-        isPaired: false, isAppInstalled: false, isReachable: false
-    )
-#endif
 
 #if os(watchOS)
     /// `handle(_:workoutConfiguration:)` 에서 받은 설정을 보관.
@@ -55,6 +73,12 @@ final class WatchBridge: NSObject, ObservableObject {
 
     @Published private(set) var collectionState: CollectionState = .idle
     @Published private(set) var isWatchConnected: Bool = false
+    @Published private(set) var watchConnectionInfo = WatchConnectionInfo()
+
+    private let healthStore = HKHealthStore()
+    private var watchStartTimeout: DispatchWorkItem?
+    private var pendingLevel: UserRunningLevel?
+    private var pendingStartRequest: PendingStartRequest?
 
     private override init() {
         super.init()
@@ -62,9 +86,6 @@ final class WatchBridge: NSObject, ObservableObject {
         WCSession.default.delegate = self
         WCSession.default.activate()
         updateReachability()
-#if os(iOS)
-        setupMirroringHandler()
-#endif
     }
 
     private func updateReachability() {
@@ -89,10 +110,9 @@ final class WatchBridge: NSObject, ObservableObject {
 #if os(iOS)
     func sendLevel(_ level: UserRunningLevel) {
         guard WCSession.default.isWatchAppInstalled else { return }
+        pendingLevel = level
         if WCSession.default.activationState == .activated {
-            try? WCSession.default.updateApplicationContext(["level": level.rawValue])
-        } else {
-            pendingLevel = level
+            pushApplicationContext()
         }
     }
 #endif
@@ -119,17 +139,20 @@ final class WatchBridge: NSObject, ObservableObject {
         payload: [String: Any] = [:]
     ) -> Bool {
         guard canStartWorkoutOnWatch else {
-            collectionState = .phoneOnly(kind)
+            setCollectionState(.phoneOnly(kind))
             return false
         }
 
-        collectionState = .requesting(kind)
+        let request = makePendingStartRequest(kind: kind, payload: payload)
+        pendingStartRequest = request
+        pushApplicationContext()
+        setCollectionState(.requesting(kind), clearPendingStart: false)
 
         // 15초 타임아웃: 워치 응답이 없으면 phoneOnly로 폴백
         watchStartTimeout?.cancel()
         let work = DispatchWorkItem { [weak self] in
             guard let self, case .requesting = self.collectionState else { return }
-            self.collectionState = .phoneOnly(kind)
+            self.setCollectionState(.phoneOnly(kind))
         }
         watchStartTimeout = work
         DispatchQueue.main.asyncAfter(deadline: .now() + 15, execute: work)
@@ -143,7 +166,7 @@ final class WatchBridge: NSObject, ObservableObject {
             if !success {
                 print("[WatchBridge] startWatchApp failed: \(error?.localizedDescription ?? ""), fallback WCSession")
                 DispatchQueue.main.async { 
-                    WatchBridge.shared.sendStartViaWCSession(kind: kind, payload: payload) 
+                    WatchBridge.shared.sendStartViaWCSession(request)
                 }
             } else {
                 print("[WatchBridge] startWatchApp succeeded")
@@ -152,7 +175,7 @@ final class WatchBridge: NSObject, ObservableObject {
                 DispatchQueue.main.async {
                     if WCSession.default.activationState == .activated,
                        WCSession.default.isReachable {
-                        WatchBridge.shared.sendStartViaWCSession(kind: kind, payload: payload)
+                        WatchBridge.shared.sendStartViaWCSession(request, fallbackToPhone: false)
                     }
                     // If not reachable, watch handle(_:workoutConfiguration:) already fired
                     // and will report back via workoutStartedNotification when running
@@ -164,74 +187,87 @@ final class WatchBridge: NSObject, ObservableObject {
     }
 
     /// WCSession 경로로 startWorkout 커맨드 전송 (폴백 또는 인터벌 파라미터 전달용)
-    private func sendStartViaWCSession(kind: WorkoutKind, payload: [String: Any]) {
+    private func sendStartViaWCSession(_ request: PendingStartRequest, fallbackToPhone: Bool = true) {
         guard WCSession.default.activationState == .activated,
               WCSession.default.isReachable else {
-            collectionState = .phoneOnly(kind)
+            if fallbackToPhone {
+                setCollectionState(.phoneOnly(request.kind))
+            }
             return
         }
-        var message = payload
+        var message = request.asApplicationContext
         message["command"] = "startWorkout"
-        message["kind"] = kind.rawValue
+        message["kind"] = request.kind.rawValue
         WCSession.default.sendMessage(message) { [weak self] reply in
             guard let self else { return }
             DispatchQueue.main.async {
                 let accepted = (reply["accepted"] as? Bool) ?? false
-                if !accepted { self.collectionState = .phoneOnly(kind) }
+                if !accepted, fallbackToPhone {
+                    self.setCollectionState(.phoneOnly(request.kind))
+                }
             }
         } errorHandler: { [weak self] _ in
-            DispatchQueue.main.async { self?.collectionState = .phoneOnly(kind) }
+            DispatchQueue.main.async {
+                if fallbackToPhone {
+                    self?.setCollectionState(.phoneOnly(request.kind))
+                }
+            }
         }
     }
 
     func markPhoneOnly(for kind: WorkoutKind) {
-        collectionState = .phoneOnly(kind)
+        setCollectionState(.phoneOnly(kind))
     }
 
     func sendWorkoutCommand(_ command: String) {
-        let wcMessage: [String: Any] = [WorkoutStreamKey.command: command]
+        guard WCSession.default.activationState == .activated,
+              WCSession.default.isReachable else { return }
+        WCSession.default.sendMessage([WorkoutStreamKey.command: command], replyHandler: nil, errorHandler: nil)
+    }
 
-        // Primary: HK mirrored session (watchOS 10+ / iOS 17+)
-        if #available(iOS 17.0, *), let mirroredSession = mirroredSession,
-           let data = try? JSONEncoder().encode([WorkoutStreamKey.command: command]) {
-            mirroredSession.sendToRemoteWorkoutSession(data: data) { _, error in
-                if let error {
-                    print("[WatchBridge] sendToRemote failed, fallback WCSession: \(error)")
-                }
-            }
+    private func makePendingStartRequest(kind: WorkoutKind, payload: [String: Any]) -> PendingStartRequest {
+        PendingStartRequest(
+            requestID: UUID().uuidString,
+            kind: kind,
+            sets: payload["sets"] as? Int,
+            lapDistance: payload["lapDistance"] as? Double,
+            restDuration: payload["restDuration"] as? Double
+        )
+    }
+
+    private func currentApplicationContext() -> [String: Any] {
+        var context: [String: Any] = [
+            AppContextKey.level: (pendingLevel ?? RunningLevelManager.shared.level).rawValue
+        ]
+        if let pendingStartRequest {
+            pendingStartRequest.asApplicationContext.forEach { context[$0.key] = $0.value }
         }
-        
-        // Parallel / Fallback: WCSession
-        // 운동이 일시정지된 상태 등에서는 HK 채널이 지연되거나 무시될 수 있으므로, 항상 WCSession으로도 명령을 보냅니다.
-        DispatchQueue.main.async {
-            guard WCSession.default.activationState == .activated,
-                  WCSession.default.isReachable else { return }
-            WCSession.default.sendMessage(wcMessage, replyHandler: nil, errorHandler: nil)
+        return context
+    }
+
+    private func pushApplicationContext() {
+        guard WCSession.default.activationState == .activated else { return }
+        do {
+            try WCSession.default.updateApplicationContext(currentApplicationContext())
+        } catch {
+            print("[WatchBridge] updateApplicationContext failed: \(error.localizedDescription)")
         }
     }
 
-    // MARK: - HK Mirroring Setup
+    private func clearPendingStartRequest() {
+        guard pendingStartRequest != nil else { return }
+        pendingStartRequest = nil
+        pushApplicationContext()
+    }
 
-    private func setupMirroringHandler() {
-        if #available(iOS 17.0, *) {
-            healthStore.workoutSessionMirroringStartHandler = { [weak self] mirroredSession in
-                guard let self else { return }
-                DispatchQueue.main.async {
-                    self.mirroredSession = mirroredSession
-                    mirroredSession.delegate = self
-                    let kind: WorkoutKind = mirroredSession.workoutConfiguration.locationType == .indoor
-                        ? .intervalRun : .freeRun
-                    self.watchStartTimeout?.cancel()
-                    self.watchStartTimeout = nil
-                    self.collectionState = .collectingOnWatch(kind)
-                    print("[WatchBridge] mirroredSession received, kind=\(kind)")
-                    NotificationCenter.default.post(
-                        name: Self.workoutStartedNotification,
-                        object: nil,
-                        userInfo: ["kind": kind.rawValue]
-                    )
-                }
-            }
+    private func setCollectionState(_ state: CollectionState, clearPendingStart: Bool = true) {
+        collectionState = state
+        guard clearPendingStart else { return }
+        switch state {
+        case .idle, .collectingOnWatch, .phoneOnly:
+            clearPendingStartRequest()
+        case .requesting:
+            break
         }
     }
 #endif
@@ -297,12 +333,11 @@ extension WatchBridge: WCSessionDelegate {
 
 #if os(iOS)
         if let level = pendingLevel {
-            try? session.updateApplicationContext(["level": level.rawValue])
-            pendingLevel = nil
+            pendingLevel = level
         } else {
-            let current = RunningLevelManager.shared.level
-            try? session.updateApplicationContext(["level": current.rawValue])
+            pendingLevel = RunningLevelManager.shared.level
         }
+        pushApplicationContext()
 #endif
 
 #if os(watchOS)
@@ -338,7 +373,7 @@ extension WatchBridge: WCSessionDelegate {
         if message[WorkoutStreamKey.sessionStarted] != nil { return }
         if message[WorkoutStreamKey.sessionEnded] != nil {
             DispatchQueue.main.async {
-                self.collectionState = .idle
+                self.setCollectionState(.idle)
                 NotificationCenter.default.post(name: Self.workoutStoppedNotification, object: nil)
             }
             return
@@ -346,9 +381,9 @@ extension WatchBridge: WCSessionDelegate {
         if message[WorkoutStreamKey.sessionError] != nil {
             DispatchQueue.main.async {
                 if case .requesting(let kind) = self.collectionState {
-                    self.collectionState = .phoneOnly(kind)
+                    self.setCollectionState(.phoneOnly(kind))
                 } else if case .collectingOnWatch(let kind) = self.collectionState {
-                    self.collectionState = .phoneOnly(kind)
+                    self.setCollectionState(.phoneOnly(kind))
                 }
             }
             return
@@ -391,8 +426,9 @@ extension WatchBridge: WCSessionDelegate {
             case "started":
                 self.watchStartTimeout?.cancel()
                 self.watchStartTimeout = nil
-                self.collectionState = .collectingOnWatch(kind)
-            case "stopped": self.collectionState = .idle
+                self.setCollectionState(.collectingOnWatch(kind))
+            case "stopped":
+                self.setCollectionState(.idle)
             default: break
             }
 #endif
@@ -473,53 +509,3 @@ extension WatchBridge: WCSessionDelegate {
     }
 #endif
 }
-
-// MARK: - HKWorkoutSessionDelegate (iOS — mirrored session events)
-
-#if os(iOS)
-extension WatchBridge: HKWorkoutSessionDelegate {
-
-    @available(iOS 17.0, *)
-    func workoutSession(_ workoutSession: HKWorkoutSession,
-                        didChangeTo toState: HKWorkoutSessionState,
-                        from fromState: HKWorkoutSessionState,
-                        date: Date) {
-        guard toState == .ended else { return }
-        DispatchQueue.main.async {
-            self.mirroredSession = nil
-            self.collectionState = .idle
-            NotificationCenter.default.post(name: Self.workoutStoppedNotification, object: nil)
-        }
-    }
-
-    @available(iOS 17.0, *)
-    func workoutSession(_ workoutSession: HKWorkoutSession,
-                        didFailWithError error: Error) {
-        print("[WatchBridge] Mirrored session error: \(error)")
-        DispatchQueue.main.async {
-            if case .requesting(let kind) = self.collectionState {
-                self.collectionState = .phoneOnly(kind)
-            } else if case .collectingOnWatch(let kind) = self.collectionState {
-                self.collectionState = .phoneOnly(kind)
-            }
-            self.mirroredSession = nil
-        }
-    }
-
-    /// 워치에서 `sendToRemoteWorkoutSession`으로 보낸 GPS·페이스 스냅샷 수신
-    @available(iOS 17.0, *)
-    func workoutSession(_ workoutSession: HKWorkoutSession,
-                        didReceiveDataFromRemoteWorkoutSession data: [Data]) {
-        for d in data {
-            guard let snapshot = try? JSONDecoder().decode(WorkoutDataSnapshot.self, from: d) else { continue }
-            DispatchQueue.main.async {
-                NotificationCenter.default.post(
-                    name: Self.workoutSnapshotNotification,
-                    object: nil,
-                    userInfo: ["snapshot": snapshot]
-                )
-            }
-        }
-    }
-}
-#endif
