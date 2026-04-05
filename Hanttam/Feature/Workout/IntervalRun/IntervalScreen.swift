@@ -10,10 +10,10 @@ import SwiftUI
 struct IntervalScreen: View {
     
     @Binding var totalSets: Int
+    let startAction: () -> Void
     @State private var accumulatedAngle: Double = 0
     @State private var lastAngle: Double?
     @State private var showSettings = false
-    @Binding var showIntervalRun: Bool
 
     @AppStorage("intervalLapDistance") private var lapDistance: Double = 400
     @AppStorage("intervalRestDuration") private var restDuration: Double = 20
@@ -40,6 +40,11 @@ struct IntervalScreen: View {
             VStack(spacing: 0) {
                 headerSection
                 ringSection
+            }
+            .offset(y: 40)
+
+            VStack(spacing: 0) {
+                Spacer()
                 bottomButtons
             }
         }
@@ -47,11 +52,6 @@ struct IntervalScreen: View {
         .sensoryFeedback(.impact(weight: .heavy), trigger: totalSets / setsPerRotation)
         .sheet(isPresented: $showSettings) {
             IntervalSettingsView()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: WatchBridge.workoutStartedNotification)) { note in
-            guard let kindRaw = note.userInfo?["kind"] as? String,
-                  kindRaw == WatchBridge.WorkoutKind.intervalRun.rawValue else { return }
-            showIntervalRun = true
         }
     }
 
@@ -212,13 +212,6 @@ struct IntervalScreen: View {
     }
 
     private func startIntervalWorkout() {
-        let payload: [String: Any] = [
-            "sets": totalSets,
-            "lapDistance": lapDistance,
-            "restDuration": restDuration
-        ]
-
-        WatchBridge.shared.requestWorkoutStartOnWatch(kind: .intervalRun, payload: payload)
-        showIntervalRun = true
+        startAction()
     }
 }

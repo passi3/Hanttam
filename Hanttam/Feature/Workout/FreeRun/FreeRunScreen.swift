@@ -9,7 +9,7 @@ import SwiftUI
 
 struct FreeRunScreen: View {
     
-    @Binding var showFreeRun: Bool
+    let startAction: () -> Void
     @ObservedObject private var levelManager = RunningLevelManager.shared
     
     private let ringSize: CGFloat            = 280
@@ -21,13 +21,13 @@ struct FreeRunScreen: View {
             VStack(spacing: 0) {
                 headerSection
                 ringButton
+            }
+            .offset(y: 40)
+
+            VStack(spacing: 0) {
+                Spacer()
                 bottomButtons
             }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: WatchBridge.workoutStartedNotification)) { note in
-            guard let kindRaw = note.userInfo?["kind"] as? String,
-                  kindRaw == WatchBridge.WorkoutKind.freeRun.rawValue else { return }
-            showFreeRun = true
         }
     }
     
@@ -47,8 +47,7 @@ struct FreeRunScreen: View {
     
     private var ringButton: some View {
         Button {
-            WatchBridge.shared.requestWorkoutStartOnWatch(kind: .freeRun)
-            showFreeRun = true
+            startAction()
         } label: {
             HanttamCirclesView(
                 topCircleOffsetY: -25,
