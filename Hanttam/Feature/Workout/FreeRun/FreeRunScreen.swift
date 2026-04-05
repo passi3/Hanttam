@@ -11,8 +11,6 @@ struct FreeRunScreen: View {
     
     @Binding var showFreeRun: Bool
     @ObservedObject private var levelManager = RunningLevelManager.shared
-    @State private var isPressed             = false
-    @State private var holeOffsetY: CGFloat  = -25
     
     private let ringSize: CGFloat            = 280
     
@@ -21,11 +19,9 @@ struct FreeRunScreen: View {
             Color.clear.ignoresSafeArea()
 
             VStack(spacing: 0) {
-                Spacer()
                 headerSection
                 ringButton
                 bottomButtons
-                Spacer()
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: WatchBridge.workoutStartedNotification)) { note in
@@ -50,33 +46,17 @@ struct FreeRunScreen: View {
     }
     
     private var ringButton: some View {
-        HanttamCirclesView(
-            topCircleOffsetY: holeOffsetY,
-            size: ringSize,
-            icon: "play.fill"
-        )
-        .scaleEffect(isPressed ? 0.93 : 1.0)
-        .contentShape(Circle())
-        .gesture(
-            DragGesture(minimumDistance: 0)
-                .onChanged { _ in
-                    withAnimation(.easeIn(duration: 0.08)) {
-                        isPressed = true
-                        holeOffsetY = -10
-                    }
-                }
-                .onEnded { v in
-                    withAnimation(.spring(duration: 0.3)) {
-                        isPressed = false
-                        holeOffsetY = -25
-                    }
-                    if abs(v.translation.width) < 10 && abs(v.translation.height) < 10 {
-                        if !WatchBridge.shared.requestWorkoutStartOnWatch(kind: .freeRun) {
-                            showFreeRun = true
-                        }
-                    }
-                }
-        )
+        Button {
+            WatchBridge.shared.requestWorkoutStartOnWatch(kind: .freeRun)
+            showFreeRun = true
+        } label: {
+            HanttamCirclesView(
+                topCircleOffsetY: -25,
+                size: ringSize,
+                icon: "play.fill"
+            )
+        }
+        .buttonStyle(ScaleButtonStyle())
     }
 
     private var bottomButtons: some View {
@@ -85,4 +65,13 @@ struct FreeRunScreen: View {
             .frame(height: 52)
             .padding(.top, 24)
             .padding(.bottom, 48)
-    }}
+    }
+}
+
+struct ScaleButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.93 : 1.0)
+            .animation(.easeIn(duration: 0.1), value: configuration.isPressed)
+    }
+}

@@ -10,10 +10,49 @@
 		4016F6022F73C83700BC0F12 /* RxCocoa in Frameworks */ = {isa = PBXBuildFile; productRef = 4016F6012F73C83700BC0F12 /* RxCocoa */; };
 		4016F6042F73C83700BC0F12 /* RxSwift in Frameworks */ = {isa = PBXBuildFile; productRef = 4016F6032F73C83700BC0F12 /* RxSwift */; };
 		4016F6072F73C85100BC0F12 /* SnapKit in Frameworks */ = {isa = PBXBuildFile; productRef = 4016F6062F73C85100BC0F12 /* SnapKit */; };
+		409833DD2F7D5DFD0029B9CC /* Hanttam Watch Watch App.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = 409833D22F7D5DFA0029B9CC /* Hanttam Watch Watch App.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
+/* Begin PBXContainerItemProxy section */
+		409833DA2F7D5DFD0029B9CC /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 4060D53D2EEAAB2D00329FC8 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 409833D12F7D5DFA0029B9CC;
+			remoteInfo = "Hanttam Watch Watch App";
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		404E86102F7FAC0100AC76ED /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		409833DC2F7D5DFD0029B9CC /* Embed Watch Content */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "$(CONTENTS_FOLDER_PATH)/Watch";
+			dstSubfolderSpec = 16;
+			files = (
+				409833DD2F7D5DFD0029B9CC /* Hanttam Watch Watch App.app in Embed Watch Content */,
+			);
+			name = "Embed Watch Content";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
+		404E85F92F7FABFF00AC76ED /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
+		404E85FB2F7FABFF00AC76ED /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
+		404E861F2F7FAF6500AC76ED /* HanttamLiveActivityExtensionExtension.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = HanttamLiveActivityExtensionExtension.entitlements; sourceTree = "<group>"; };
 		4060D5452EEAAB2D00329FC8 /* Hanttam.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Hanttam.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		409833D22F7D5DFA0029B9CC /* Hanttam Watch Watch App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Hanttam Watch Watch App.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -24,15 +63,49 @@
 			);
 			target = 4060D5442EEAAB2D00329FC8 /* Hanttam */;
 		};
+		409833E42F7D5E6D0029B9CC /* Exceptions for "Hanttam" folder in "Hanttam Watch Watch App" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Common/Design/AppColor.swift,
+				Common/Models/RunningRecord.swift,
+				Common/Models/UserRunningLevel.swift,
+				Common/Models/WorkoutAttributes.swift,
+				Common/Models/WorkoutStreamProtocol.swift,
+				Common/Services/RunningLevelManager.swift,
+				Common/Services/WatchBridge.swift,
+			);
+			target = 409833D12F7D5DFA0029B9CC /* Hanttam Watch Watch App */;
+		};
+		40AA00012F7D5DFA0029B9CC /* Exceptions for "Hanttam Watch Watch App" folder in "Hanttam Watch Watch App" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 409833D12F7D5DFA0029B9CC /* Hanttam Watch Watch App */;
+		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
+		404E85FD2F7FABFF00AC76ED /* HanttamLiveActivityExtension */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = HanttamLiveActivityExtension;
+			sourceTree = "<group>";
+		};
 		4060D5472EEAAB2D00329FC8 /* Hanttam */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
 				4060D5572EEAAB2F00329FC8 /* Exceptions for "Hanttam" folder in "Hanttam" target */,
+				409833E42F7D5E6D0029B9CC /* Exceptions for "Hanttam" folder in "Hanttam Watch Watch App" target */,
 			);
 			path = Hanttam;
+			sourceTree = "<group>";
+		};
+		409833D32F7D5DFA0029B9CC /* Hanttam Watch Watch App */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				40AA00012F7D5DFA0029B9CC /* Exceptions for "Hanttam Watch Watch App" folder in "Hanttam Watch Watch App" target */,
+			);
+			path = "Hanttam Watch Watch App";
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -48,13 +121,33 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		409833CF2F7D5DFA0029B9CC /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		404E85F82F7FABFF00AC76ED /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				404E85F92F7FABFF00AC76ED /* WidgetKit.framework */,
+				404E85FB2F7FABFF00AC76ED /* SwiftUI.framework */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
 		4060D53C2EEAAB2D00329FC8 = {
 			isa = PBXGroup;
 			children = (
+				404E861F2F7FAF6500AC76ED /* HanttamLiveActivityExtensionExtension.entitlements */,
 				4060D5472EEAAB2D00329FC8 /* Hanttam */,
+				409833D32F7D5DFA0029B9CC /* Hanttam Watch Watch App */,
+				404E85FD2F7FABFF00AC76ED /* HanttamLiveActivityExtension */,
+				404E85F82F7FABFF00AC76ED /* Frameworks */,
 				4060D5462EEAAB2D00329FC8 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -63,6 +156,7 @@
 			isa = PBXGroup;
 			children = (
 				4060D5452EEAAB2D00329FC8 /* Hanttam.app */,
+				409833D22F7D5DFA0029B9CC /* Hanttam Watch Watch App.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -77,10 +171,13 @@
 				4060D5412EEAAB2D00329FC8 /* Sources */,
 				4060D5422EEAAB2D00329FC8 /* Frameworks */,
 				4060D5432EEAAB2D00329FC8 /* Resources */,
+				409833DC2F7D5DFD0029B9CC /* Embed Watch Content */,
+				404E86102F7FAC0100AC76ED /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				409833DB2F7D5DFD0029B9CC /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				4060D5472EEAAB2D00329FC8 /* Hanttam */,
@@ -95,6 +192,28 @@
 			productReference = 4060D5452EEAAB2D00329FC8 /* Hanttam.app */;
 			productType = "com.apple.product-type.application";
 		};
+		409833D12F7D5DFA0029B9CC /* Hanttam Watch Watch App */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 409833DE2F7D5DFD0029B9CC /* Build configuration list for PBXNativeTarget "Hanttam Watch Watch App" */;
+			buildPhases = (
+				409833CE2F7D5DFA0029B9CC /* Sources */,
+				409833CF2F7D5DFA0029B9CC /* Frameworks */,
+				409833D02F7D5DFA0029B9CC /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				409833D32F7D5DFA0029B9CC /* Hanttam Watch Watch App */,
+			);
+			name = "Hanttam Watch Watch App";
+			packageProductDependencies = (
+			);
+			productName = "Hanttam Watch Watch App";
+			productReference = 409833D22F7D5DFA0029B9CC /* Hanttam Watch Watch App.app */;
+			productType = "com.apple.product-type.application";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -102,20 +221,23 @@
 			isa = PBXProject;
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
-				LastSwiftUpdateCheck = 2610;
-				LastUpgradeCheck = 2610;
+				LastSwiftUpdateCheck = 2640;
+				LastUpgradeCheck = 2640;
 				TargetAttributes = {
 					4060D5442EEAAB2D00329FC8 = {
 						CreatedOnToolsVersion = 26.1.1;
 					};
+					409833D12F7D5DFA0029B9CC = {
+						CreatedOnToolsVersion = 26.4;
+					};
 				};
 			};
 			buildConfigurationList = 4060D5402EEAAB2D00329FC8 /* Build configuration list for PBXProject "Hanttam" */;
-			developmentRegion = en;
+			developmentRegion = ko;
 			hasScannedForEncodings = 0;
 			knownRegions = (
-				en,
 				Base,
+				ko,
 			);
 			mainGroup = 4060D53C2EEAAB2D00329FC8;
 			minimizedProjectReferenceProxies = 1;
@@ -129,12 +251,20 @@
 			projectRoot = "";
 			targets = (
 				4060D5442EEAAB2D00329FC8 /* Hanttam */,
+				409833D12F7D5DFA0029B9CC /* Hanttam Watch Watch App */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
 		4060D5432EEAAB2D00329FC8 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		409833D02F7D5DFA0029B9CC /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -151,7 +281,22 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		409833CE2F7D5DFA0029B9CC /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		409833DB2F7D5DFD0029B9CC /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 409833D12F7D5DFA0029B9CC /* Hanttam Watch Watch App */;
+			targetProxy = 409833DA2F7D5DFD0029B9CC /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		4060D5592EEAAB2F00329FC8 /* Debug */ = {
@@ -165,16 +310,19 @@
 				DEVELOPMENT_TEAM = 29MZ57KJPA;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Hanttam/Info.plist;
-				INFOPLIST_KEY_NSHealthShareUsageDescription = "한땀이 운동 기록 및 경로를 조회하기 위해 건강 데이터에 대한 접근이 필요합니다.";
-				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "한땀이 현재 위치를 지도에 표시하기 위해 접근이 필요합니다.";
-				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "한땀이 편집한 사진을 사진첩에 저장하기 위해 사진 라이브러리 저장 접근이 필요합니다.";
-				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "한땀이 사용자의 사진을 표시하기 위해 사진 라이브러리 접근이 필요합니다.";
+				INFOPLIST_KEY_NSCameraUsageDescription = "편집할 사진을 촬영하기 위해 카메라 접근이 필요합니다.";
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "운동 기록 및 경로를 조회하기 위해 건강 데이터에 대한 접근이 필요합니다.";
+				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "운동 기록을 저장하기 위해 사용합니다.";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "현재 위치를 지도에 표시하기 위해 접근이 필요합니다.";
+				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "편집된 사진을 사진첩에 저장하기 위해 접근이 필요합니다.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "편집할 사진을 선택하기 위해 사진 라이브러리 접근이 필요합니다.";
+				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
 				INFOPLIST_KEY_UIStatusBarStyle = UIStatusBarStyleLightContent;
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -188,11 +336,11 @@
 				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
-				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = nonisolated;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
+				TARGETED_DEVICE_FAMILY = 1;
 			};
 			name = Debug;
 		};
@@ -207,16 +355,19 @@
 				DEVELOPMENT_TEAM = 29MZ57KJPA;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Hanttam/Info.plist;
-				INFOPLIST_KEY_NSHealthShareUsageDescription = "한땀이 운동 기록 및 경로를 조회하기 위해 건강 데이터에 대한 접근이 필요합니다.";
-				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "한땀이 현재 위치를 지도에 표시하기 위해 접근이 필요합니다.";
-				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "한땀이 편집한 사진을 사진첩에 저장하기 위해 사진 라이브러리 저장 접근이 필요합니다.";
-				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "한땀이 사용자의 사진을 표시하기 위해 사진 라이브러리 접근이 필요합니다.";
+				INFOPLIST_KEY_NSCameraUsageDescription = "편집할 사진을 촬영하기 위해 카메라 접근이 필요합니다.";
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "운동 기록 및 경로를 조회하기 위해 건강 데이터에 대한 접근이 필요합니다.";
+				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "운동 기록을 저장하기 위해 사용합니다.";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "현재 위치를 지도에 표시하기 위해 접근이 필요합니다.";
+				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "편집된 사진을 사진첩에 저장하기 위해 접근이 필요합니다.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "편집할 사진을 선택하기 위해 사진 라이브러리 접근이 필요합니다.";
+				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
 				INFOPLIST_KEY_UIStatusBarStyle = UIStatusBarStyleLightContent;
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -230,11 +381,11 @@
 				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
-				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = nonisolated;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
+				TARGETED_DEVICE_FAMILY = 1;
 			};
 			name = Release;
 		};
@@ -243,6 +394,7 @@
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_LOCALIZABILITY_NONLOCALIZED = YES;
 				CLANG_ANALYZER_NONNULL = YES;
 				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
 				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
@@ -297,6 +449,7 @@
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
 				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 			};
@@ -307,6 +460,7 @@
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_LOCALIZABILITY_NONLOCALIZED = YES;
 				CLANG_ANALYZER_NONNULL = YES;
 				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
 				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
@@ -354,8 +508,71 @@
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_COMPILATION_MODE = wholemodule;
 				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		409833DF2F7D5DFD0029B9CC /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = "Hanttam Watch Watch App/Hanttam Watch Watch App.entitlements";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 29MZ57KJPA;
+				ENABLE_PREVIEWS = YES;
+				INFOPLIST_FILE = "Hanttam Watch Watch App/Info.plist";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.passi3.Hanttam.watchkitapp;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 11.0;
+			};
+			name = Debug;
+		};
+		409833E02F7D5DFD0029B9CC /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = "Hanttam Watch Watch App/Hanttam Watch Watch App.entitlements";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 29MZ57KJPA;
+				ENABLE_PREVIEWS = YES;
+				INFOPLIST_FILE = "Hanttam Watch Watch App/Info.plist";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.passi3.Hanttam.watchkitapp;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 11.0;
 			};
 			name = Release;
 		};
@@ -376,6 +593,15 @@
 			buildConfigurations = (
 				4060D5592EEAAB2F00329FC8 /* Debug */,
 				4060D55A2EEAAB2F00329FC8 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		409833DE2F7D5DFD0029B9CC /* Build configuration list for PBXNativeTarget "Hanttam Watch Watch App" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				409833DF2F7D5DFD0029B9CC /* Debug */,
+				409833E02F7D5DFD0029B9CC /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

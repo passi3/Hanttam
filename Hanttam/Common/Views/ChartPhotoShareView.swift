@@ -849,13 +849,18 @@ final class PhotoGridLoader: ObservableObject {
     private func loadAssets() {
         let options = PHFetchOptions()
         options.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
-        options.fetchLimit = 200
-        let result = PHAsset.fetchAssets(with: .image, options: options)
-        var fetched: [PHAsset] = []
-        result.enumerateObjects { asset, _, _ in
-            fetched.append(asset)
+        // fetchLimit을 설정하지 않으면 모든 이미지를 가져옵니다.
+        
+        DispatchQueue.global(qos: .userInitiated).async {
+            let result = PHAsset.fetchAssets(with: .image, options: options)
+            var fetched: [PHAsset] = []
+            result.enumerateObjects { asset, _, _ in
+                fetched.append(asset)
+            }
+            DispatchQueue.main.async {
+                self.assets = fetched
+            }
         }
-        DispatchQueue.main.async { self.assets = fetched }
     }
 }
 

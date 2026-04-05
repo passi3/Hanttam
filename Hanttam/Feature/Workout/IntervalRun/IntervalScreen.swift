@@ -38,7 +38,6 @@ struct IntervalScreen: View {
             Color.clear.ignoresSafeArea()
 
             VStack(spacing: 0) {
-                Spacer()
                 headerSection
                 ringSection
                 bottomButtons
@@ -219,8 +218,7 @@ struct IntervalScreen: View {
             "restDuration": restDuration
         ]
 
-        if !WatchBridge.shared.requestWorkoutStartOnWatch(kind: .intervalRun, payload: payload) {
-            showIntervalRun = true
-        }
+        WatchBridge.shared.requestWorkoutStartOnWatch(kind: .intervalRun, payload: payload)
+        showIntervalRun = true
     }
 }

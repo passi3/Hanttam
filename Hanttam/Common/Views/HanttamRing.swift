@@ -56,7 +56,14 @@ struct HanttamCirclesView: View {
             PunchedBigCircle(holeSize: holeSize, holeOffsetY: holeOffY)
                 .fill(color, style: FillStyle(eoFill: true))
                 .frame(width: size, height: size)
-
+            Circle()
+                .strokeBorder(.white, lineWidth: 2)
+                .frame(width: holeSize + 56, height: holeSize + 56)
+                .offset(y: holeOffY + 18)
+            Circle()
+                .strokeBorder(.white, lineWidth: 2)
+                .frame(width: holeSize + 22, height: holeSize + 22)
+                .offset(y: holeOffY + 6)
             if let icon {
 
                 // 글로우 레이어
@@ -74,4 +81,8 @@ struct HanttamCirclesView: View {
         }
         .frame(width: size, height: size)
     }
+}
+
+#Preview {
+    HanttamCirclesView()
 }

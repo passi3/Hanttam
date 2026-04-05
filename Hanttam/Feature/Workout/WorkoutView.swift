@@ -20,6 +20,7 @@ struct WorkoutView: View {
     @State private var page = 0
     @State private var showFreeRun = false
     @State private var showIntervalRun = false
+    @State private var showWatchInfo = false
     @State private var intervalSets: Int = 0
     @AppStorage("intervalLapDistance") private var lapDistance: Double = 400
     @AppStorage("intervalRestDuration") private var restDuration: Double = 20
@@ -56,7 +57,7 @@ struct WorkoutView: View {
                 pointsOfInterest: .excludingAll,
                 showsTraffic: false
             ))
-
+            
             TabView(selection: $page) {
                 FreeRunScreen(showFreeRun: $showFreeRun)
                     .tag(0)
@@ -81,7 +82,10 @@ struct WorkoutView: View {
                 }
                 .animation(.spring(duration: 0.3), value: page)
 
-                indoorOutdoorToggle
+                HStack(spacing: 8) {
+                    indoorOutdoorToggle
+                    deviceConnectionIndicator
+                }
             }
             .padding(.top, 6)
         }
@@ -96,6 +100,11 @@ struct WorkoutView: View {
                 isIndoor: isIndoor,
                 isWatchPrimary: isWatchPrimary(kind: .intervalRun)
             )
+        }
+        .sheet(isPresented: $showWatchInfo) {
+            WatchConnectionSheet(info: watchBridge.watchConnectionInfo)
+                .presentationDetents([.height(280)])
+                .presentationDragIndicator(.visible)
         }
         .onAppear {
             LocationService.shared.startPeriodicUpdates(interval: 1.0)
@@ -115,7 +124,26 @@ struct WorkoutView: View {
             case .freeRun:
                 showFreeRun = true
             case .intervalRun:
+                // 워치에서 전달된 인터벌 설정으로 업데이트
+                if let sets = note.userInfo?["sets"] as? Int, sets > 0 {
+                    intervalSets = sets
+                }
+                if let ld = note.userInfo?["lapDistance"] as? Double {
+                    lapDistance = ld
+                }
+                if let rd = note.userInfo?["restDuration"] as? Double {
+                    restDuration = rd
+                }
                 showIntervalRun = true
+            }
+        }
+        .onChange(of: watchBridge.collectionState) { _, newState in
+            guard !showFreeRun, !showIntervalRun else { return }
+            if case .phoneOnly(let kind) = newState {
+                switch kind {
+                case .freeRun:     showFreeRun = true
+                case .intervalRun: showIntervalRun = true
+                }
             }
         }
         .onChange(of: location.locationUpdated) { _, _ in
@@ -176,7 +204,7 @@ struct WorkoutView: View {
             withAnimation(.spring(duration: 0.25)) { isIndoor.toggle() }
         } label: {
             HStack(spacing: 5) {
-                Image(systemName: isIndoor ? "building.2" : "figure.run")
+                Image(systemName: isIndoor ? "figure.run.treadmill" : "figure.run")
                     .font(.system(size: 20, weight: .semibold))
                 Text(isIndoor ? "실내" : "실외")
                     .font(AppFont.labelSM)
@@ -189,12 +217,60 @@ struct WorkoutView: View {
         }
     }
 
+    private var deviceConnectionIndicator: some View {
+        Button { showWatchInfo = true } label: {
+            HStack(spacing: 5) {
+                Image(systemName: watchBridge.isWatchConnected ? "applewatch" : "iphone")
+                    .font(.system(size: 20, weight: .semibold))
+                Text(watchBridge.isWatchConnected ? "워치" : "아이폰")
+                    .font(AppFont.labelSM)
+                    .tracking(1)
+            }
+            .foregroundStyle(watchBridge.isWatchConnected ? AppColor.success : AppColor.textSecondary)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background(AppColor.cardBackground.opacity(0.94), in: Capsule())
+        }
+    }
+
     private func isWatchPrimary(kind: WatchBridge.WorkoutKind) -> Bool {
         switch watchBridge.collectionState {
         case .requesting(let currentKind), .collectingOnWatch(let currentKind):
             return currentKind == kind
         default:
             return false
+        }
+    }
+}
+
+private struct WatchConnectionSheet: View {
+    let info: WatchBridge.WatchConnectionInfo
+
+    var body: some View {
+        NavigationView {
+            List {
+                row(icon: "applewatch", title: "Apple Watch 페어링",
+                    value: info.isPaired ? "연결됨" : "연결 안 됨",
+                    ok: info.isPaired)
+                row(icon: "app.badge.checkmark", title: "한땀 앱 설치",
+                    value: info.isAppInstalled ? "설치됨" : "미설치",
+                    ok: info.isAppInstalled)
+                row(icon: "antenna.radiowaves.left.and.right", title: "현재 통신 가능",
+                    value: info.isReachable ? "가능" : "불가능",
+                    ok: info.isReachable)
+            }
+            .navigationTitle("연결된 기기")
+            .navigationBarTitleDisplayMode(.inline)
+        }
+    }
+
+    private func row(icon: String, title: String, value: String, ok: Bool) -> some View {
+        HStack {
+            Label(title, systemImage: icon)
+            Spacer()
+            Text(value)
+                .foregroundStyle(ok ? AppColor.success : AppColor.textSecondary)
+                .font(AppFont.labelSM)
         }
     }
 }

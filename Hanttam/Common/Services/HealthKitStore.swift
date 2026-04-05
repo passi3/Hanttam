@@ -498,7 +498,7 @@ final class HealthKitStore {
                 if let route = (samples as? [HKWorkoutRoute])?.first {
                     self?.fetchLocations(from: route, completion: completion)
                 } else {
-                    
+                    DispatchQueue.main.async { completion([]) }
                 }
             }
             store.execute(query)

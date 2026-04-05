@@ -43,7 +43,7 @@ final class DashboardViewController: HTViewController {
     private let headerLabel: UILabel = {
         let l = UILabel()
         l.text = "PERFORMANCE INSIGHTS"
-        l.font = AppFont.UI.labelSM
+        l.font = AppFont.UI.labelLG
         l.textColor = AppColor.UI.textSecondary
         return l
     }()
@@ -102,10 +102,11 @@ final class DashboardViewController: HTViewController {
         }
     }
     override func configView() {
+        title = "한땀"
         view.backgroundColor = AppColor.UI.dashboardBg
         let headerStack     = UIStackView(arrangedSubviews: [headerLabel, titleLabel])
         headerStack.axis    = .vertical
-        headerStack.spacing = 16
+        headerStack.spacing = 8
         contentStack.addArrangedSubview(headerStack)
         
         let chartPlaceholder = UIView()

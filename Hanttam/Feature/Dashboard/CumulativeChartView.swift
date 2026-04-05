@@ -18,6 +18,12 @@ struct CumulativeChartView: View {
     @State private var rawSelectedDay: Int?
     
     private let today = Calendar.current.component(.day, from: Date())
+    private let lastDayOfMonth: Int = {
+        let calendar = Calendar.current
+        let date = Date()
+        let range = calendar.range(of: .day, in: .month, for: date)
+        return range?.count ?? 30
+    }()
     
     private var selectedDay: Int? {
         guard let raw = rawSelectedDay, raw >= 1, raw <= today else { return nil }
@@ -29,8 +35,13 @@ struct CumulativeChartView: View {
     private let labelGray   = AppColor.dashboardLabel
     private let textDark    = AppColor.dashboardTextDark
     
-    private var diff    : Double { thisMonthTotal - lastMonthTotal }
-    private var diffSign: String { diff >= 0 ? "+" : "" }
+    private var currentDiff: Double {
+        let thisToday = thisMonthDist.first(where: { $0.day == today })?.cumulativeDistance ?? 0
+        let lastToday = lastMonthDist.first(where: { $0.day == today })?.cumulativeDistance ?? 0
+        return thisToday - lastToday
+    }
+    
+    private var diffSign: String { currentDiff >= 0 ? "+" : "" }
     
     private var thisMonthName: String {
         AppFormatter.monthKo.string(from: Date())
@@ -60,15 +71,16 @@ struct CumulativeChartView: View {
     
     //MARK: - Body
     var body: some View {
-        VStack(alignment: .leading, spacing: 24) {
+        VStack(alignment: .leading, spacing: 16) {
             headerSection
             
-            chart
-                .chartXSelection(value: $rawSelectedDay)
             if let day = selectedDay {
                 tooltipView(day: day)
                     .transition(.opacity.combined(with: .scale(scale: 0.95)))
             }
+            
+            chart
+                .chartXSelection(value: $rawSelectedDay)
             
             HStack(spacing: 20) {
                 legendItem(color: accentColor, label: thisMonthName)
@@ -85,11 +97,11 @@ struct CumulativeChartView: View {
     //MARK: - Header
     @ViewBuilder
     private var headerSection: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 2) {
             Text("월별 누적 거리")
                 .font(.system(size: 10, weight: .heavy))
                 .tracking(1)
-                .foregroundStyle(labelGray)
+                .foregroundStyle(accentColor)
             
             HStack(alignment: .lastTextBaseline, spacing: 8) {
                 Text(String(format: "%.1f", thisMonthTotal))
@@ -103,14 +115,14 @@ struct CumulativeChartView: View {
                 
                 Spacer()
                 
-                Text(String(format: "%@%.1fkm", diffSign, diff))
+                Text(String(format: "%@%.1fkm", diffSign, currentDiff))
                     .font(.system(size: 13, weight: .bold))
-                    .foregroundStyle(diff >= 0 ? accentColor : AppColor.red)
+                    .foregroundStyle(currentDiff >= 0 ? accentColor : AppColor.red)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 4)
                     .background(
                         Capsule()
-                            .fill(diff >= 0 ? accentColor.opacity(0.1) : AppColor.red.opacity(0.1))
+                            .fill(currentDiff >= 0 ? accentColor.opacity(0.1) : AppColor.red.opacity(0.1))
                     )
             }
         }
@@ -180,7 +192,7 @@ struct CumulativeChartView: View {
             }
         }
         .chartXAxis {
-            AxisMarks(values: .stride(by: 5)) { value in
+            AxisMarks(values: Array(stride(from: 1, through: lastDayOfMonth, by: 5)) + [lastDayOfMonth]) { value in
                 AxisValueLabel {
                     if let day = value.as(Int.self) {
                         Text("\(day)일")
@@ -192,6 +204,7 @@ struct CumulativeChartView: View {
                     .foregroundStyle(AppColor.separator.opacity(0.2))
             }
         }
+        .chartXScale(domain: 1...lastDayOfMonth)
         .chartYAxis {
             AxisMarks(position: .leading) { value in
                 AxisValueLabel {

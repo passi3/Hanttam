@@ -13,11 +13,17 @@ final class MainTabBarController: UITabBarController {
     override func viewDidLoad() {
         super.viewDidLoad()
         setupTabs()
-        
+
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(levelDidChange),
-            name: RunningLevelManager.levelDidCahngeNotification,
+            name: RunningLevelManager.levelDidChangeNotification,
+            object: nil)
+
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(workoutStartedFromWatch),
+            name: WatchBridge.workoutStartedNotification,
             object: nil)
     }
     
@@ -28,9 +34,10 @@ final class MainTabBarController: UITabBarController {
     
     private func setupTabs() {
         let dashboardNav = UINavigationController(rootViewController: DashboardViewController())
+        let iconImg = UIImage(named: "AppIcon")?.withRenderingMode(.alwaysTemplate)
         dashboardNav.tabBarItem = UITabBarItem(
-            title: "분석",
-            image: UIImage(systemName: "chart.line.text.clipboard.fill"),
+            title: "한땀",
+            image: iconImg,
             tag: 0
         )
         
@@ -44,7 +51,7 @@ final class MainTabBarController: UITabBarController {
         let recordsNav = UINavigationController(rootViewController: RecordsViewController())
         recordsNav.tabBarItem = UITabBarItem(
             title: "기록",
-            image: UIImage(systemName: "list.bullet.rectangle"),
+            image: UIImage(systemName: "list.bullet.rectangle.fill"),
             tag: 2
         )
         
@@ -57,6 +64,12 @@ final class MainTabBarController: UITabBarController {
     
     @objc private func levelDidChange() {
         DispatchQueue.main.async { self.updateAppearance() }
+    }
+
+    @objc private func workoutStartedFromWatch() {
+        DispatchQueue.main.async {
+            self.selectedIndex = 1  // 운동 탭으로 전환
+        }
     }
     
 }

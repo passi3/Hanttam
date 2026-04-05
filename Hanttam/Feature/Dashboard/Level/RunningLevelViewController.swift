@@ -264,7 +264,7 @@ final class RunningLevelViewController: HTViewController {
         let trackWidth = progressTrack.bounds.width
         progressFillWidthConstraint?.update(offset: trackWidth * progress)
         
-        UIView.animate(withDuration: 1.0, delay: 0.3, options: .curveEaseOut) {
+        UIView.animate(withDuration: 3.0, delay: 0.3, options: .curveEaseOut) {
             self.view.layoutIfNeeded()
         }
     }

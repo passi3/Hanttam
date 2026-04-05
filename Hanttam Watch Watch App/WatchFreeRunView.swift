@@ -6,7 +6,6 @@
 //
 
 import SwiftUI
-import MapKit
 import CoreLocation
 import Combine
 
@@ -20,27 +19,60 @@ final class WatchRunSession: NSObject, ObservableObject {
     @Published var totalDistance: Double = 0       // meters
     @Published var avgPace: TimeInterval?           // sec/km
     @Published var currentPace: TimeInterval?       // sec/km
-    @Published var cameraPosition: MapCameraPosition = .automatic
+    @Published var heartRate: Double?
+    @Published var avgHeartRate: Double?
     @Published var route: [CLLocationCoordinate2D] = []
 
     private let locationManager = CLLocationManager()
+    private let hkManager = WatchWorkoutSessionManager()
     private var allLocations: [CLLocation] = []
     private var recentLocations: [CLLocation] = []
     private var timer: Timer?
     private var countdownTimer: Timer?
     private var didNotifyStarted = false
+    private var cancellables = Set<AnyCancellable>()
 
     override init() {
         super.init()
         locationManager.delegate = self
         locationManager.desiredAccuracy = kCLLocationAccuracyBestForNavigation
         locationManager.distanceFilter = 5
+
+        // HK 심박수 동기화
+        hkManager.$heartRate
+            .receive(on: DispatchQueue.main)
+            .assign(to: \.heartRate, on: self)
+            .store(in: &cancellables)
+        hkManager.$avgHeartRate
+            .receive(on: DispatchQueue.main)
+            .assign(to: \.avgHeartRate, on: self)
+            .store(in: &cancellables)
+
+        // 폰에서 보낸 리모트 커맨드 구독
+        NotificationCenter.default.publisher(for: WatchBridge.remoteCommandNotification)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] note in
+                guard let self, let cmd = note.userInfo?["command"] as? String else { return }
+                switch cmd {
+                case WorkoutStreamKey.commandPause:  self.pause()
+                case WorkoutStreamKey.commandResume: self.resume()
+                case WorkoutStreamKey.commandStop:   self.stop()
+                default: break
+                }
+            }
+            .store(in: &cancellables)
     }
 
-    func beginCountdown() {
+    func beginCountdown(skip: Bool = false) {
+        if skip {
+            startRunning()
+            return
+        }
         phase = .preparing
         countdown = 3
         locationManager.requestWhenInUseAuthorization()
+        Task { await hkManager.requestAuthorization() }
+
         countdownTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] t in
             guard let self else { t.invalidate(); return }
             self.countdown -= 1
@@ -54,7 +86,14 @@ final class WatchRunSession: NSObject, ObservableObject {
     private func startRunning() {
         phase = .running
         if !didNotifyStarted {
+            // 폰이 startWatchApp으로 앱을 실행했으면 해당 설정을 재사용, 아니면 기본 설정으로 시작
+            if let config = WatchBridge.shared.consumePendingWorkoutConfiguration() {
+                hkManager.startSession(with: config)
+            } else {
+                hkManager.startSession()
+            }
             WatchBridge.shared.sendWorkoutStarted(kind: .freeRun)
+            WatchBridge.shared.sendSessionEvent(WorkoutStreamKey.sessionStarted)
             didNotifyStarted = true
         }
         locationManager.startUpdatingLocation()
@@ -62,29 +101,54 @@ final class WatchRunSession: NSObject, ObservableObject {
             guard let self, self.phase == .running else { return }
             self.elapsed += 1
             self.recalcPace()
+            self.sendSnapshot()
         }
     }
 
     func pause() {
+        guard phase == .running else { return }
         phase = .paused
+        hkManager.pauseSession()
         locationManager.stopUpdatingLocation()
+        sendSnapshot()
     }
 
     func resume() {
+        guard phase == .paused else { return }
         phase = .running
+        hkManager.resumeSession()
         locationManager.startUpdatingLocation()
+        sendSnapshot()
     }
 
     func stop() {
+        guard phase != .finished else { return }
         phase = .finished
+        hkManager.endSession()
         locationManager.stopUpdatingLocation()
-        timer?.invalidate()
-        timer = nil
-        countdownTimer?.invalidate()
-        countdownTimer = nil
+        timer?.invalidate(); timer = nil
+        countdownTimer?.invalidate(); countdownTimer = nil
         if didNotifyStarted {
             WatchBridge.shared.sendWorkoutStopped(kind: .freeRun)
+            WatchBridge.shared.sendSessionEvent(WorkoutStreamKey.sessionEnded)
         }
+        sendSnapshot()
+    }
+
+    private func sendSnapshot() {
+        let snapshot = WorkoutDataSnapshot(
+            elapsed: elapsed,
+            totalDistance: totalDistance,
+            avgPace: avgPace,
+            currentPace: currentPace,
+            heartRate: heartRate,
+            activeCalories: hkManager.activeCalories,
+            currentLatitude: route.last?.latitude,
+            currentLongitude: route.last?.longitude,
+            phase: phase.rawValue
+        )
+        // HK 미러링 경로로 전송 (WCSession은 내부에서 폴백으로 사용)
+        hkManager.sendSnapshot(snapshot)
     }
 
     private func recalcPace() {
@@ -101,7 +165,7 @@ final class WatchRunSession: NSObject, ObservableObject {
         currentPace = t / (d / 1000)
     }
 
-    // MARK: - Formatted Strings
+    // MARK: - Formatted
 
     var durationText: String {
         let h = Int(elapsed) / 3600
@@ -111,18 +175,22 @@ final class WatchRunSession: NSObject, ObservableObject {
                      : String(format: "%02d:%02d", m, s)
     }
 
-    var distanceText: String { String(format: "%.2f KM", totalDistance / 1000) }
+    var distanceText: String { String(format: "%.2f", totalDistance / 1000) }
 
     func paceText(_ secPerKm: TimeInterval?) -> String {
         guard let p = secPerKm, p.isFinite, p > 0, p < 3600 else { return "--'--\"" }
         return String(format: "%d'%02d\"", Int(p) / 60, Int(p) % 60)
+    }
+
+    func hrText(_ bpm: Double?) -> String {
+        guard let bpm else { return "--" }
+        return String(format: "%.0f", bpm)
     }
 }
 
 // MARK: - CLLocationManagerDelegate
 
 extension WatchRunSession: CLLocationManagerDelegate {
-
     nonisolated func locationManager(_ manager: CLLocationManager,
                                      didUpdateLocations locations: [CLLocation]) {
         guard let loc = locations.last else { return }
@@ -134,11 +202,6 @@ extension WatchRunSession: CLLocationManagerDelegate {
             if recentLocations.count > 8 { recentLocations.removeFirst() }
             totalDistance = zip(allLocations, allLocations.dropFirst())
                 .reduce(0.0) { $0 + $1.1.distance(from: $1.0) }
-            cameraPosition = .region(
-                MKCoordinateRegion(center: loc.coordinate,
-                                   latitudinalMeters: 300,
-                                   longitudinalMeters: 300)
-            )
             recalcPace()
         }
     }
@@ -149,153 +212,156 @@ extension WatchRunSession: CLLocationManagerDelegate {
 struct WatchFreeRunView: View {
 
     @StateObject private var session = WatchRunSession()
-    @ObservedObject private var levelManager = RunningLevelManager.shared
+    @State private var selection: Int = 1
     @Environment(\.dismiss) private var dismiss
+    var skipCountdown: Bool = false
 
     var body: some View {
-        ZStack {
-            VStack(spacing: 0) {
-
-                // Map
-                Map(position: $session.cameraPosition) {
-                    if session.route.count >= 2 {
-                        MapPolyline(coordinates: session.route)
-                            .stroke(AppColor.blue, lineWidth: 5)
-                    }
-                    if let last = session.route.last {
-                        Annotation("", coordinate: last) {
-                            Circle()
-                                .fill(AppColor.blue)
-                                .frame(width: 10, height: 10)
-                                .overlay(Circle().stroke(.white, lineWidth: 1.5))
-                        }
-                    }
-                }
-                .mapStyle(.standard(pointsOfInterest: .excludingAll))
-                .frame(height: 80)
-                .allowsHitTesting(false)
-                .opacity(session.phase == .preparing ? 0.3 : 1)
-
-                // Stats
-                VStack(spacing: 0) {
-                    statsRow(
-                        ("DURATION", session.durationText),
-                        ("DISTANCE", session.distanceText)
-                    )
-                    Divider()
-                    statsRow(
-                        ("AVG PACE",  session.paceText(session.avgPace)),
-                        ("CURR PACE", session.paceText(session.currentPace))
-                    )
-                }
-                .padding(.horizontal, 8)
-                .padding(.top, 6)
-                .opacity(session.phase == .preparing ? 0.3 : 1)
-
-                Spacer(minLength: 4)
-
-                // Buttons
-                switch session.phase {
-                case .preparing:
-                    EmptyView()
-                case .running:
-                    Button {
-                        session.pause()
-                    } label: {
-                        Image(systemName: "pause.fill")
-                            .font(.system(size: 14, weight: .bold))
-                            .foregroundStyle(.white)
-                            .frame(width: 36, height: 36)
-                            .background(AppColor.orange, in: Circle())
-
-                    }
-                    .buttonStyle(.plain)
-                    .padding(.bottom, 8)
-                case .paused:
-                    HStack(spacing: 20) {
-                        Button {
-                            session.resume()
-                        } label: {
-                            Image(systemName: "play.fill")
-                                .font(.system(size: 14, weight: .bold))
-                                .foregroundStyle(.white)
-                                .frame(width: 36, height: 36)
-                                .background(AppColor.green, in: Circle())
-                        }
-                        .buttonStyle(.plain)
-
-                        Button {
-                            session.stop()
-                            dismiss()
-                        } label: {
-                            Image(systemName: "stop.fill")
-                                .font(.system(size: 14, weight: .bold))
-                                .foregroundStyle(.white)
-                                .frame(width: 36, height: 36)
-                                .background(AppColor.red, in: Circle())
-                        }
-                        .buttonStyle(.plain)
-                    }
-                    .padding(.bottom, 8)
-                case .finished:
-                    EmptyView()
-                }
-            }
-
-            // Countdown overlay
+        Group {
             if session.phase == .preparing {
-                VStack(spacing: 4) {
-                    Text("\(session.countdown)")
-                        .font(.system(size: 56, weight: .bold, design: .monospaced))
-                        .foregroundStyle(AppColor.orange)
-                        .contentTransition(.numericText())
-                    Text("준비하세요")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(.secondary)
+                ZStack {
+                    Color.black.ignoresSafeArea()
+                    countdownOverlay
                 }
-            }
+            } else {
+                TabView(selection: $selection) {
+                    // Tab 1: Controls
+                    controlsTab
+                        .tag(0)
 
-            // Paused overlay
-            if session.phase == .paused {
-                Color.black.opacity(0.4)
-                    .frame(height: 80)
-                    .frame(maxHeight: .infinity, alignment: .top)
-                    .overlay(alignment: .top) {
-                        Text("일시정지")
-                            .font(.system(size: 14, weight: .bold))
-                            .foregroundStyle(AppColor.yellow)
-                            .padding(.top, 30)
+                    // Tab 2: Primary Stats
+                    statsTab
+                        .tag(1)
+
+                    // Tab 3: Additional (Empty for now)
+                    VStack {
+                        Text("기타 정보")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     }
-                    .allowsHitTesting(false)
+                    .tag(2)
+                }
             }
         }
-        .onAppear { session.beginCountdown() }
+        .onAppear { session.beginCountdown(skip: skipCountdown) }
         .onDisappear { session.stop() }
     }
 
-    // MARK: - Helpers
+    // MARK: - Tabs
 
-    private func statsRow(_ left: (String, String), _ right: (String, String)) -> some View {
-        HStack(spacing: 0) {
-            statItem(left.0, left.1)
-            Divider()
-            statItem(right.0, right.1)
+    private var controlsTab: some View {
+        VStack(spacing: 20) {
+            if session.phase == .paused {
+                Button { session.resume() } label: {
+                    VStack {
+                        Image(systemName: "play.fill")
+                            .font(.title2)
+                        Text("재개")
+                            .font(.caption2)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(Color.green.opacity(0.2), in: RoundedRectangle(cornerRadius: 20))
+                }
+                .buttonStyle(.plain)
+            } else {
+                Button { session.pause() } label: {
+                    VStack {
+                        Image(systemName: "pause.fill")
+                            .font(.title2)
+                        Text("일시정지")
+                            .font(.caption2)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(Color.orange.opacity(0.2), in: RoundedRectangle(cornerRadius: 20))
+                }
+                .buttonStyle(.plain)
+            }
+
+            Button {
+                session.stop()
+                dismiss()
+            } label: {
+                VStack {
+                    Image(systemName: "stop.fill")
+                        .font(.title2)
+                    Text("종료")
+                        .font(.caption2)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Color.red.opacity(0.2), in: RoundedRectangle(cornerRadius: 20))
+            }
+            .buttonStyle(.plain)
         }
-        .frame(height: 44)
+        .padding(.horizontal)
     }
 
-    private func statItem(_ label: String, _ value: String) -> some View {
-        VStack(spacing: 1) {
-            Text(label)
-                .font(.system(size: 7, weight: .semibold))
+    private var statsTab: some View {
+        VStack(alignment: .center, spacing: 6) {
+            // 거리
+            HStack(alignment: .firstTextBaseline, spacing: 2) {
+                Text(session.distanceText)
+                    .font(.system(size: 48, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(Color.accentColor)
+                Text("km")
+                    .font(.system(size: 20, weight: .medium))
+                    .foregroundStyle(Color.accentColor)
+            }
+
+            // 시간
+            Text(session.durationText)
+                .font(.system(size: 24, weight: .medium, design: .monospaced))
+                .foregroundStyle(.white)
+
+            // 평균 심박 | 평균 페이스
+            HStack(spacing: 0) {
+                // 평균 심박
+                VStack(spacing: 0) {
+                    Text("평균 심박")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(.gray)
+                    HStack(alignment: .firstTextBaseline, spacing: 2) {
+                        Text(session.hrText(session.avgHeartRate))
+                            .font(.system(size: 18, weight: .bold, design: .monospaced))
+                        Text("bpm")
+                            .font(.system(size: 8))
+                            .foregroundStyle(.gray)
+                    }
+                    .foregroundStyle(.white)
+                }
+                .frame(maxWidth: .infinity)
+
+                Divider()
+
+                // 평균 페이스
+                VStack(spacing: 0) {
+                    Text("평균 페이스")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(.gray)
+                    Text(session.paceText(session.avgPace))
+                        .font(.system(size: 18, weight: .bold, design: .monospaced))
+                        .foregroundStyle(.white)
+                }
+                .frame(maxWidth: .infinity)
+            }
+            .frame(height: 36)
+        }
+        .frame(maxWidth: .infinity, alignment: .center)
+    }
+
+    // MARK: - Overlays
+
+    private var countdownOverlay: some View {
+        VStack(spacing: 4) {
+            Text("\(session.countdown)")
+                .font(.system(size: 56, weight: .bold, design: .monospaced))
+                .foregroundStyle(.orange)
+            Text("준비하세요")
+                .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(.secondary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.6)
-            Text(value)
-                .font(.system(size: 13, weight: .bold, design: .monospaced))
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
         }
-        .frame(maxWidth: .infinity)
     }
+}
+
+#Preview {
+    WatchFreeRunView()
 }

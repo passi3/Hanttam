@@ -26,6 +26,7 @@ struct WorkoutCalendarView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("WORKOUT CALENDAR")
                         .font(.system(size: 10, weight: .heavy))
+                        .tracking(1)
                         .foregroundStyle(accentColor)
                     Text("\(AppFormatter.yearMonth.string(from: displayedMonth))")
                         .font(.system(size: 20, weight: .bold))

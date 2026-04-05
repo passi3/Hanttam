@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+internal import HealthKit
 
 struct ContentView: View {
     @State private var selection = 0
@@ -13,6 +14,7 @@ struct ContentView: View {
     @State private var crownValue: Double = 0
     @State private var showRun = false
     @State private var showIntervalRun = false
+    @State private var skipCountdown = false
 
     @AppStorage("intervalLapDistance") private var lapDistance: Double = 400
     @AppStorage("intervalRestDuration") private var restDuration: Double = 20
@@ -31,14 +33,17 @@ struct ContentView: View {
             }
         }
         .fullScreenCover(isPresented: $showRun) {
-            WatchFreeRunView()
+            WatchFreeRunView(skipCountdown: skipCountdown)
+                .onAppear { skipCountdown = false }
         }
         .fullScreenCover(isPresented: $showIntervalRun) {
             WatchIntervalRunView(
                 sets: totalSets,
                 lapDistance: lapDistance,
-                restDuration: restDuration
+                restDuration: restDuration,
+                skipCountdown: skipCountdown
             )
+            .onAppear { skipCountdown = false }
         }
         .onReceive(NotificationCenter.default.publisher(for: WatchBridge.workoutStartedNotification)) { _ in
             showRun = true
@@ -47,10 +52,25 @@ struct ContentView: View {
             showRun = false
             showIntervalRun = false
         }
+        .onAppear {
+            guard let config = WatchBridge.shared.pendingWorkoutConfiguration else { return }
+            let kind: WatchBridge.WorkoutKind = config.locationType == .indoor ? .intervalRun : .freeRun
+            switch kind {
+            case .freeRun:
+                selection = 0
+                showIntervalRun = false
+                showRun = true
+            case .intervalRun:
+                selection = 1
+                showRun = false
+                showIntervalRun = true
+            }
+        }
         .onReceive(NotificationCenter.default.publisher(for: WatchBridge.workoutLaunchRequestedNotification)) { note in
             guard let kindRaw = note.userInfo?["kind"] as? String,
                   let kind = WatchBridge.WorkoutKind(rawValue: kindRaw) else { return }
 
+            skipCountdown = true
             switch kind {
             case .freeRun:
                 selection = 0
@@ -90,7 +110,7 @@ struct WatchDialPage: View {
     var body: some View {
         ZStack {
             VStack(spacing: 4) {
-                Text(totalSets == 0 ? "세트 설정" : "\(totalSets)세트")
+                Text(totalSets == 0 ? "인터벌 러닝" : "\(totalSets)세트")
                     .font(.system(size: 16, weight: .bold))
                     .contentTransition(.numericText())
 
@@ -99,8 +119,8 @@ struct WatchDialPage: View {
                     HanttamCirclesView(
                         size: 130,
                         color: Color(red: 151/255, green: 42/255, blue: 0).opacity(0.4),
-                        icon: totalSets == 0 ? "crown" : nil,
-                        iconColor: levelManager.accentColor.opacity(0.5)
+                        icon: totalSets == 0 ? "crown" : "play",
+                        iconColor: totalSets == 0 ? AppColor.workoutBg : levelManager.accentColor
                     )
 
                     // 진행 링
@@ -123,18 +143,6 @@ struct WatchDialPage: View {
                                 )
                             }
                         }
-
-                    // 세트 카운트
-                    if totalSets > 0 {
-                        VStack(spacing: 0) {
-                            Text("\(totalSets)")
-                                .font(.system(size: 32, weight: .thin, design: .monospaced))
-                            Text("SET")
-                                .font(.system(size: 8, weight: .medium))
-                                .opacity(0.6)
-                        }
-                        .offset(y: -25 * 130 / 200 / 2)
-                    }
                 }
                 .frame(width: 130, height: 130)
                 #if os(watchOS)
@@ -173,7 +181,6 @@ struct WatchDialPage: View {
                 }
             }
 
-            // 좌하단: Free run으로 전환
             Button { selection = 0 } label: {
                 Image(systemName: "figure.run")
                     .font(.system(size: 14, weight: .semibold))
@@ -182,24 +189,23 @@ struct WatchDialPage: View {
                     .background(levelManager.accentColor, in: Circle())
             }
             .buttonStyle(.plain)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
-            .padding(.leading, 4)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+            .padding(.trailing, 4)
             .padding(.bottom, 4)
 
-            // 우하단: 시작 버튼 (세트 설정 시)
-            if totalSets > 0 {
-                Button { showIntervalRun = true } label: {
-                    Image(systemName: "play.fill")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(.black)
-                        .frame(width: 32, height: 32)
-                        .background(levelManager.accentColor, in: Circle())
-                }
-                .buttonStyle(.plain)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
-                .padding(.trailing, 4)
-                .padding(.bottom, 4)
-            }
+            // if totalSets > 0 {
+            //     Button { showIntervalRun = true } label: {
+            //         Image(systemName: "play.fill")
+            //             .font(.system(size: 14, weight: .semibold))
+            //             .foregroundStyle(.black)
+            //             .frame(width: 32, height: 32)
+            //             .background(levelManager.accentColor, in: Circle())
+            //     }
+            //     .buttonStyle(.plain)
+            //     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+            //     .padding(.trailing, 4)
+            //     .padding(.bottom, 4)
+            // }
         }
     }
 

@@ -41,13 +41,13 @@ enum AppColor {
 
         static let dashboardBg = Color(hex: "F6F7FA")
         static let dashboardCard = Color.white
-        static let dashboardTooltip = Color(hex: "11151D")
+        static let dashboardTooltip = Color(hex: "D7D9DF")
         static let dashboardNeutral = Color(hex: "D7D9DF")
 
         static let weatherCard = Color.black.opacity(0.6)
         static let chipFill = Color(hex: "E8EBF2")
         static let fillTertiary = Color(hex: "EEF1F5")
-        static let hanttamRing = Color(red: 151/255, green: 42/255, blue: 0)
+        static let hanttamRing = Color(red: 0.659, green: 0.241, blue: 0.04)
 
         static let levelYellow = Color.yellow
         static let levelOrange = Color.orange

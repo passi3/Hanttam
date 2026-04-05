@@ -22,7 +22,7 @@ struct WatchButtonScreen: View {
                 Text("자유 목표")
                     .font(.system(size: 16, weight: .medium))
 
-                HanttamCirclesView(size: 130, icon: "play.fill")
+                HanttamCirclesView(size: 130, icon: "play", iconColor: levelManager.accentColor)
                 .scaleEffect(isPressed ? 0.93 : 1.0)
                 .contentShape(Circle())
                 .gesture(

@@ -127,13 +127,15 @@ final class RecordsViewController: HTViewController {
 
             case .interval(let interval):
                 let cell = tableView.dequeueReusableCell(withIdentifier: RecordCell.id, for: indexPath) as! RecordCell
-                cell.configureInterval(with: interval, dateFormatter: AppFormatter.recordDate)
+                let isIndoor = interval.workout?.metadata?[HKMetadataKeyIndoorWorkout] as? Bool ?? false
+                cell.configureInterval(with: interval, isIndoor: isIndoor, dateFormatter: AppFormatter.recordDate)
+                self.loadRouteImage(for: interval, isIndoor: isIndoor, into: cell, at: indexPath)
                 return cell
 
             case .record(let record):
                 let cell = tableView.dequeueReusableCell(withIdentifier: RecordCell.id, for: indexPath) as! RecordCell
                 cell.configure(with: record, dateFormatter: AppFormatter.recordDate)
-                self.loadRouteImage(for: record, into: cell, at: indexPath)
+                self.loadRouteImage(for: record, isIndoor: record.isIndoor, into: cell, at: indexPath)
                 return cell
             }
         }
@@ -241,22 +243,31 @@ final class RecordsViewController: HTViewController {
 
     // MARK: - Route Snapshot
 
-    private func loadRouteImage(for record: RunningRecord, into cell: RecordCell, at indexPath: IndexPath) {
-        guard !record.isIndoor else { return }
-        if let cached = routeSnapshots[record.date] {
+    private func loadRouteImage(for record: RunningRecord, isIndoor: Bool, into cell: RecordCell, at indexPath: IndexPath) {
+        loadRouteImageInternal(date: record.date, isIndoor: isIndoor, workout: record.workout, into: cell, at: indexPath)
+    }
+
+    private func loadRouteImage(for record: IntervalRecord, isIndoor: Bool, into cell: RecordCell, at indexPath: IndexPath) {
+        loadRouteImageInternal(date: record.date, isIndoor: isIndoor, workout: record.workout, into: cell, at: indexPath)
+    }
+
+    private func loadRouteImageInternal(date: Date, isIndoor: Bool, workout: HKWorkout?, into cell: RecordCell, at indexPath: IndexPath) {
+        guard !isIndoor else { return }
+        
+        if let cached = routeSnapshots[date] {
             cell.setRouteImage(cached)
             return
         }
-        if failedRouteDates.contains(record.date) {
+        if failedRouteDates.contains(date) {
             cell.setRouteImage(nil)
             return
         }
         cell.setRouteImage(nil)
-        guard let workout = record.workout else {
-            failedRouteDates.insert(record.date)
+        guard let workout = workout else {
+            failedRouteDates.insert(date)
             return
         }
-        let recordDate = record.date
+        let recordDate = date
         HealthKitStore.shared.fetchAltitudeData(for: workout) { [weak self] points in
             guard let self, points.count >= 2 else {
                 self?.failedRouteDates.insert(recordDate)
@@ -533,39 +544,48 @@ private class RecordCell: UITableViewCell {
     func configure(with record: RunningRecord, dateFormatter: DateFormatter) {
         dateLabel.text = dateFormatter.string(from: record.date)
 
-        // 실내/실외 태그 + 소스 정보
-        let tag = record.isIndoor ? "실내" : "실외"
-        let source: String
-        if let dev = record.deviceName {
-            source = "\(tag) • \(record.sourceName) • \(dev)"
-        } else {
-            source = "\(tag) • \(record.sourceName)"
-        }
-        sourceLabel.text = source
+        // 실내/실외 태그 및 기기 정보 제거, 앱 소스 이름만 표시
+        sourceLabel.text = record.sourceName
 
-        if record.isIndoor {
-            let config = UIImage.SymbolConfiguration(pointSize: 26, weight: .light)
-            routeImageView.image = UIImage(systemName: "figure.run.treadmill", withConfiguration: config)
-            routeImageView.tintColor = RunningLevelManager.shared.accentUIColor.withAlphaComponent(0.6)
-            routeImageView.contentMode = .center
-            routeImageView.backgroundColor = RunningLevelManager.shared.accentUIColor.withAlphaComponent(0.08)
-        }
+        updateRouteIcon(isIndoor: record.isIndoor)
 
         distanceLabel.text = AppFormatter.distance2f(record.distance)
         durationLabel.text = AppFormatter.duration(record.duration)
         caloriesLabel.text = AppFormatter.calories(record.calories)
     }
 
-    func configureInterval(with record: IntervalRecord, dateFormatter: DateFormatter) {
+    func configureInterval(with record: IntervalRecord, isIndoor: Bool, dateFormatter: DateFormatter) {
         dateLabel.text = dateFormatter.string(from: record.date)
         sourceLabel.text = "INTERVAL"
         sourceLabel.textColor = RunningLevelManager.shared.accentUIColor
+        
+        updateRouteIcon(isIndoor: isIndoor)
+        
         distanceLabel.text = AppFormatter.distance2f(record.totalDistance)
         durationLabel.text = AppFormatter.duration(record.totalDuration)
         caloriesLabel.text = "\(record.settings.sets)세트 · \(Int(record.settings.lapDistance))m"
     }
 
+    private func updateRouteIcon(isIndoor: Bool) {
+        if isIndoor {
+            let config = UIImage.SymbolConfiguration(pointSize: 26, weight: .light)
+            routeImageView.image = UIImage(systemName: "figure.run.treadmill", withConfiguration: config)
+            routeImageView.tintColor = RunningLevelManager.shared.accentUIColor.withAlphaComponent(0.6)
+            routeImageView.contentMode = .center
+            routeImageView.backgroundColor = RunningLevelManager.shared.accentUIColor.withAlphaComponent(0.08)
+        } else {
+            routeImageView.image = nil
+            routeImageView.contentMode = .scaleAspectFill
+            routeImageView.backgroundColor = AppColor.UI.tertiarySystemFill
+        }
+    }
+
     func setRouteImage(_ image: UIImage?) {
-        routeImageView.image = image
+        if let image = image {
+            routeImageView.image = image
+            routeImageView.contentMode = .scaleAspectFill
+            routeImageView.backgroundColor = AppColor.UI.tertiarySystemFill
+            routeImageView.tintColor = nil
+        }
     }
 }

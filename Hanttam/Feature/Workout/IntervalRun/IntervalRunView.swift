@@ -54,6 +54,10 @@ class IntervalRunViewController: UIViewController, CLLocationManagerDelegate, MK
     private var restRemaining: TimeInterval = 0
     private var countdown: Int              = 3
     private var timer: Timer?
+    private var snapshotObserver: NSObjectProtocol?
+    private var lastSnapshotDate: Date?
+    private var disconnectTimer: Timer?
+    private var hasShownResult = false
 
     // location
     private let locationManager = CLLocationManager()
@@ -100,8 +104,17 @@ class IntervalRunViewController: UIViewController, CLLocationManagerDelegate, MK
     override func viewDidLoad() {
         super.viewDidLoad()
         setupUI()
-        setupLocationManager()
+        if !isWatchPrimary {
+            setupLocationManager()
+        }
         beginCountdown()
+        if isWatchPrimary {
+            setupSnapshotObserver()
+        }
+        NotificationCenter.default.addObserver(self,
+                                               selector: #selector(stopFromMirror),
+                                               name: WatchBridge.workoutStoppedNotification,
+                                               object: nil)
     }
 
     override func viewWillDisappear(_ animated: Bool) {
@@ -358,8 +371,8 @@ class IntervalRunViewController: UIViewController, CLLocationManagerDelegate, MK
 
     private func beginCountdown() {
         phase               = .preparing
-        countdown           = 3
-        countdownLabel.text = "3"
+        countdown           = 1 // 1초로 단축
+        countdownLabel.text = "1"
 
         Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] t in
             guard let self else { t.invalidate(); return }
@@ -404,10 +417,12 @@ class IntervalRunViewController: UIViewController, CLLocationManagerDelegate, MK
         lapStartDate    = Date()
         recentLocations = []
 
-        locationManager.startUpdatingLocation()
-        startTimer()
+        if !isWatchPrimary {
+            locationManager.startUpdatingLocation()
+            startTimer()
+        }
         showRunningButtons()
-        manualLapButton.isHidden = false
+        manualLapButton.isHidden = isWatchPrimary
         restOverlay.isHidden     = true
 
         triggerHaptic(.success)
@@ -479,6 +494,10 @@ class IntervalRunViewController: UIViewController, CLLocationManagerDelegate, MK
     // MARK: - Button Actions
 
     @objc private func pauseTapped() {
+        if isWatchPrimary {
+            WatchBridge.shared.sendWorkoutCommand(WorkoutStreamKey.commandPause)
+            return
+        }
         guard case .runningLap = phase else {
             if case .resting = phase {
                 phase = .paused(prior: .resting)
@@ -497,6 +516,10 @@ class IntervalRunViewController: UIViewController, CLLocationManagerDelegate, MK
     }
 
     @objc private func resumeTapped() {
+        if isWatchPrimary {
+            WatchBridge.shared.sendWorkoutCommand(WorkoutStreamKey.commandResume)
+            return
+        }
         guard case .paused(let prior) = phase else { return }
         pausedOverlay.isHidden = true
 
@@ -518,6 +541,10 @@ class IntervalRunViewController: UIViewController, CLLocationManagerDelegate, MK
     }
 
     @objc private func stopTapped() {
+        if isWatchPrimary {
+            WatchBridge.shared.sendWorkoutCommand(WorkoutStreamKey.commandStop)
+            return
+        }
         // record current in-progress lap
         if case .paused(let prior) = phase {
             switch prior {
@@ -574,6 +601,9 @@ class IntervalRunViewController: UIViewController, CLLocationManagerDelegate, MK
         timer = nil
         locationManager.stopUpdatingLocation()
 
+        // 워치 프라이머리일 때 폰에서는 HealthKit 저장 안 함 (워치 HKLiveWorkoutBuilder가 저장)
+        guard !isWatchPrimary else { return }
+
         let totalDist = laps.filter { $0.type == .run }.reduce(0) { $0 + $1.distance }
         let endDate = Date()
         let startDate = endDate.addingTimeInterval(-elapsed)
@@ -595,7 +625,13 @@ class IntervalRunViewController: UIViewController, CLLocationManagerDelegate, MK
         }
     }
 
+    @objc private func stopFromMirror() {
+        finishAndShowResult()
+    }
+
     private func finishAndShowResult() {
+        guard !hasShownResult else { return }
+        hasShownResult = true
         finishWorkout()
 
         let runLaps = laps.filter { $0.type == .run }
@@ -622,7 +658,7 @@ class IntervalRunViewController: UIViewController, CLLocationManagerDelegate, MK
             routeCoordinates: coords,
             routeLocations: allLocations,
             isIndoor: isIndoor,
-            alreadySaved: true
+            alreadySaved: true  // 인터벌은 항상 alreadySaved (워치에서든 폰에서든 finishWorkout에서 저장)
         )
         let resultVC = WorkoutResultViewController(data: resultData)
         resultVC.modalPresentationStyle = .fullScreen
@@ -630,6 +666,107 @@ class IntervalRunViewController: UIViewController, CLLocationManagerDelegate, MK
             resultVC.onDismiss = {
                 self?.dismiss(animated: true)
             }
+        }
+    }
+
+    // MARK: - Watch Snapshot Observer
+
+    private func setupSnapshotObserver() {
+        snapshotObserver = NotificationCenter.default.addObserver(
+            forName: WatchBridge.workoutSnapshotNotification,
+            object: nil, queue: .main
+        ) { [weak self] note in
+            guard let self,
+                  let snapshot = note.userInfo?["snapshot"] as? WorkoutDataSnapshot else { return }
+            self.lastSnapshotDate = Date()
+            self.applySnapshot(snapshot)
+        }
+
+        disconnectTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
+            guard let self, self.isWatchPrimary else { return }
+            if case .finished = self.phase { return }
+            if let last = self.lastSnapshotDate, Date().timeIntervalSince(last) > 10 {
+                self.sourceBadge.text = " 워치 연결 끊김 "
+                self.sourceBadge.textColor = AppColor.UI.workoutStop
+                self.sourceBadge.isHidden = false
+            } else {
+                self.sourceBadge.text = " Apple Watch에서 센서 측정 중 "
+                self.sourceBadge.textColor = AppColor.UI.success
+            }
+        }
+    }
+
+    private func applySnapshot(_ snapshot: WorkoutDataSnapshot) {
+        if case .finished = phase { return }
+        elapsed = snapshot.elapsed
+
+        // Phase sync
+        let phaseStr = snapshot.phase
+        switch phaseStr {
+        case "paused":
+            if case .paused = phase {} else {
+                phase = .paused(prior: .runningLap)
+                pausedOverlay.isHidden = false
+                showPausedButtons()
+            }
+        case "running":
+            if snapshot.intervalPhase == "resting" {
+                if case .resting = phase {} else {
+                    phase = .resting
+                    restOverlay.isHidden = false
+                    manualLapButton.isHidden = true
+                    showRunningButtons()
+                }
+            } else {
+                if case .runningLap = phase {} else {
+                    phase = .runningLap
+                    restOverlay.isHidden = true
+                    pausedOverlay.isHidden = true
+                    showRunningButtons()
+                    manualLapButton.isHidden = false
+                }
+            }
+        case "finished":
+            if case .finished = phase {} else {
+                finishWorkout()
+                finishAndShowResult()
+                return
+            }
+        default:
+            break
+        }
+
+        // Duration
+        let h = Int(elapsed) / 3600
+        let m = Int(elapsed) % 3600 / 60
+        let s = Int(elapsed) % 60
+        durationLabel.text = h > 0 ? String(format: "%d:%02d:%02d", h, m, s) : String(format: "%02d:%02d", m, s)
+
+        // Set
+        if let cs = snapshot.currentSet, let ts = snapshot.totalSets {
+            currentSet = cs
+            setLabel.text = "\(cs) / \(ts)"
+        }
+
+        // Lap distance / rest
+        if snapshot.intervalPhase == "resting", let rest = snapshot.restRemaining {
+            restRemaining = rest
+            lapDistanceLabel.text = "REST \(Int(rest))s"
+            restCountdownLabel.text = "\(Int(rest))"
+        } else if let ld = snapshot.lapDistanceCurrent {
+            lapDistance_ = ld
+            lapDistanceLabel.text = "\(Int(ld))m / \(Int(lapDistance))m"
+        }
+
+        // Pace
+        avgPaceLabel.text = formatPace(snapshot.avgPace ?? 0)
+        currPaceLabel.text = formatPace(snapshot.currentPace ?? 0)
+
+        // Map
+        if let lat = snapshot.currentLatitude, let lng = snapshot.currentLongitude {
+            let coord = CLLocationCoordinate2D(latitude: lat, longitude: lng)
+            routeCoordinates.append(coord)
+            updateMap(with: coord)
         }
     }
 

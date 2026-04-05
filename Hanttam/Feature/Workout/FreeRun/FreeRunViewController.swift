@@ -7,9 +7,6 @@
 
 import UIKit
 import SwiftUI
-#if canImport(ActivityKit)
-import ActivityKit
-#endif
 import CoreLocation
 import MapKit
 import SnapKit
@@ -23,14 +20,16 @@ final class FreeRunViewController: HTViewController, CLLocationManagerDelegate, 
     private var allLocations    : [CLLocation] = []
     private var recentLocations : [CLLocation] = []
     private var routeCoordinates: [CLLocationCoordinate2D] = []
-    
+
     private var elapsed: TimeInterval = 0
     private var timer  : Timer?
-#if canImport(ActivityKit)
-    private var liveActivity: Activity<WorkoutAttributes>?
-#endif
     private var phase: WorkoutPhase = .preparing
     private var countdown: Int = 3
+    private var snapshotObserver: NSObjectProtocol?
+    private var lastSnapshotDate: Date?
+    private var disconnectTimer: Timer?
+    private var watchTotalDistance: Double = 0
+    private var hasShownResult = false
     
     // MARK: - UI Components
     private let mapView            = MKMapView()
@@ -73,18 +72,23 @@ final class FreeRunViewController: HTViewController, CLLocationManagerDelegate, 
     //MARK: - Lifecycle
     override func viewDidLoad() {
         super.viewDidLoad()
-        
-        setupLocationManager()
-        startLiveActivity()
+
+        if !isWatchPrimary {
+            setupLocationManager()
+        }
         beginCountdown()
         NotificationCenter.default.addObserver(self,
                                                selector: #selector(stopFromMirror),
                                                name: WatchBridge.workoutStoppedNotification,
                                                object: nil)
+
+        if isWatchPrimary {
+            setupSnapshotObserver()
+        }
     }
     
-    override func viewWillAppear(_ animated: Bool) {
-        super.viewWillAppear(animated)
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
         if phase != .finished {
             finishWorkout()
         }
@@ -336,16 +340,14 @@ final class FreeRunViewController: HTViewController, CLLocationManagerDelegate, 
 
     private func beginCountdown() {
         phase = .preparing
-        countdown = 3
+        countdown = 1 // 1초로 단축하여 즉시 시작하는 느낌을 줌
         countdownLabel.text = "\(countdown)"
-        updateLiveActivity()
 
         Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] t in
             guard let self else { t.invalidate(); return }
             self.countdown -= 1
             if self.countdown > 0 {
                 self.animateCountdown(self.countdown)
-                self.updateLiveActivity()
             } else {
                 t.invalidate()
                 self.countdownFinished()
@@ -376,34 +378,55 @@ final class FreeRunViewController: HTViewController, CLLocationManagerDelegate, 
 
     private func startRunning() {
         phase = .running
-        locationManager.startUpdatingLocation()
+        if !isWatchPrimary {
+            locationManager.startUpdatingLocation()
+        }
+        // Always run a local timer so duration never appears frozen.
+        // When a watch snapshot arrives, applySnapshot overwrites elapsed, keeping them in sync.
         timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
             guard let self, self.phase == .running else { return }
             self.elapsed += 1
             self.updateUI()
-            self.updateLiveActivity()
         }
-        updateLiveActivity()
         showRunningButtons()
     }
 
     @objc private func pauseTapped() {
+        if isWatchPrimary {
+            // Optimistic UI: apply local state immediately; watch snapshot will confirm
+            phase = .paused
+            pausedOverlay.isHidden = false
+            showPausedButtons()
+            WatchBridge.shared.sendWorkoutCommand(WorkoutStreamKey.commandPause)
+            return
+        }
         phase = .paused
         locationManager.stopUpdatingLocation()
         pausedOverlay.isHidden = false
         showPausedButtons()
-        updateLiveActivity()
     }
 
     @objc private func resumeTapped() {
+        if isWatchPrimary {
+            // Optimistic UI: apply local state immediately; watch snapshot will confirm
+            phase = .running
+            pausedOverlay.isHidden = true
+            showRunningButtons()
+            WatchBridge.shared.sendWorkoutCommand(WorkoutStreamKey.commandResume)
+            return
+        }
         phase = .running
         locationManager.startUpdatingLocation()
         pausedOverlay.isHidden = true
         showRunningButtons()
-        updateLiveActivity()
     }
 
     @objc private func stopTapped() {
+        if isWatchPrimary {
+            // 워치로 종료 명령을 보낸 후, 워치의 스냅샷 또는 종료 알림이 올 때까지 기다립니다.
+            WatchBridge.shared.sendWorkoutCommand(WorkoutStreamKey.commandStop)
+            return
+        }
         WatchBridge.shared.sendWorkoutStopped()
         finishWorkout()
         showResult()
@@ -411,7 +434,7 @@ final class FreeRunViewController: HTViewController, CLLocationManagerDelegate, 
 
     @objc private func stopFromMirror() {
         finishWorkout()
-        showResult()
+        showResult()  // hasShownResult 가드가 중복 호출 방지
     }
 
     private func finishWorkout() {
@@ -419,11 +442,12 @@ final class FreeRunViewController: HTViewController, CLLocationManagerDelegate, 
         locationManager.stopUpdatingLocation()
         timer?.invalidate()
         timer = nil
-        stopLiveActivity()
     }
 
     private func showResult() {
-        let totalDist = calculateTotalDistance()
+        guard !hasShownResult else { return }
+        hasShownResult = true
+        let totalDist = isWatchPrimary ? watchTotalDistance : calculateTotalDistance()
         let avgPace: TimeInterval? = totalDist > 10 ? elapsed / (totalDist / 1000) : nil
         let splits = buildSplits()
         let coords = routeCoordinates.map { (lat: $0.latitude, lng: $0.longitude) }
@@ -440,7 +464,8 @@ final class FreeRunViewController: HTViewController, CLLocationManagerDelegate, 
             splits: splits,
             routeCoordinates: coords,
             routeLocations: allLocations,
-            isIndoor: isIndoor
+            isIndoor: isIndoor,
+            alreadySaved: isWatchPrimary
         )
         let resultVC = WorkoutResultViewController(data: resultData)
         resultVC.modalPresentationStyle = .fullScreen
@@ -611,84 +636,85 @@ final class FreeRunViewController: HTViewController, CLLocationManagerDelegate, 
         return view
     }
 
-    // MARK: - Live Activity
+    // MARK: - Watch Snapshot Observer
 
-    #if canImport(ActivityKit)
-    private func startLiveActivity() {
-        let authInfo = ActivityAuthorizationInfo()
-        print("[LiveActivity] areActivitiesEnabled=\(authInfo.areActivitiesEnabled)")
-        guard authInfo.areActivitiesEnabled else { return }
+    private func setupSnapshotObserver() {
+        snapshotObserver = NotificationCenter.default.addObserver(
+            forName: WatchBridge.workoutSnapshotNotification,
+            object: nil, queue: .main
+        ) { [weak self] note in
+            guard let self,
+                  let snapshot = note.userInfo?["snapshot"] as? WorkoutDataSnapshot else { return }
+            self.lastSnapshotDate = Date()
+            self.applySnapshot(snapshot)
+        }
 
-        // 기존 라이브 액티비티 모두 종료
-        for existing in Activity<WorkoutAttributes>.activities {
-            Task {
-                await existing.end(nil, dismissalPolicy: .immediate)
+        // 연결 끊김 감지: 10초간 스냅샷 없으면 배너 표시
+        disconnectTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
+            guard let self, self.isWatchPrimary, self.phase != .finished else { return }
+            if let last = self.lastSnapshotDate, Date().timeIntervalSince(last) > 10 {
+                self.sourceBadge.text = " 워치 연결 끊김 "
+                self.sourceBadge.textColor = AppColor.UI.workoutStop
+                self.sourceBadge.isHidden = false
+            } else {
+                self.sourceBadge.text = " Apple Watch에서 센서 측정 중 "
+                self.sourceBadge.textColor = AppColor.UI.success
+            }
+        }
+    }
+
+    private func applySnapshot(_ snapshot: WorkoutDataSnapshot) {
+        guard phase != .finished else { return }
+        elapsed = snapshot.elapsed
+        watchTotalDistance = snapshot.totalDistance
+
+        // Phase sync
+        let newPhase = WorkoutPhase(rawValue: snapshot.phase) ?? .running
+        if phase != newPhase {
+            phase = newPhase
+            switch newPhase {
+            case .paused:
+                pausedOverlay.isHidden = false
+                showPausedButtons()
+            case .running:
+                pausedOverlay.isHidden = true
+                showRunningButtons()
+            case .finished:
+                finishWorkout()
+                showResult()
+                return
+            case .preparing:
+                break
             }
         }
 
-        let state = WorkoutAttributes.ContentState(
-            phase: .preparing,
-            elapsed: 0,
-            distance: 0,
-            avgPace: nil,
-            currentPace: nil,
-            countdown: countdown
-        )
-        let content = ActivityContent(state: state, staleDate: nil)
-        do {
-            liveActivity = try Activity.request(
-                attributes: WorkoutAttributes(),
-                content: content,
-                pushType: nil
-            )
-            print("[LiveActivity] started id=\(liveActivity?.id ?? "nil")")
-        } catch {
-            print("[LiveActivity] failed: \(error)")
-        }
-    }
+        // Duration
+        let h = Int(elapsed) / 3600
+        let m = Int(elapsed) % 3600 / 60
+        let s = Int(elapsed) % 60
+        durationLabel.text = h > 0 ? String(format: "%d:%02d:%02d", h, m, s) : String(format: "%02d:%02d", m, s)
 
-    private func updateLiveActivity() {
-        guard let activity = liveActivity else { return }
-        let totalDist = calculateTotalDistance()
-        let avgPace: Double? = totalDist > 10 ? elapsed / (totalDist / 1000) : nil
-        let state = WorkoutAttributes.ContentState(
-            phase: phase,
-            elapsed: elapsed,
-            distance: totalDist,
-            avgPace: avgPace,
-            currentPace: phase == .running ? calculateCurrentPace() : nil,
-            countdown: phase == .preparing ? countdown : nil
-        )
-        Task {
-            await activity.update(ActivityContent(state: state, staleDate: nil))
-        }
-    }
+        // Distance
+        distanceLabel.text = String(format: "%.2fKM", snapshot.totalDistance / 1000.0)
 
-    private func stopLiveActivity() {
-        guard let activity = liveActivity else { return }
-        let totalDist = calculateTotalDistance()
-        let avgPace: Double? = totalDist > 10 ? elapsed / (totalDist / 1000) : nil
-        let finalState = WorkoutAttributes.ContentState(
-            phase: .finished,
-            elapsed: elapsed,
-            distance: totalDist,
-            avgPace: avgPace,
-            currentPace: nil,
-            countdown: nil
-        )
-        Task {
-            await activity.end(
-                ActivityContent(state: finalState, staleDate: nil),
-                dismissalPolicy: .after(.now + 300)
-            )
+        // Pace
+        avgPaceLabel.text = formatPace(snapshot.avgPace ?? 0)
+        currPaceLabel.text = formatPace(snapshot.currentPace ?? 0)
+
+        // Heart Rate
+        if let hr = snapshot.heartRate {
+            let hrText = String(format: "%.0f", hr)
+            avgHeartRateLabel.text = hrText
+            currHeartRateLabel.text = hrText
         }
-        liveActivity = nil
+
+        // Map
+        if let lat = snapshot.currentLatitude, let lng = snapshot.currentLongitude {
+            let coord = CLLocationCoordinate2D(latitude: lat, longitude: lng)
+            routeCoordinates.append(coord)
+            updateMap(with: coord)
+        }
     }
-    #else
-    private func startLiveActivity() {}
-    private func updateLiveActivity() {}
-    private func stopLiveActivity() {}
-    #endif
 }
 
 // MARK: - SwiftUI Wrapper
