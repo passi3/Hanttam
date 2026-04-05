@@ -24,7 +24,7 @@ final class WatchRunSession: NSObject, ObservableObject {
     @Published var route: [CLLocationCoordinate2D] = []
 
     private let locationManager = CLLocationManager()
-    private let hkManager = WatchWorkoutSessionManager()
+    private let hkManager = WatchWorkoutSessionManager.shared
     private var allLocations: [CLLocation] = []
     private var recentLocations: [CLLocation] = []
     private var timer: Timer?
@@ -38,7 +38,6 @@ final class WatchRunSession: NSObject, ObservableObject {
         locationManager.desiredAccuracy = kCLLocationAccuracyBestForNavigation
         locationManager.distanceFilter = 5
 
-        // HK 심박수 동기화
         hkManager.$heartRate
             .receive(on: DispatchQueue.main)
             .assign(to: \.heartRate, on: self)
@@ -48,7 +47,6 @@ final class WatchRunSession: NSObject, ObservableObject {
             .assign(to: \.avgHeartRate, on: self)
             .store(in: &cancellables)
 
-        // 폰에서 보낸 리모트 커맨드 구독
         NotificationCenter.default.publisher(for: WatchBridge.remoteCommandNotification)
             .receive(on: DispatchQueue.main)
             .sink { [weak self] note in
@@ -213,8 +211,8 @@ struct WatchFreeRunView: View {
 
     @StateObject private var session = WatchRunSession()
     @State private var selection: Int = 1
-    @Environment(\.dismiss) private var dismiss
     var skipCountdown: Bool = false
+    var onClose: () -> Void = {}
 
     var body: some View {
         Group {
@@ -279,7 +277,7 @@ struct WatchFreeRunView: View {
 
             Button {
                 session.stop()
-                dismiss()
+                onClose()
             } label: {
                 VStack {
                     Image(systemName: "stop.fill")
@@ -354,7 +352,7 @@ struct WatchFreeRunView: View {
         VStack(spacing: 4) {
             Text("\(session.countdown)")
                 .font(.system(size: 56, weight: .bold, design: .monospaced))
-                .foregroundStyle(.orange)
+                .foregroundStyle(RunningLevelManager.shared.accentColor)
             Text("준비하세요")
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(.secondary)

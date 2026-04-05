@@ -22,8 +22,8 @@ final class WeatherKitManager: ObservableObject {
     @Published var sunsetDate          : Date?
     @Published var isDaytime           : Bool = true
     @Published var hasFetched          : Bool = false
-    @Published var attributionLogoURL  : URL?
-    @Published var attributionLinkURL  : URL?
+    @Published var attributionLogoURL   : URL?
+    @Published var attributionLinkURL   : URL?
 
     private let service = WeatherKit.WeatherService.shared
     private var lastFetchDate: Date?

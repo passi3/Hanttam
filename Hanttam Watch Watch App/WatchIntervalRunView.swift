@@ -9,6 +9,7 @@ import SwiftUI
 import CoreLocation
 import Combine
 import WatchKit
+internal import HealthKit
 
 // MARK: - Interval Session
 
@@ -46,7 +47,7 @@ final class WatchIntervalSession: NSObject, ObservableObject {
 
     // Internal
     private let locationManager = CLLocationManager()
-    private let hkManager = WatchWorkoutSessionManager()
+    private let hkManager = WatchWorkoutSessionManager.shared
     private var allLocations: [CLLocation] = []
     private var lapLocations: [CLLocation] = []
     private var recentLocations: [CLLocation] = []
@@ -70,7 +71,6 @@ final class WatchIntervalSession: NSObject, ObservableObject {
         locationManager.desiredAccuracy = kCLLocationAccuracyBestForNavigation
         locationManager.distanceFilter = 5
 
-        // HK 심박수 동기화
         hkManager.$heartRate
             .receive(on: DispatchQueue.main)
             .assign(to: \.heartRate, on: self)
@@ -80,19 +80,19 @@ final class WatchIntervalSession: NSObject, ObservableObject {
             .assign(to: \.avgHeartRate, on: self)
             .store(in: &cancellables)
 
-        // 폰에서 보낸 리모트 커맨드 구독
         NotificationCenter.default.publisher(for: WatchBridge.remoteCommandNotification)
             .receive(on: DispatchQueue.main)
             .sink { [weak self] note in
                 guard let self, let cmd = note.userInfo?["command"] as? String else { return }
                 switch cmd {
-                case WorkoutStreamKey.commandPause:  self.pause()
+                case WorkoutStreamKey.commandPause: self.pause()
                 case WorkoutStreamKey.commandResume: self.resume()
-                case WorkoutStreamKey.commandStop:   self.stop()
+                case WorkoutStreamKey.commandStop: self.stop()
                 default: break
                 }
             }
             .store(in: &cancellables)
+
     }
 
     // MARK: - Lifecycle
@@ -105,12 +105,9 @@ final class WatchIntervalSession: NSObject, ObservableObject {
         phase = .preparing
         countdown = 3
         locationManager.requestWhenInUseAuthorization()
+        Task { await hkManager.requestAuthorization() }
 
-        Task {
-            await hkManager.requestAuthorization()
-        }
-
-        countdownTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] t in
+        countdownTimer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: true) { [weak self] t in
             guard let self else { t.invalidate(); return }
             self.countdown -= 1
             if self.countdown <= 0 {
@@ -127,21 +124,28 @@ final class WatchIntervalSession: NSObject, ObservableObject {
         lapLocations = []
         recentLocations = []
         lapStartDate = Date()
+
         if !didNotifyStarted {
-            // 폰이 startWatchApp으로 앱을 실행했으면 해당 설정을 재사용, 아니면 기본 설정으로 시작
             if let config = WatchBridge.shared.consumePendingWorkoutConfiguration() {
                 hkManager.startSession(with: config)
             } else {
-                hkManager.startSession(indoor: true)
+                let config = HKWorkoutConfiguration()
+                config.activityType = .running
+                config.locationType = .indoor
+                hkManager.startSession(with: config)
             }
-            WatchBridge.shared.sendWorkoutStarted(kind: .intervalRun, extraInfo: [
-                "sets": totalSets,
-                "lapDistance": lapDistance,
-                "restDuration": restDuration
-            ])
+            WatchBridge.shared.sendWorkoutStarted(
+                kind: .intervalRun,
+                extraInfo: [
+                    "sets": totalSets,
+                    "lapDistance": lapDistance,
+                    "restDuration": restDuration
+                ]
+            )
             WatchBridge.shared.sendSessionEvent(WorkoutStreamKey.sessionStarted)
             didNotifyStarted = true
         }
+
         locationManager.startUpdatingLocation()
         startTimer()
         WKInterfaceDevice.current().play(.start)
@@ -169,21 +173,24 @@ final class WatchIntervalSession: NSObject, ObservableObject {
     func pause() {
         let prior: Phase.PriorPhase = phase == .resting ? .resting : .runningLap
         phase = .paused(prior: prior)
-        hkManager.pauseSession()
+
         timer?.invalidate()
+        hkManager.pauseSession()
         locationManager.stopUpdatingLocation()
         sendSnapshot()
     }
 
     func resume() {
         guard case .paused(let prior) = phase else { return }
-        hkManager.resumeSession()
+
         switch prior {
         case .runningLap:
             phase = .runningLap
+            hkManager.resumeSession()
             locationManager.startUpdatingLocation()
         case .resting:
             phase = .resting
+            hkManager.resumeSession()
         }
         startTimer()
         sendSnapshot()
@@ -266,16 +273,18 @@ final class WatchIntervalSession: NSObject, ObservableObject {
 
     private func finishWorkout() {
         phase = .finished
-        hkManager.endSession()
+  
         timer?.invalidate()
         timer = nil
         countdownTimer?.invalidate()
         countdownTimer = nil
         locationManager.stopUpdatingLocation()
+        hkManager.endSession()
         if didNotifyStarted {
             WatchBridge.shared.sendWorkoutStopped(kind: .intervalRun)
             WatchBridge.shared.sendSessionEvent(WorkoutStreamKey.sessionEnded)
         }
+
         sendSnapshot()
     }
 
@@ -321,7 +330,7 @@ final class WatchIntervalSession: NSObject, ObservableObject {
             totalDistance: totalRunDistance + lapDistanceCurrent,
             avgPace: avgPace,
             currentPace: currentPace,
-            heartRate: hkManager.heartRate,
+            heartRate: heartRate,
             activeCalories: hkManager.activeCalories,
             currentLatitude: route.last?.latitude,
             currentLongitude: route.last?.longitude,
@@ -332,7 +341,6 @@ final class WatchIntervalSession: NSObject, ObservableObject {
             restRemaining: restRemaining,
             intervalPhase: intervalPhaseStr
         )
-        // HK 미러링 경로로 전송 (WCSession은 내부에서 폴백으로 사용)
         hkManager.sendSnapshot(snapshot)
     }
 
@@ -401,13 +409,20 @@ struct WatchIntervalRunView: View {
     var skipCountdown: Bool = false
 
     @StateObject private var session: WatchIntervalSession
-    @Environment(\.dismiss) private var dismiss
+    var onClose: () -> Void = {}
 
-    init(sets: Int, lapDistance: Double, restDuration: TimeInterval, skipCountdown: Bool = false) {
+    init(
+        sets: Int,
+        lapDistance: Double,
+        restDuration: TimeInterval,
+        skipCountdown: Bool = false,
+        onClose: @escaping () -> Void = {}
+    ) {
         self.sets = sets
         self.lapDistance = lapDistance
         self.restDuration = restDuration
         self.skipCountdown = skipCountdown
+        self.onClose = onClose
         _session = StateObject(wrappedValue: WatchIntervalSession(
             sets: sets, lapDistance: lapDistance, restDuration: restDuration
         ))
@@ -606,7 +621,7 @@ struct WatchIntervalRunView: View {
 
                 Button {
                     session.stop()
-                    dismiss()
+                    onClose()
                 } label: {
                     Image(systemName: "stop.fill")
                         .font(.system(size: 14, weight: .bold))
