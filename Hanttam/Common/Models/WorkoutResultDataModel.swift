@@ -7,6 +7,7 @@
 
 import Foundation
 import CoreLocation
+internal import HealthKit
 
 struct WorkoutResultDataModel {
     let startDate: Date
@@ -18,6 +19,7 @@ struct WorkoutResultDataModel {
     let splits: [SplitData]
     let routeCoordinates: [(lat: Double, lng: Double)]
     let routeLocations: [CLLocation]
+    let workout: HKWorkout?
     var isIndoor: Bool = false
     var alreadySaved: Bool = false   // 인터벌 등 이미 저장된 경우
 
