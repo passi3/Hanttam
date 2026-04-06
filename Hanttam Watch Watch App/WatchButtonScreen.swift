@@ -10,7 +10,7 @@ import SwiftUI
 struct WatchButtonScreen: View {
 
     @Binding var selection: Int
-    @Binding var showRun: Bool
+    let startFreeRun: () -> Void
     @State private var isPressed = false
     @ObservedObject private var levelManager = RunningLevelManager.shared
 
@@ -33,7 +33,7 @@ struct WatchButtonScreen: View {
                         .onEnded { v in
                             withAnimation(.spring(duration: 0.3)) { isPressed = false }
                             if abs(v.translation.width) < 10 && abs(v.translation.height) < 10 {
-                                showRun = true
+                                startFreeRun()
                             }
                         }
                 )
@@ -59,5 +59,5 @@ struct WatchButtonScreen: View {
 }
 
 #Preview {
-    WatchButtonScreen(selection: .constant(0), showRun: .constant(false))
+    WatchButtonScreen(selection: .constant(0), startFreeRun: {})
 }

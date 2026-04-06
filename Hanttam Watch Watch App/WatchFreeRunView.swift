@@ -8,6 +8,7 @@
 import SwiftUI
 import CoreLocation
 import Combine
+import _WatchKit_SwiftUI
 
 // MARK: - Run Session
 
@@ -21,6 +22,8 @@ final class WatchRunSession: NSObject, ObservableObject {
     @Published var currentPace: TimeInterval?       // sec/km
     @Published var heartRate: Double?
     @Published var avgHeartRate: Double?
+    @Published var segmentPace: TimeInterval?
+    @Published var segmentAvgHeartRate: Double?
     @Published var route: [CLLocationCoordinate2D] = []
 
     private let locationManager = CLLocationManager()
@@ -31,6 +34,10 @@ final class WatchRunSession: NSObject, ObservableObject {
     private var countdownTimer: Timer?
     private var didNotifyStarted = false
     private var cancellables = Set<AnyCancellable>()
+    private var nextSegmentBoundary: Double = 1000
+    private var segmentStartDistance: Double = 0
+    private var segmentStartElapsed: TimeInterval = 0
+    private var segmentHeartRateSamples: [HeartRateSample] = []
 
     override init() {
         super.init()
@@ -40,7 +47,11 @@ final class WatchRunSession: NSObject, ObservableObject {
 
         hkManager.$heartRate
             .receive(on: DispatchQueue.main)
-            .assign(to: \.heartRate, on: self)
+            .sink { [weak self] bpm in
+                guard let self else { return }
+                self.heartRate = bpm
+                self.captureSegmentHeartRateSample(bpm)
+            }
             .store(in: &cancellables)
         hkManager.$avgHeartRate
             .receive(on: DispatchQueue.main)
@@ -83,6 +94,7 @@ final class WatchRunSession: NSObject, ObservableObject {
 
     private func startRunning() {
         phase = .running
+        resetSegmentState()
         if !didNotifyStarted {
             // 폰이 startWatchApp으로 앱을 실행했으면 해당 설정을 재사용, 아니면 기본 설정으로 시작
             if let config = WatchBridge.shared.consumePendingWorkoutConfiguration() {
@@ -138,8 +150,11 @@ final class WatchRunSession: NSObject, ObservableObject {
             elapsed: elapsed,
             totalDistance: totalDistance,
             avgPace: avgPace,
-            currentPace: currentPace,
+            currentPace: segmentPace,
             heartRate: heartRate,
+            avgHeartRate: avgHeartRate,
+            segmentPace: segmentPace,
+            segmentAvgHeartRate: segmentAvgHeartRate,
             activeCalories: hkManager.activeCalories,
             currentLatitude: route.last?.latitude,
             currentLongitude: route.last?.longitude,
@@ -153,14 +168,47 @@ final class WatchRunSession: NSObject, ObservableObject {
         if totalDistance > 10 {
             avgPace = elapsed / (totalDistance / 1000)
         }
-        guard recentLocations.count >= 2 else { return }
-        var d = 0.0
-        for i in 0..<recentLocations.count - 1 {
-            d += recentLocations[i+1].distance(from: recentLocations[i])
+        let currentSegmentDistance = totalDistance - segmentStartDistance
+        let currentSegmentElapsed = elapsed - segmentStartElapsed
+        if currentSegmentDistance > 10, currentSegmentElapsed > 0 {
+            segmentPace = currentSegmentElapsed / (currentSegmentDistance / 1000)
+        } else {
+            segmentPace = nil
         }
-        guard d > 5 else { return }
-        let t = recentLocations.last!.timestamp.timeIntervalSince(recentLocations.first!.timestamp)
-        currentPace = t / (d / 1000)
+        currentPace = segmentPace
+        if !segmentHeartRateSamples.isEmpty {
+            segmentAvgHeartRate = segmentHeartRateSamples.reduce(0) { $0 + $1.bpm } / Double(segmentHeartRateSamples.count)
+        } else {
+            segmentAvgHeartRate = nil
+        }
+    }
+
+    private func resetSegmentState() {
+        nextSegmentBoundary = 1000
+        segmentStartDistance = 0
+        segmentStartElapsed = 0
+        segmentHeartRateSamples.removeAll()
+        segmentPace = nil
+        segmentAvgHeartRate = nil
+        currentPace = nil
+    }
+
+    private func advanceSegmentBoundaryIfNeeded() {
+        while totalDistance >= nextSegmentBoundary {
+            nextSegmentBoundary += 1000
+            segmentStartDistance = totalDistance
+            segmentStartElapsed = elapsed
+            segmentHeartRateSamples.removeAll()
+            segmentAvgHeartRate = nil
+            segmentPace = nil
+            currentPace = nil
+        }
+    }
+
+    private func captureSegmentHeartRateSample(_ bpm: Double?) {
+        guard phase == .running, let bpm else { return }
+        segmentHeartRateSamples.append(HeartRateSample(date: Date(), bpm: bpm))
+        segmentAvgHeartRate = segmentHeartRateSamples.reduce(0) { $0 + $1.bpm } / Double(segmentHeartRateSamples.count)
     }
 
     // MARK: - Formatted
@@ -184,6 +232,17 @@ final class WatchRunSession: NSObject, ObservableObject {
         guard let bpm else { return "--" }
         return String(format: "%.0f", bpm)
     }
+
+    func makeSummaryData() -> WatchWorkoutSummaryData {
+        WatchWorkoutSummaryBuilder.freeRun(
+            route: allLocations,
+            elapsed: elapsed,
+            totalDistance: totalDistance,
+            avgPace: avgPace,
+            avgHeartRate: avgHeartRate,
+            calories: hkManager.activeCalories
+        )
+    }
 }
 
 // MARK: - CLLocationManagerDelegate
@@ -200,6 +259,7 @@ extension WatchRunSession: CLLocationManagerDelegate {
             if recentLocations.count > 8 { recentLocations.removeFirst() }
             totalDistance = zip(allLocations, allLocations.dropFirst())
                 .reduce(0.0) { $0 + $1.1.distance(from: $1.0) }
+            advanceSegmentBoundaryIfNeeded()
             recalcPace()
         }
     }
@@ -211,8 +271,10 @@ struct WatchFreeRunView: View {
 
     @StateObject private var session = WatchRunSession()
     @State private var selection: Int = 1
+    @State private var showingAveragePace = false
+    @State private var showingAverageHeartRate = false
     var skipCountdown: Bool = false
-    var onClose: () -> Void = {}
+    var onFinish: (WatchWorkoutSummaryData) -> Void = { _ in }
 
     var body: some View {
         Group {
@@ -223,25 +285,24 @@ struct WatchFreeRunView: View {
                 }
             } else {
                 TabView(selection: $selection) {
-                    // Tab 1: Controls
                     controlsTab
                         .tag(0)
 
-                    // Tab 2: Primary Stats
-                    statsTab
+                    metricsTab
                         .tag(1)
 
-                    // Tab 3: Additional (Empty for now)
-                    VStack {
-                        Text("기타 정보")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    .tag(2)
+                    nowPlayingTab
+                        .tag(2)
                 }
+                .tabViewStyle(.page(indexDisplayMode: .automatic))
+                .background(Color.black)
             }
         }
         .onAppear { session.beginCountdown(skip: skipCountdown) }
+        .onChange(of: session.phase) { _, newPhase in
+            guard newPhase == .finished else { return }
+            onFinish(session.makeSummaryData())
+        }
         .onDisappear { session.stop() }
     }
 
@@ -277,7 +338,6 @@ struct WatchFreeRunView: View {
 
             Button {
                 session.stop()
-                onClose()
             } label: {
                 VStack {
                     Image(systemName: "stop.fill")
@@ -293,57 +353,51 @@ struct WatchFreeRunView: View {
         .padding(.horizontal)
     }
 
-    private var statsTab: some View {
-        VStack(alignment: .center, spacing: 6) {
-            // 거리
-            HStack(alignment: .firstTextBaseline, spacing: 2) {
-                Text(session.distanceText)
-                    .font(.system(size: 48, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(Color.accentColor)
-                Text("km")
-                    .font(.system(size: 20, weight: .medium))
-                    .foregroundStyle(Color.accentColor)
-            }
+    private var metricsTab: some View {
+        WatchWorkoutDashboardPage(
+            topIcon: "figure.run",
+            topLeading: "SESSION",
+            topTrailingText: session.phase == .paused ? "PAUSED" : nil,
+            accentColor: RunningLevelManager.shared.accentColor,
+            primaryValue: session.distanceText,
+            primaryUnit: "KM",
+            leftMetricTitle: "TIME",
+            leftMetricValue: session.durationText,
+            rightMetricTitle: showingAveragePace ? "AVG PACE" : "SEGMENT PACE",
+            rightMetricValue: showingAveragePace ? averagePaceText : currentPaceText,
+            rightMetricAction: { showingAveragePace.toggle() },
+            bottomIcon: "heart.fill",
+            bottomTint: showingAverageHeartRate ? .pink : .red,
+            bottomLabel: showingAverageHeartRate ? "AVERAGE BPM" : "SEGMENT BPM",
+            bottomValue: showingAverageHeartRate
+                ? session.hrText(session.avgHeartRate)
+                : session.hrText(session.segmentAvgHeartRate),
+            bottomUnit: "BPM",
+            bottomProgress: heartRateProgress(
+                showingAverageHeartRate ? session.avgHeartRate : session.segmentAvgHeartRate
+            ),
+            bottomAction: { showingAverageHeartRate.toggle() }
+        )
+    }
 
-            // 시간
-            Text(session.durationText)
-                .font(.system(size: 24, weight: .medium, design: .monospaced))
-                .foregroundStyle(.white)
-
-            // 평균 심박 | 평균 페이스
-            HStack(spacing: 0) {
-                // 평균 심박
-                VStack(spacing: 0) {
-                    Text("평균 심박")
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(.gray)
-                    HStack(alignment: .firstTextBaseline, spacing: 2) {
-                        Text(session.hrText(session.avgHeartRate))
-                            .font(.system(size: 18, weight: .bold, design: .monospaced))
-                        Text("bpm")
-                            .font(.system(size: 8))
-                            .foregroundStyle(.gray)
-                    }
-                    .foregroundStyle(.white)
-                }
-                .frame(maxWidth: .infinity)
-
-                Divider()
-
-                // 평균 페이스
-                VStack(spacing: 0) {
-                    Text("평균 페이스")
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(.gray)
-                    Text(session.paceText(session.avgPace))
-                        .font(.system(size: 18, weight: .bold, design: .monospaced))
-                        .foregroundStyle(.white)
-                }
-                .frame(maxWidth: .infinity)
-            }
-            .frame(height: 36)
+    private var nowPlayingTab: some View {
+        ZStack {
+            Color.black.ignoresSafeArea()
+            NowPlayingView()
         }
-        .frame(maxWidth: .infinity, alignment: .center)
+    }
+
+    private var currentPaceText: String {
+        session.paceText(session.segmentPace ?? session.avgPace)
+    }
+
+    private var averagePaceText: String {
+        session.paceText(session.avgPace ?? session.currentPace)
+    }
+
+    private func heartRateProgress(_ bpm: Double?) -> Double? {
+        guard let bpm else { return nil }
+        return min(max((bpm - 80) / 90, 0), 1)
     }
 
     // MARK: - Overlays

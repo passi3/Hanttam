@@ -9,6 +9,7 @@ import SwiftUI
 import CoreLocation
 import Combine
 import WatchKit
+import _WatchKit_SwiftUI
 internal import HealthKit
 
 // MARK: - Interval Session
@@ -43,6 +44,8 @@ final class WatchIntervalSession: NSObject, ObservableObject {
     @Published var currentPace: TimeInterval?
     @Published var heartRate: Double?
     @Published var avgHeartRate: Double?
+    @Published var lapPace: TimeInterval?
+    @Published var lapAvgHeartRate: Double?
     @Published var route: [CLLocationCoordinate2D] = []
 
     // Internal
@@ -61,6 +64,9 @@ final class WatchIntervalSession: NSObject, ObservableObject {
     private var laps: [IntervalLap] = []
     var totalRunDistance: Double = 0
     private var totalRunTime: TimeInterval = 0
+    private var lapHeartRateSamples: [HeartRateSample] = []
+    private(set) var lastRunLapPace: TimeInterval?
+    private(set) var lastRunLapAvgHeartRate: Double?
 
     init(sets: Int, lapDistance: Double, restDuration: TimeInterval) {
         self.totalSets = sets
@@ -73,7 +79,11 @@ final class WatchIntervalSession: NSObject, ObservableObject {
 
         hkManager.$heartRate
             .receive(on: DispatchQueue.main)
-            .assign(to: \.heartRate, on: self)
+            .sink { [weak self] bpm in
+                guard let self else { return }
+                self.heartRate = bpm
+                self.captureLapHeartRateSample(bpm)
+            }
             .store(in: &cancellables)
         hkManager.$avgHeartRate
             .receive(on: DispatchQueue.main)
@@ -124,6 +134,10 @@ final class WatchIntervalSession: NSObject, ObservableObject {
         lapLocations = []
         recentLocations = []
         lapStartDate = Date()
+        lapHeartRateSamples.removeAll()
+        lapPace = nil
+        lapAvgHeartRate = nil
+        currentPace = nil
 
         if !didNotifyStarted {
             if let config = WatchBridge.shared.consumePendingWorkoutConfiguration() {
@@ -268,6 +282,8 @@ final class WatchIntervalSession: NSObject, ObservableObject {
         if type == .run {
             totalRunDistance += dist
             totalRunTime += dur
+            lastRunLapPace = pace
+            lastRunLapAvgHeartRate = lapAvgHeartRate
         }
     }
 
@@ -296,14 +312,31 @@ final class WatchIntervalSession: NSObject, ObservableObject {
         if runDist > 10 {
             avgPace = runTime / (runDist / 1000)
         }
-        guard recentLocations.count >= 2 else { return }
-        var d = 0.0
-        for i in 0..<recentLocations.count - 1 {
-            d += recentLocations[i + 1].distance(from: recentLocations[i])
+        if lapDistanceCurrent > 10, lapElapsed > 0 {
+            lapPace = lapElapsed / (lapDistanceCurrent / 1000)
+        } else {
+            lapPace = nil
         }
-        guard d > 5 else { return }
-        let t = recentLocations.last!.timestamp.timeIntervalSince(recentLocations.first!.timestamp)
-        currentPace = t / (d / 1000)
+        currentPace = displayedLapPace
+        if !lapHeartRateSamples.isEmpty {
+            lapAvgHeartRate = lapHeartRateSamples.reduce(0) { $0 + $1.bpm } / Double(lapHeartRateSamples.count)
+        } else if phase == .runningLap {
+            lapAvgHeartRate = nil
+        }
+    }
+
+    private var displayedLapPace: TimeInterval? {
+        phase == .runningLap ? lapPace : lastRunLapPace
+    }
+
+    private var displayedLapAvgHeartRate: Double? {
+        phase == .runningLap ? lapAvgHeartRate : lastRunLapAvgHeartRate
+    }
+
+    private func captureLapHeartRateSample(_ bpm: Double?) {
+        guard phase == .runningLap, let bpm else { return }
+        lapHeartRateSamples.append(HeartRateSample(date: Date(), bpm: bpm))
+        lapAvgHeartRate = lapHeartRateSamples.reduce(0) { $0 + $1.bpm } / Double(lapHeartRateSamples.count)
     }
 
     // MARK: - Snapshot
@@ -329,8 +362,11 @@ final class WatchIntervalSession: NSObject, ObservableObject {
             elapsed: elapsed,
             totalDistance: totalRunDistance + lapDistanceCurrent,
             avgPace: avgPace,
-            currentPace: currentPace,
+            currentPace: displayedLapPace,
             heartRate: heartRate,
+            avgHeartRate: avgHeartRate,
+            segmentPace: displayedLapPace,
+            segmentAvgHeartRate: displayedLapAvgHeartRate,
             activeCalories: hkManager.activeCalories,
             currentLatitude: route.last?.latitude,
             currentLongitude: route.last?.longitude,
@@ -363,6 +399,17 @@ final class WatchIntervalSession: NSObject, ObservableObject {
     func paceText(_ secPerKm: TimeInterval?) -> String {
         guard let p = secPerKm, p.isFinite, p > 0, p < 3600 else { return "--'--\"" }
         return String(format: "%d'%02d\"", Int(p) / 60, Int(p) % 60)
+    }
+
+    func makeSummaryData() -> WatchWorkoutSummaryData {
+        WatchWorkoutSummaryBuilder.interval(
+            route: route,
+            elapsed: elapsed,
+            totalDistance: totalRunDistance + lapDistanceCurrent,
+            avgHeartRate: avgHeartRate,
+            calories: hkManager.activeCalories,
+            laps: laps
+        )
     }
 }
 
@@ -409,20 +456,23 @@ struct WatchIntervalRunView: View {
     var skipCountdown: Bool = false
 
     @StateObject private var session: WatchIntervalSession
-    var onClose: () -> Void = {}
+    @State private var selection: Int = 1
+    @State private var showingAveragePace = false
+    @State private var showingAverageHeartRate = false
+    var onFinish: (WatchWorkoutSummaryData) -> Void = { _ in }
 
     init(
         sets: Int,
         lapDistance: Double,
         restDuration: TimeInterval,
         skipCountdown: Bool = false,
-        onClose: @escaping () -> Void = {}
+        onFinish: @escaping (WatchWorkoutSummaryData) -> Void = { _ in }
     ) {
         self.sets = sets
         self.lapDistance = lapDistance
         self.restDuration = restDuration
         self.skipCountdown = skipCountdown
-        self.onClose = onClose
+        self.onFinish = onFinish
         _session = StateObject(wrappedValue: WatchIntervalSession(
             sets: sets, lapDistance: lapDistance, restDuration: restDuration
         ))
@@ -436,103 +486,64 @@ struct WatchIntervalRunView: View {
                     countdownOverlay
                 }
             } else {
-                VStack(spacing: 0) {
-                    // 인터벌 상태 헤더 (세트 + 랩/휴식)
-                    intervalHeader
+                TabView(selection: $selection) {
+                    controlsTab
+                        .tag(0)
 
-                    // 스탯 화면
-                    statsGrid
+                    metricsTab
+                        .tag(1)
 
-                    Spacer(minLength: 2)
-
-                    // 버튼
-                    buttonSection
+                    nowPlayingTab
+                        .tag(2)
                 }
+                .tabViewStyle(.page(indexDisplayMode: .automatic))
+                .background(Color.black)
             }
         }
         .onAppear { session.beginCountdown(skip: skipCountdown) }
+        .onChange(of: session.phase) { _, newPhase in
+            guard newPhase == .finished else { return }
+            onFinish(session.makeSummaryData())
+        }
         .onDisappear { if session.phase != .finished { session.stop() } }
     }
 
     // MARK: - Interval Header
 
-    private var intervalHeader: some View {
-        HStack(spacing: 8) {
-            // 세트
-            Label(session.setText, systemImage: "repeat")
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(AppColor.orange)
-
-            Spacer()
-
-            // 랩 진행 or 휴식 카운트다운
-            if session.phase == .resting {
-                Label("REST \(Int(max(0, session.restRemaining)))s", systemImage: "pause.circle")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(AppColor.blue)
-            } else {
-                Text(session.lapText)
-                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(.primary)
-            }
-        }
-        .padding(.horizontal, 8)
-        .padding(.top, 6)
-        .padding(.bottom, 2)
+    private var metricsTab: some View {
+        WatchWorkoutDashboardPage(
+            topIcon: session.phase == .resting ? "pause.circle.fill" : "repeat",
+            topLeading: session.phase == .resting ? "REST" : "CURRENT LAP",
+            topTrailingText: session.lapText,
+            accentColor: RunningLevelManager.shared.accentColor,
+            primaryValue: totalDistText,
+            primaryUnit: "KM",
+            leftMetricTitle: "TIME",
+            leftMetricValue: session.durationText,
+            rightMetricTitle: showingAveragePace ? "AVG PACE" : "LAP PACE",
+            rightMetricValue: showingAveragePace ? averagePaceText : currentPaceText,
+            rightMetricAction: { showingAveragePace.toggle() },
+            bottomIcon: showingAverageHeartRate ? "heart.circle.fill" : "heart.fill",
+            bottomTint: showingAverageHeartRate ? .pink : .red,
+            bottomLabel: showingAverageHeartRate ? "AVERAGE BPM" : "LAP BPM",
+            bottomValue: showingAverageHeartRate
+                ? hrText(session.avgHeartRate)
+                : hrText(session.phase == .runningLap ? session.lapAvgHeartRate : session.lastRunLapAvgHeartRate),
+            bottomUnit: "BPM",
+            bottomProgress: heartRateProgress(
+                showingAverageHeartRate
+                    ? session.avgHeartRate
+                    : (session.phase == .runningLap ? session.lapAvgHeartRate : session.lastRunLapAvgHeartRate)
+            ),
+            bottomAction: { showingAverageHeartRate.toggle() }
+        )
     }
 
-    // MARK: - Stats Grid
-
-    private var statsGrid: some View {
-        VStack(alignment: .center, spacing: 4) {
-            // 거리
-            HStack(alignment: .firstTextBaseline, spacing: 2) {
-                Text(totalDistText)
-                    .font(.system(size: 40, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(Color.accentColor)
-                Text("km")
-                    .font(.system(size: 18, weight: .medium))
-                    .foregroundStyle(Color.accentColor)
-            }
-
-            // 시간
-            Text(session.durationText)
-                .font(.system(size: 22, weight: .medium, design: .monospaced))
-                .foregroundStyle(.white)
-
-            // 평균 심박 | 평균 페이스
-            HStack(spacing: 0) {
-                // 평균 심박
-                VStack(spacing: 0) {
-                    Text("평균 심박")
-                        .font(.system(size: 9, weight: .medium))
-                        .foregroundStyle(.gray)
-                    HStack(alignment: .firstTextBaseline, spacing: 2) {
-                        Text(hrText(session.avgHeartRate))
-                            .font(.system(size: 16, weight: .bold, design: .monospaced))
-                        Text("bpm")
-                            .font(.system(size: 7))
-                            .foregroundStyle(.gray)
-                    }
-                    .foregroundStyle(.white)
-                }
-                .frame(maxWidth: .infinity)
-
-                Divider().frame(height: 20)
-
-                // 평균 페이스
-                VStack(spacing: 0) {
-                    Text("평균 페이스")
-                        .font(.system(size: 9, weight: .medium))
-                        .foregroundStyle(.gray)
-                    Text(session.paceText(session.avgPace))
-                        .font(.system(size: 16, weight: .bold, design: .monospaced))
-                        .foregroundStyle(.white)
-                }
-                .frame(maxWidth: .infinity)
-            }
+    private var nowPlayingTab: some View {
+        ZStack {
+            Color.black.ignoresSafeArea()
+            NowPlayingView()
         }
-        .frame(maxWidth: .infinity, alignment: .center)
     }
 
     private var totalDistText: String {
@@ -545,32 +556,39 @@ struct WatchIntervalRunView: View {
         return String(format: "%.0f", bpm)
     }
 
-    private func statRow(label1: String, value1: String,
-                         label2: String, value2: String) -> some View {
-        HStack(spacing: 0) {
-            statCell(label: label1, value: value1)
-            Divider()
-            statCell(label: label2, value: value2)
-        }
-        .frame(height: 40)
+    private var currentPaceText: String {
+        session.paceText(session.phase == .runningLap ? session.lapPace ?? session.avgPace : session.lastRunLapPace ?? session.avgPace)
     }
 
-    private func statCell(label: String, value: String) -> some View {
-        VStack(spacing: 1) {
-            Text(label)
-                .font(.system(size: 7, weight: .semibold))
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.6)
-            Text(value)
-                .font(.system(size: 12, weight: .bold, design: .monospaced))
-                .lineLimit(1)
-                .minimumScaleFactor(0.6)
-        }
-        .frame(maxWidth: .infinity)
+    private var averagePaceText: String {
+        session.paceText(session.avgPace ?? session.currentPace)
+    }
+
+    private func heartRateProgress(_ bpm: Double?) -> Double? {
+        guard let bpm else { return nil }
+        return min(max((bpm - 80) / 90, 0), 1)
     }
 
     // MARK: - Buttons
+
+    private var controlsTab: some View {
+        VStack(spacing: 8) {
+            Label(session.phase == .resting ? "REST" : "SET \(session.setText)", systemImage: "repeat")
+                .font(.system(size: 11, weight: .bold, design: .rounded))
+                .foregroundStyle(RunningLevelManager.shared.accentColor)
+            Text(session.lapText)
+                .font(.system(size: 18, weight: .heavy, design: .rounded))
+                .foregroundStyle(.white)
+                .monospacedDigit()
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+            Spacer(minLength: 4)
+            buttonSection
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+    }
 
     @ViewBuilder
     private var buttonSection: some View {
@@ -621,7 +639,6 @@ struct WatchIntervalRunView: View {
 
                 Button {
                     session.stop()
-                    onClose()
                 } label: {
                     Image(systemName: "stop.fill")
                         .font(.system(size: 14, weight: .bold))
