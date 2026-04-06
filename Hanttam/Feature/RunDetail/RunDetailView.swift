@@ -443,7 +443,7 @@ enum RunDetailContentView {
                 }
                 
                 // Lap pace chart
-                if !data.splits.isEmpty {
+                if !data.lapRows.isEmpty {
                     sectionDivider
                     splitPaceBarSection
                         .padding(.vertical, 16)
@@ -569,8 +569,10 @@ enum RunDetailContentView {
         
         @ViewBuilder
         private var splitPaceBarSection: some View {
-            let splitPaceFloor: Double = -( (data.splits.map(\.pace).max() ?? 0) * 1.1 )
-            let bestPace: Double = data.splits.map(\.pace).min() ?? 0
+            let worstPace: Double = data.lapRows.map(\.pace).max() ?? 0
+            let bestPace: Double = data.lapRows.map(\.pace).min() ?? 0
+            let bottomScore = min(paceChartScore(worstPace), paceChartScore(avgPace)) * 0.7
+            let topScore = max(paceChartScore(bestPace), paceChartScore(avgPace)) * 1.04
             
             VStack(alignment: .leading, spacing: 12) {
                 HStack {
@@ -587,25 +589,33 @@ enum RunDetailContentView {
                 .padding(.horizontal, 20)
                 
                 Chart {
-                    ForEach(data.splits) { split in
+                    ForEach(data.lapRows) { row in
                         BarMark(
-                            x: .value("Lap", String(split.id)),
-                            yStart: .value("floor", splitPaceFloor),
-                            yEnd: .value("Pace", -split.pace)
+                            x: .value("Lap", row.label),
+                            yStart: .value("floor", bottomScore),
+                            yEnd: .value("PaceScore", paceChartScore(row.pace))
                         )
-                        .foregroundStyle(DS.accent.opacity(split.pace == bestPace ? 1.0 : 0.8))
+                        .foregroundStyle(DS.accent.opacity(row.pace == bestPace ? 1.0 : 0.6))
                     }
                     
-                    RuleMark(y: .value("Average", -avgPace))
+                    RuleMark(y: .value("Average", paceChartScore(avgPace)))
                         .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 4]))
                         .foregroundStyle(DS.textDim.opacity(0.6))
                 }
-                .chartYScale(domain: .automatic(includesZero: false))
+                .chartYScale(domain: bottomScore...topScore)
+                .chartXScale(range: .plotDimension(startPadding: 8, endPadding: 18))
                 .chartYAxis {
-                    AxisMarks(position: .leading, values: .automatic) { (value: AxisValue) in
+                    AxisMarks(
+                        position: .leading,
+                        values: [
+                            paceChartScore(worstPace),
+                            paceChartScore(avgPace),
+                            paceChartScore(bestPace)
+                        ]
+                    ) { (value: AxisValue) in
                         AxisValueLabel {
-                            if let sec = value.as(Double.self) {
-                                Text(formatPaceValue(abs(sec)))
+                            if let score = value.as(Double.self) {
+                                Text(formatPaceValue(pace(fromChartScore: score)))
                                     .font(.system(size: 10))
                                     .foregroundStyle(DS.textDim)
                             }
@@ -616,8 +626,12 @@ enum RunDetailContentView {
                 }
                 .chartXAxis {
                     AxisMarks(values: .automatic) { (value: AxisValue) in
-                        if let lapStr = value.as(String.self), let lapInt = Int(lapStr) {
-                            if lapInt == 1 || lapInt % 5 == 0 || lapInt == data.splits.count {
+                        if let lapStr = value.as(String.self) {
+                            let labels = data.lapRows.map(\.label)
+                            let isFirst = lapStr == labels.first
+                            let isLast = lapStr == labels.last
+                            let isEveryFive = labels.firstIndex(of: lapStr).map { ($0 + 1) % 5 == 0 } ?? false
+                            if isFirst || isEveryFive || isLast {
                                 AxisValueLabel {
                                     Text(lapStr)
                                         .font(.system(size: 10))
@@ -630,6 +644,16 @@ enum RunDetailContentView {
                 .frame(height: 140)
                 .padding(.horizontal, 20)
             }
+        }
+
+        private func paceChartScore(_ pace: Double) -> Double {
+            guard pace.isFinite, pace > 0 else { return 0 }
+            return 1000.0 / pace
+        }
+
+        private func pace(fromChartScore score: Double) -> Double {
+            guard score.isFinite, score > 0 else { return 0 }
+            return 1000.0 / score
         }
         
         // MARK: - Elevation Bar Chart
@@ -986,7 +1010,7 @@ enum RunDetailContentView {
     
     struct LapsFullSection: View {
         let record: RunningRecord
-        let splits: [DistSplit]
+        let lapRows: [RunDetailLapRow]
         let heartRates: [HeartRateSample]
         let stepSamples: [QuantitySamplePoint]
         let strideSamples: [QuantitySamplePoint]
@@ -994,48 +1018,36 @@ enum RunDetailContentView {
         let speedSamples: [QuantitySamplePoint]
         
         private var avgPace: Double {
-            guard !splits.isEmpty else { return 0 }
-            let totalDist = splits.reduce(0) { $0 + $1.distance }
-            let totalTime = splits.reduce(0) { $0 + ($1.pace * $1.distance / 1000) }
+            guard !lapRows.isEmpty else { return 0 }
+            let totalDist = lapRows.reduce(0) { $0 + $1.distance }
+            let totalTime = lapRows.reduce(0) { $0 + ($1.pace * $1.distance / 1000) }
             return totalDist > 0 ? totalTime / (totalDist / 1000) : 0
         }
         
         private var avgHeartRate: Double? {
-            let values = splits.compactMap(\.avgHeartRate)
+            let values = lapRows.compactMap(\.avgHeartRate)
             guard !values.isEmpty else { return heartRates.isEmpty ? nil : heartRates.reduce(0) { $0 + $1.bpm } / Double(heartRates.count) }
             return values.reduce(0, +) / Double(values.count)
         }
         
         private var avgCadence: Double? {
-            let values = splits.compactMap(\.avgCadence)
-            guard !values.isEmpty else {
-                let totalSteps = stepSamples.reduce(0) { $0 + $1.value }
-                guard record.duration > 0, totalSteps > 0 else { return nil }
-                return totalSteps / (record.duration / 60)
-            }
-            return values.reduce(0, +) / Double(values.count)
+            let totalSteps = stepSamples.reduce(0) { $0 + $1.value }
+            guard record.duration > 0, totalSteps > 0 else { return nil }
+            return totalSteps / (record.duration / 60)
         }
         
         private var avgStrideLength: Double? {
-            let values = splits.compactMap(\.avgStrideLength)
-            guard !values.isEmpty else {
-                guard !strideSamples.isEmpty else { return nil }
-                return strideSamples.reduce(0) { $0 + $1.value } / Double(strideSamples.count)
-            }
-            return values.reduce(0, +) / Double(values.count)
+            guard !strideSamples.isEmpty else { return nil }
+            return strideSamples.reduce(0) { $0 + $1.value } / Double(strideSamples.count)
         }
         
         private var avgVerticalOscillation: Double? {
-            let values = splits.compactMap(\.avgVerticalOscillation)
-            guard !values.isEmpty else {
-                guard !voSamples.isEmpty else { return nil }
-                return voSamples.reduce(0) { $0 + $1.value } / Double(voSamples.count)
-            }
-            return values.reduce(0, +) / Double(values.count)
+            guard !voSamples.isEmpty else { return nil }
+            return voSamples.reduce(0) { $0 + $1.value } / Double(voSamples.count)
         }
         
-        private var bestLap: DistSplit? {
-            splits.min(by: { $0.pace < $1.pace })
+        private var bestLapRow: RunDetailLapRow? {
+            lapRows.min(by: { $0.pace < $1.pace })
         }
         
         private var peakPace: Double? {
@@ -1057,7 +1069,7 @@ enum RunDetailContentView {
                         .foregroundStyle(DS.textDim)
                     
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
-                        Text("\(splits.count)")
+                        Text("\(lapRows.count)")
                             .font(.system(size: 52, weight: .ultraLight))
                             .foregroundStyle(DS.textLabel)
                         Text("Laps")
@@ -1080,16 +1092,9 @@ enum RunDetailContentView {
                         .font(AppFont.labelMD)
                         .tracking(2)
                         .foregroundStyle(DS.textDim)
-                    LapTableSection(splits: splits)
+                    LapTableSection(rows: lapRows)
                 }
             }
-        }
-        
-        private func label(for split: DistSplit) -> String {
-            if split.distance < 1000 {
-                return String(format: "%.1f", Double(split.id - 1) + split.distance / 1000)
-            }
-            return "\(split.id)"
         }
         
         private struct SummaryRowData {
@@ -1102,7 +1107,7 @@ enum RunDetailContentView {
         private var summaryRows: [SummaryRowData] {
             var rows: [SummaryRowData] = [
                 SummaryRowData(label: "평균 페이스", value: formatPaceValue(avgPace), unit: "", accent: DS.textLabel),
-                SummaryRowData(label: "최고 구간 페이스", value: bestLap.map { formatPaceValue($0.pace) } ?? "--", unit: "", accent: DS.textLabel),
+                SummaryRowData(label: "최고 구간 페이스", value: bestLapRow.map { formatPaceValue($0.pace) } ?? "--", unit: "", accent: DS.textLabel),
             ]
             if let peakPace {
                 rows.append(SummaryRowData(label: "최고 순간 페이스", value: formatPaceValue(peakPace), unit: "", accent: DS.accent))
@@ -1154,16 +1159,16 @@ enum RunDetailContentView {
     // MARK: - Lap Table Section
     
     struct LapTableSection: View {
-        let splits: [DistSplit]
+        let rows: [RunDetailLapRow]
         
         var body: some View {
             VStack(spacing: 0) {
                 LapHeaderRow()
                 
-                ForEach(Array(splits.enumerated()), id: \.element.id) { index, split in
+                ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
                     LapRow(
-                        split: split,
-                        previousSplit: index > 0 ? splits[index - 1] : nil,
+                        row: row,
+                        previousRow: index > 0 ? rows[index - 1] : nil,
                         isEven: index % 2 == 0
                     )
                 }
@@ -1176,8 +1181,8 @@ enum RunDetailContentView {
     private struct LapHeaderRow: View {
         var body: some View {
             HStack(spacing: 0) {
-                Text("KM")
-                    .frame(width: 32, alignment: .leading)
+                Text("LAP")
+                    .frame(width: 52, alignment: .leading)
                 Text("페이스")
                     .frame(maxWidth: .infinity)
                 Text("심박")
@@ -1197,13 +1202,13 @@ enum RunDetailContentView {
     }
     
     private struct LapRow: View {
-        let split: DistSplit
-        let previousSplit: DistSplit?
+        let row: RunDetailLapRow
+        let previousRow: RunDetailLapRow?
         var isEven: Bool = false
         
         private var paceDiff: Double? {
-            guard let prev = previousSplit else { return nil }
-            return split.pace - prev.pace
+            guard let prev = previousRow else { return nil }
+            return row.pace - prev.pace
         }
         
         private var diffColor: Color {
@@ -1213,29 +1218,22 @@ enum RunDetailContentView {
             return DS.textDim
         }
         
-        private var kmLabel: String {
-            if split.distance < 1000 {
-                return String(format: ".%0.f", (split.distance / 1000) * 10)
-            }
-            return "\(split.id)"
-        }
-        
         var body: some View {
             HStack(spacing: 0) {
-                Text(kmLabel)
+                Text(row.label)
                     .font(AppFont.metricCaption)
-                    .frame(width: 32, alignment: .leading)
+                    .frame(width: 52, alignment: .leading)
                 
-                Text(formatPaceValue(split.pace))
+                Text(formatPaceValue(row.pace))
                     .font(AppFont.metricCaption)
                     .frame(maxWidth: .infinity)
                 
-                Text(split.avgHeartRate.map { String(format: "%.0f", $0) } ?? "--")
+                Text(row.avgHeartRate.map { String(format: "%.0f", $0) } ?? "--")
                     .font(AppFont.metricCaption)
                     .foregroundStyle(.red.opacity(0.8))
                     .frame(maxWidth: .infinity)
                 
-                Text(split.elevationChange.map { String(format: "%+.0f", $0) } ?? "--")
+                Text(row.elevationChange.map { String(format: "%+.0f", $0) } ?? "--")
                     .font(AppFont.metricCaption)
                     .foregroundStyle(.green.opacity(0.8))
                     .frame(maxWidth: .infinity)
@@ -1646,25 +1644,25 @@ enum RunDetailContentView {
     // MARK: - Split Pace Section
     
     struct SplitPaceSection: View {
-        let splits: [DistSplit]
+        let lapRows: [RunDetailLapRow]
         let speedSamples: [QuantitySamplePoint]
         
         @State private var selectedLabel: String?
         @State private var showShareSheet = false
         
         private var avgPace: Double {
-            guard !splits.isEmpty else { return 0 }
-            let totalDist = splits.reduce(0) { $0 + $1.distance }
-            let totalTime = splits.reduce(0) { $0 + ($1.pace * $1.distance / 1000) }
+            guard !lapRows.isEmpty else { return 0 }
+            let totalDist = lapRows.reduce(0) { $0 + $1.distance }
+            let totalTime = lapRows.reduce(0) { $0 + ($1.pace * $1.distance / 1000) }
             return totalDist > 0 ? totalTime / (totalDist / 1000) : 0
         }
         
         private var bestPace: Double {
-            splits.map(\.pace).min() ?? 0
+            lapRows.map(\.pace).min() ?? 0
         }
         
         private var worstPace: Double {
-            splits.map(\.pace).max() ?? 0
+            lapRows.map(\.pace).max() ?? 0
         }
         
         private struct PeakPace {
@@ -1683,35 +1681,25 @@ enum RunDetailContentView {
         private var ceiling: Double { -(peakFastest?.pace ?? bestPace) * 0.95 }
         
         private func findSplitLabel(for date: Date) -> String {
-            guard let split = splits.first(where: { date >= $0.startDate && date < $0.endDate })
-                    ?? splits.last else { return "" }
-            return label(for: split)
+            guard let row = lapRows.first(where: { date >= $0.startDate && date < $0.endDate })
+                    ?? lapRows.last else { return "" }
+            return row.label
         }
         
-        private func label(for split: DistSplit) -> String {
-            if split.distance < 1000 {
-                return String(format: "%.1f", Double(split.id - 1) + split.distance / 1000)
-            }
-            return "\(split.id)"
-        }
-        
-        private var selectedSplit: DistSplit? {
+        private var selectedSplit: RunDetailLapRow? {
             guard let sel = selectedLabel else { return nil }
-            return splits.first { label(for: $0) == sel }
+            return lapRows.first { $0.label == sel }
         }
         
         private func selectedDistanceLabel() -> String {
             guard let split = selectedSplit else { return "평균" }
-            if split.distance < 1000 {
-                return String(format: "%.1fkm", Double(split.id - 1) + split.distance / 1000)
-            }
-            return "\(split.id)km"
+            return split.label
         }
         
         var body: some View {
             VStack(alignment: .leading, spacing: 16) {
                 HStack {
-                    Text("km별 페이스")
+                    Text("랩별 페이스")
                         .font(.system(size: 10, weight: .light))
                         .tracking(1.2)
                         .foregroundStyle(DS.textLabel)
@@ -1745,8 +1733,8 @@ enum RunDetailContentView {
                 }
                 
                 Chart {
-                    ForEach(splits) { split in
-                        let splitLabel = label(for: split)
+                    ForEach(lapRows) { split in
+                        let splitLabel = split.label
                         BarMark(
                             x: .value("km", splitLabel),
                             yStart: .value("floor", floor),
@@ -1809,9 +1797,11 @@ enum RunDetailContentView {
                 .chartXAxis {
                     AxisMarks { value in
                         let axisLabel = value.as(String.self) ?? ""
-                        let isLast = axisLabel == (splits.last.map { label(for: $0) } ?? "")
-                        let km = Int(axisLabel) ?? 0
-                        if km % 5 == 0 || isLast {
+                        let labels = lapRows.map(\.label)
+                        let isFirst = axisLabel == labels.first
+                        let isLast = axisLabel == labels.last
+                        let isEveryFive = labels.firstIndex(of: axisLabel).map { ($0 + 1) % 5 == 0 } ?? false
+                        if isFirst || isEveryFive || isLast {
                             AxisValueLabel {
                                 Text(axisLabel)
                                     .font(.system(size: 9, weight: .light))
@@ -1852,7 +1842,7 @@ enum RunDetailContentView {
             .sheet(isPresented: $showShareSheet) {
                 ChartPhotoShareView {
                     SplitPaceShareOverlay(
-                        splits: splits,
+                        lapRows: lapRows,
                         avgPace: avgPace,
                         bestPace: bestPace,
                         worstPace: worstPace,
@@ -1868,7 +1858,7 @@ enum RunDetailContentView {
         // MARK: - Split Pace Share Overlay
         
         private struct SplitPaceShareOverlay: View {
-            let splits: [DistSplit]
+            let lapRows: [RunDetailLapRow]
             let avgPace: Double
             let bestPace: Double
             let worstPace: Double
@@ -1879,23 +1869,16 @@ enum RunDetailContentView {
             @Environment(\.overlayTextColor) private var textColor
             @Environment(\.overlaySubTextColor) private var subTextColor
             
-            private func label(for split: DistSplit) -> String {
-                if split.distance < 1000 {
-                    return String(format: "%.1f", Double(split.id - 1) + split.distance / 1000)
-                }
-                return "\(split.id)"
-            }
-            
             var body: some View {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("km별 페이스")
+                    Text("랩별 페이스")
                         .font(.system(size: 10, weight: .light))
                         .tracking(1.2)
                         .foregroundStyle(textColor.opacity(0.8))
                     Chart {
-                        ForEach(splits) { split in
+                        ForEach(lapRows) { split in
                             BarMark(
-                                x: .value("km", label(for: split)),
+                                x: .value("km", split.label),
                                 yStart: .value("floor", floor),
                                 yEnd: .value("페이스", -split.pace)
                             )
@@ -1919,9 +1902,11 @@ enum RunDetailContentView {
                     .chartXAxis {
                         AxisMarks { value in
                             let axisLabel = value.as(String.self) ?? ""
-                            let isLast = axisLabel == (splits.last.map { label(for: $0) } ?? "")
-                            let km = Int(axisLabel) ?? 0
-                            if km % 5 == 0 || isLast {
+                            let labels = lapRows.map(\.label)
+                            let isFirst = axisLabel == labels.first
+                            let isLast = axisLabel == labels.last
+                            let isEveryFive = labels.firstIndex(of: axisLabel).map { ($0 + 1) % 5 == 0 } ?? false
+                            if isFirst || isEveryFive || isLast {
                                 AxisValueLabel {
                                     Text(axisLabel)
                                         .font(.system(size: 8, weight: .light))
@@ -2102,7 +2087,7 @@ enum RunDetailContentView {
                 }
                 .foregroundStyle(textColor)
                 
-                if !data.splits.isEmpty {
+                if !data.lapRows.isEmpty {
                     shareSplitPaceChart
                 }
                 
@@ -2115,8 +2100,10 @@ enum RunDetailContentView {
         }
         
         private var shareSplitPaceChart: some View {
-            let splitPaceFloor: Double = -( (data.splits.map(\.pace).max() ?? 0) * 1.1 )
-            let bestPace: Double = data.splits.map(\.pace).min() ?? 0
+            let worstPace: Double = data.lapRows.map(\.pace).max() ?? 0
+            let bestPace: Double = data.lapRows.map(\.pace).min() ?? 0
+            let bottomScore = min(paceChartScore(worstPace), paceChartScore(avgPace)) * 0.985
+            let topScore = max(paceChartScore(bestPace), paceChartScore(avgPace)) * 1.04
             
             return VStack(alignment: .leading, spacing: 8) {
                 Text("LAP PACE")
@@ -2125,25 +2112,33 @@ enum RunDetailContentView {
                     .foregroundStyle(subTextColor)
                 
                 Chart {
-                    ForEach(data.splits) { split in
+                    ForEach(data.lapRows) { split in
                         BarMark(
-                            x: .value("Lap", String(split.id)),
-                            yStart: .value("floor", splitPaceFloor),
-                            yEnd: .value("Pace", -split.pace)
+                            x: .value("Lap", split.label),
+                            yStart: .value("floor", bottomScore),
+                            yEnd: .value("PaceScore", paceChartScore(split.pace))
                         )
                         .foregroundStyle(DS.accent.opacity(split.pace == bestPace ? 1.0 : 0.8))
                     }
                     
-                    RuleMark(y: .value("Average", -avgPace))
+                    RuleMark(y: .value("Average", paceChartScore(avgPace)))
                         .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 4]))
                         .foregroundStyle(subTextColor.opacity(0.6))
                 }
-                .chartYScale(domain: .automatic(includesZero: false))
+                .chartYScale(domain: bottomScore...topScore)
+                .chartXScale(range: .plotDimension(startPadding: 8, endPadding: 18))
                 .chartYAxis {
-                    AxisMarks(position: .leading, values: .automatic) { (value: AxisValue) in
+                    AxisMarks(
+                        position: .leading,
+                        values: [
+                            paceChartScore(worstPace),
+                            paceChartScore(avgPace),
+                            paceChartScore(bestPace)
+                        ]
+                    ) { (value: AxisValue) in
                         AxisValueLabel {
-                            if let sec = value.as(Double.self) {
-                                Text(formatPaceValue(abs(sec)))
+                            if let score = value.as(Double.self) {
+                                Text(formatPaceValue(pace(fromChartScore: score)))
                                     .font(.system(size: 8))
                                     .foregroundStyle(subTextColor)
                             }
@@ -2152,8 +2147,12 @@ enum RunDetailContentView {
                 }
                 .chartXAxis {
                     AxisMarks(values: .automatic) { (value: AxisValue) in
-                        if let lapStr = value.as(String.self), let lapInt = Int(lapStr) {
-                            if lapInt == 1 || lapInt % 5 == 0 || lapInt == data.splits.count {
+                        if let lapStr = value.as(String.self) {
+                            let labels = data.lapRows.map(\.label)
+                            let isFirst = lapStr == labels.first
+                            let isLast = lapStr == labels.last
+                            let isEveryFive = labels.firstIndex(of: lapStr).map { ($0 + 1) % 5 == 0 } ?? false
+                            if isFirst || isEveryFive || isLast {
                                 AxisValueLabel {
                                     Text(lapStr)
                                         .font(.system(size: 8))
@@ -2165,6 +2164,16 @@ enum RunDetailContentView {
                 }
                 .frame(height: 180)
             }
+        }
+
+        private func paceChartScore(_ pace: Double) -> Double {
+            guard pace.isFinite, pace > 0 else { return 0 }
+            return 1000.0 / pace
+        }
+
+        private func pace(fromChartScore score: Double) -> Double {
+            guard score.isFinite, score > 0 else { return 0 }
+            return 1000.0 / score
         }
     }
 }

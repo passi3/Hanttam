@@ -9,6 +9,17 @@ import Foundation
 import Combine
 internal import HealthKit
 
+struct RunDetailLapRow: Identifiable {
+    let id: Int
+    let label: String
+    let pace: TimeInterval
+    let distance: Double
+    let startDate: Date
+    let endDate: Date
+    var avgHeartRate: Double?
+    var elevationChange: Double?
+}
+
 final class RunDetailViewModel {
 
     // MARK: - Detail Data
@@ -23,6 +34,7 @@ final class RunDetailViewModel {
         var gctSamples: [QuantitySamplePoint] = []
         var altPoints: [AltitudePoint] = []
         var splits: [DistSplit] = []
+        var lapRows: [RunDetailLapRow] = []
     }
 
     // MARK: - Input
@@ -39,6 +51,7 @@ final class RunDetailViewModel {
     }
 
     let record: RunningRecord
+    private let intervalRecord: IntervalRecord?
 
     private let isLoadingSubject = CurrentValueSubject<Bool, Never>(true)
     private let dataSubject = CurrentValueSubject<DetailData, Never>(DetailData())
@@ -47,8 +60,9 @@ final class RunDetailViewModel {
     private var cancellables = Set<AnyCancellable>()
     private let store = HealthKitStore.shared
 
-    init(record: RunningRecord) {
+    init(record: RunningRecord, intervalRecord: IntervalRecord? = nil) {
         self.record = record
+        self.intervalRecord = intervalRecord
     }
 
     // MARK: - Transform
@@ -149,8 +163,78 @@ final class RunDetailViewModel {
                     altitudes: result.altPoints
                 )
             }
+            result.lapRows = self.makeLapRows(from: result)
             self.dataSubject.send(result)
             self.isLoadingSubject.send(false)
         }
+    }
+
+    private func makeLapRows(from data: DetailData) -> [RunDetailLapRow] {
+        if let intervalRecord {
+            return makeIntervalLapRows(intervalRecord, heartRates: data.heartRates, altitudes: data.altPoints)
+        }
+
+        return data.splits.map { split in
+            RunDetailLapRow(
+                id: split.id,
+                label: freeRunLabel(for: split),
+                pace: split.pace,
+                distance: split.distance,
+                startDate: split.startDate,
+                endDate: split.endDate,
+                avgHeartRate: split.avgHeartRate,
+                elevationChange: split.elevationChange
+            )
+        }
+    }
+
+    private func makeIntervalLapRows(
+        _ intervalRecord: IntervalRecord,
+        heartRates: [HeartRateSample],
+        altitudes: [AltitudePoint]
+    ) -> [RunDetailLapRow] {
+        var cumulativeDistance = 0.0
+        var rowID = 1
+
+        return intervalRecord.laps.compactMap { lap in
+            guard lap.type == .run else { return nil }
+
+            cumulativeDistance += lap.distance
+
+            let avgHeartRate: Double? = {
+                let values = heartRates
+                    .filter { $0.date >= lap.startDate && $0.date < lap.endDate }
+                    .map(\.bpm)
+                guard !values.isEmpty else { return nil }
+                return values.reduce(0, +) / Double(values.count)
+            }()
+
+            let elevationChange: Double? = {
+                let values = altitudes.filter { $0.date >= lap.startDate && $0.date <= lap.endDate }
+                guard let first = values.first, let last = values.last else { return nil }
+                return last.altitude - first.altitude
+            }()
+
+            let pace = lap.avgPace ?? (lap.distance > 0 ? lap.duration / (lap.distance / 1000.0) : 0)
+            let row = RunDetailLapRow(
+                id: rowID,
+                label: String(format: "%.0fm", cumulativeDistance.rounded()),
+                pace: pace,
+                distance: lap.distance,
+                startDate: lap.startDate,
+                endDate: lap.endDate,
+                avgHeartRate: avgHeartRate,
+                elevationChange: elevationChange
+            )
+            rowID += 1
+            return row
+        }
+    }
+
+    private func freeRunLabel(for split: DistSplit) -> String {
+        if split.distance < 1000 {
+            return String(format: "%.1f", Double(split.id - 1) + split.distance / 1000)
+        }
+        return "\(split.id)"
     }
 }

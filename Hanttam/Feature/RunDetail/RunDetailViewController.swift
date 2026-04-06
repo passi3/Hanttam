@@ -174,11 +174,11 @@ final class RunDetailViewController: UIViewController {
         )
         embedSwiftUI(summaryView, height: nil)
 
-        // km별 페이스
-        if !data.splits.isEmpty {
+        // 랩별 페이스
+        if !data.lapRows.isEmpty {
             embedSwiftUI(RunDetailContentView.SectionHeader(title: "SPLITS", icon: "chart.bar"), height: 24)
             let splitChart = RunDetailContentView.SplitPaceSection(
-                splits: data.splits,
+                lapRows: data.lapRows,
                 speedSamples: data.speedSamples
             )
             embedSwiftUI(splitChart, height: 320)

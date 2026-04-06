@@ -216,6 +216,11 @@ final class RecordsViewController: HTViewController {
         present(vc, animated: true)
     }
 
+    private func navigateToDetail(_ record: RunningRecord, intervalRecord: IntervalRecord) {
+        let vc = RunDetailTabViewController(record: record, intervalRecord: intervalRecord)
+        present(vc, animated: true)
+    }
+
     // MARK: - Actions
 
     @objc private func shareChartTapped() {
@@ -342,7 +347,7 @@ extension RecordsViewController: UITableViewDelegate {
                 deviceName: workout.device?.name ?? workout.device?.model,
                 isIndoor: workout.metadata?[HKMetadataKeyIndoorWorkout] as? Bool ?? false
             )
-            navigateToDetail(record)
+            navigateToDetail(record, intervalRecord: interval)
         case .record(let record):
             if let index = records.firstIndex(of: record) {
                 selectRecordSubject.onNext(index)

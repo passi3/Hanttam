@@ -24,13 +24,14 @@ class RunDetailTabViewController: UIViewController {
     private var interactiveDismiss: UIPercentDrivenInteractiveTransition?
     
     private let tabBar = UITabBar()
-    private let backButton = UIButton(type: .system)
     
     private var currentIndex: Int = 0
+    private let dismissTabTag = -1
+    private let dismissEdgeWidth: CGFloat = 24
     
-    init(record: RunningRecord) {
+    init(record: RunningRecord, intervalRecord: IntervalRecord? = nil) {
         self.record = record
-        self.viewModel = RunDetailViewModel(record: record)
+        self.viewModel = RunDetailViewModel(record: record, intervalRecord: intervalRecord)
         super.init(nibName: nil, bundle: nil)
         modalPresentationStyle = .custom
         transitioningDelegate = self
@@ -53,13 +54,13 @@ class RunDetailTabViewController: UIViewController {
         let summaryVC = RunDetailSummaryViewController(record: record, viewModel: viewModel)
         let lapsVC = RunDetailLapsViewController(record: record, viewModel: viewModel)
         let chartsVC = RunDetailChartsViewController(record: record, viewModel: viewModel)
-        let sourceVC = RunDetailSourceViewController(record: record)
+        // let sourceVC = RunDetailSourceViewController(record: record)
 
         if record.isIndoor {
-            viewControllers = [summaryVC, lapsVC, chartsVC, sourceVC]
+            viewControllers = [summaryVC, lapsVC, chartsVC]
         } else {
             let trackingVC = RunDetailTrackingViewController(record: record, viewModel: viewModel)
-            viewControllers = [summaryVC, trackingVC, lapsVC, chartsVC, sourceVC]
+            viewControllers = [summaryVC, trackingVC, lapsVC, chartsVC]
         }
     }
     
@@ -80,42 +81,29 @@ class RunDetailTabViewController: UIViewController {
     }
     
     private func setupTabBar() {
+        let dismissItem = UITabBarItem(title: nil, image: UIImage(systemName: "chevron.left.circle"), tag: dismissTabTag)
+
         // UITabBar items — 실내 운동이면 경로 탭 제외
-        var items = [
-            UITabBarItem(title: "요약", image: UIImage(systemName: "list.bullet.rectangle"), tag: 0),
-        ]
+        var items = [dismissItem]
+        items.append(UITabBarItem(title: "요약", image: UIImage(systemName: "list.bullet.rectangle"), tag: 0))
         if !record.isIndoor {
             items.append(UITabBarItem(title: "경로", image: UIImage(systemName: "map"), tag: 1))
         }
         items.append(contentsOf: [
             UITabBarItem(title: "랩",  image: UIImage(systemName: "stopwatch"),              tag: 2),
             UITabBarItem(title: "차트", image: UIImage(systemName: "chart.line.uptrend.xyaxis"), tag: 3),
-            UITabBarItem(title: "정보", image: UIImage(systemName: "info.circle"),           tag: 4),
+            // UITabBarItem(title: "정보", image: UIImage(systemName: "info.circle"),           tag: 4),
         ])
         tabBar.setItems(items, animated: false)
-        tabBar.selectedItem = items[0]
+        tabBar.selectedItem = tabItem(forContentIndex: currentIndex)
         tabBar.tintColor = RunningLevelManager.shared.accentUIColor
         tabBar.delegate = self
         view.addSubview(tabBar)
-
-        // Back button overlaid on the left of the tab bar
-        let chevronConfig = UIImage.SymbolConfiguration(pointSize: 17, weight: .semibold)
-        backButton.setImage(UIImage(systemName: "chevron.left", withConfiguration: chevronConfig), for: .normal)
-        backButton.tintColor = RunningLevelManager.shared.accentUIColor
-        backButton.addTarget(self, action: #selector(backTapped), for: .touchUpInside)
-        view.addSubview(backButton)
 
         let safeArea = view.safeAreaLayoutGuide
         tabBar.snp.makeConstraints { make in
             make.leading.trailing.bottom.equalToSuperview()
             make.top.equalTo(safeArea.snp.bottom).offset(-49)
-        }
-
-        backButton.snp.makeConstraints { make in
-            make.leading.equalToSuperview()
-            make.top.equalTo(safeArea.snp.bottom).offset(-49)
-            make.width.equalTo(50)
-            make.height.equalTo(49)
         }
     }
     
@@ -127,7 +115,6 @@ class RunDetailTabViewController: UIViewController {
     }
 
     @objc private func handleEdgePan(_ gesture: UIScreenEdgePanGestureRecognizer) {
-        guard currentIndex == 0 else { return }
         let progress = min(max(gesture.translation(in: view).x / view.bounds.width, 0), 1)
 
         switch gesture.state {
@@ -149,17 +136,23 @@ class RunDetailTabViewController: UIViewController {
             break
         }
     }
-
-    @objc private func backTapped() {
-        dismiss(animated: true)
-    }
     
     private func selectTab(_ index: Int) {
         guard index != currentIndex else { return }
         let direction: UIPageViewController.NavigationDirection = index > currentIndex ? .forward : .reverse
         currentIndex = index
-        tabBar.selectedItem = tabBar.items?[index]
+        tabBar.selectedItem = tabItem(forContentIndex: index)
         pageViewController.setViewControllers([viewControllers[index]], direction: direction, animated: true)
+    }
+
+    private func tabItem(forContentIndex index: Int) -> UITabBarItem? {
+        let tabBarIndex = index + 1
+        guard let items = tabBar.items, items.indices.contains(tabBarIndex) else { return nil }
+        return items[tabBarIndex]
+    }
+
+    private func restoreSelectedTabItem() {
+        tabBar.selectedItem = tabItem(forContentIndex: currentIndex)
     }
     
     private func bind() {
@@ -171,14 +164,27 @@ class RunDetailTabViewController: UIViewController {
 extension RunDetailTabViewController: UITabBarDelegate {
     func tabBar(_ tabBar: UITabBar, didSelect item: UITabBarItem) {
         guard let index = tabBar.items?.firstIndex(of: item) else { return }
-        selectTab(index)
+        if item.tag == dismissTabTag {
+            restoreSelectedTabItem()
+            dismiss(animated: true)
+            return
+        }
+        selectTab(index - 1)
     }
 }
 
 extension RunDetailTabViewController: UIGestureRecognizerDelegate {
+    func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+        guard gestureRecognizer === edgePanGesture else { return true }
+        let location = gestureRecognizer.location(in: view)
+        guard location.x <= dismissEdgeWidth else { return false }
+        let velocity = edgePanGesture.velocity(in: view)
+        return abs(velocity.x) > abs(velocity.y) && velocity.x > 0
+    }
+
     func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
                            shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
-        return true
+        gestureRecognizer === edgePanGesture
     }
 }
 
@@ -257,7 +263,7 @@ extension RunDetailTabViewController: UIPageViewControllerDataSource, UIPageView
     func pageViewController(_ pageViewController: UIPageViewController, didFinishAnimating finished: Bool, previousViewControllers: [UIViewController], transitionCompleted completed: Bool) {
         if completed, let visibleVC = pageViewController.viewControllers?.first, let index = viewControllers.firstIndex(of: visibleVC) {
             currentIndex = index
-            tabBar.selectedItem = tabBar.items?[index]
+            restoreSelectedTabItem()
         }
     }
 }
@@ -296,6 +302,17 @@ private func sanitizedRunDetailData(_ data: RunDetailViewModel.DetailData) -> Ru
             sanitizedSplit.avgGroundContactTime = nil
         }
         return sanitizedSplit
+    }
+
+    sanitized.lapRows = data.lapRows.map { row in
+        var sanitizedRow = row
+        if let avgHeartRate = sanitizedRow.avgHeartRate, !avgHeartRate.isFinite {
+            sanitizedRow.avgHeartRate = nil
+        }
+        if let elevationChange = sanitizedRow.elevationChange, !elevationChange.isFinite {
+            sanitizedRow.elevationChange = nil
+        }
+        return sanitizedRow
     }
 
     return sanitized
@@ -561,11 +578,11 @@ class RunDetailLapsViewController: UIViewController {
         let sanitizedData = sanitizedRunDetailData(data)
         view.subviews.forEach { $0.removeFromSuperview() }
         children.forEach { $0.removeFromParent() }
-        guard !sanitizedData.splits.isEmpty else { return }
+        guard !sanitizedData.lapRows.isEmpty else { return }
 
         let lapsContent = RunDetailContentView.LapsFullSection(
             record: record,
-            splits: sanitizedData.splits,
+            lapRows: sanitizedData.lapRows,
             heartRates: sanitizedData.heartRates,
             stepSamples: sanitizedData.stepSamples,
             strideSamples: sanitizedData.strideSamples,
