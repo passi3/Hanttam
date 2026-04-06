@@ -9,17 +9,43 @@ import Foundation
 internal import HealthKit
 import CoreLocation
 
-final class HealthKitStore {
+final class HealthKitStore: NSObject {
+    enum PhoneWorkoutKind {
+        case freeRun
+        case intervalRun(settings: IntervalSettings)
+    }
+
+    struct PhoneWorkoutMetrics {
+        var heartRate: Double?
+        var avgHeartRate: Double?
+        var heartRateSamples: [HeartRateSample]
+
+        static let empty = PhoneWorkoutMetrics(
+            heartRate: nil,
+            avgHeartRate: nil,
+            heartRateSamples: []
+        )
+    }
     
     static let shared = HealthKitStore()
+    static let phoneWorkoutMetricsDidUpdate = Notification.Name("HealthKitStorePhoneWorkoutMetricsDidUpdate")
     
     private var store              : HKHealthStore?
     private let routeQueryLock     = NSLock()
     private var activeRouteQueries = Set<HKWorkoutRouteQuery>()
+    private var phoneWorkoutSession: HKWorkoutSession?
+    private var phoneWorkoutBuilder: HKWorkoutBuilder?
+    private var phoneWorkoutKind: PhoneWorkoutKind?
+    private var phoneWorkoutStartDate: Date?
+    private var phoneWorkoutIsIndoor = false
+    private var lastSavedWorkout: HKWorkout?
+    private(set) var currentPhoneWorkoutMetrics: PhoneWorkoutMetrics = .empty
     
     var isAvailable: Bool { HKHealthStore.isHealthDataAvailable() }
+    var currentPhoneWorkoutStartDate: Date? { phoneWorkoutStartDate }
     
-    private init() {
+    private override init() {
+        super.init()
         if isAvailable {
             store = HKHealthStore()
         }
@@ -63,6 +89,172 @@ final class HealthKitStore {
         
         store.requestAuthorization(toShare: shareTypes, read: readTypes) { ok, _ in
             DispatchQueue.main.async { completion(ok) }
+        }
+    }
+
+    func startPhoneWorkout(
+        kind: PhoneWorkoutKind,
+        isIndoor: Bool,
+        start: Date = Date(),
+        completion: @escaping (Bool, Error?) -> Void
+    ) {
+        guard let store else {
+            completion(false, nil)
+            return
+        }
+
+        guard phoneWorkoutSession == nil, phoneWorkoutBuilder == nil else {
+            completion(false, NSError(domain: "HealthKitStore", code: 1001, userInfo: [
+                NSLocalizedDescriptionKey: "이미 진행 중인 운동 세션이 있습니다."
+            ]))
+            return
+        }
+
+        let configuration = HKWorkoutConfiguration()
+        configuration.activityType = .running
+        configuration.locationType = isIndoor ? .indoor : .outdoor
+
+        if #available(iOS 26.0, *) {
+            do {
+                let session = try HKWorkoutSession(healthStore: store, configuration: configuration)
+                let builder = session.associatedWorkoutBuilder()
+                builder.dataSource = HKLiveWorkoutDataSource(healthStore: store, workoutConfiguration: configuration)
+                if #available(iOS 26.0, *) {
+                    builder.delegate = self
+                }
+
+                session.startActivity(with: start)
+                builder.beginCollection(withStart: start) { [weak self] ok, error in
+                    guard let self else { return }
+                    DispatchQueue.main.async {
+                        guard ok else {
+                            session.end()
+                            completion(false, error)
+                            return
+                        }
+
+                        self.phoneWorkoutSession = session
+                        self.phoneWorkoutBuilder = builder
+                        self.phoneWorkoutKind = kind
+                        self.phoneWorkoutStartDate = start
+                        self.phoneWorkoutIsIndoor = isIndoor
+                        self.resetPhoneWorkoutMetrics()
+                        completion(true, nil)
+                    }
+                }
+            } catch {
+                completion(false, error)
+            }
+        } else {
+            phoneWorkoutKind = kind
+            phoneWorkoutStartDate = start
+            phoneWorkoutIsIndoor = isIndoor
+            resetPhoneWorkoutMetrics()
+            completion(true, nil)
+        }
+    }
+
+    func pausePhoneWorkout() {
+        phoneWorkoutSession?.pause()
+    }
+
+    func resumePhoneWorkout() {
+        phoneWorkoutSession?.resume()
+    }
+
+    func finishPhoneWorkout(
+        end: Date,
+        distance: Double,
+        calories: Double?,
+        routeLocations: [CLLocation],
+        laps: [IntervalLap] = [],
+        completion: @escaping (Bool, HKWorkout?, Error?) -> Void
+    ) {
+        guard let store,
+              let start = phoneWorkoutStartDate else {
+            completion(false, nil, NSError(domain: "HealthKitStore", code: 1002, userInfo: [
+                NSLocalizedDescriptionKey: "진행 중인 운동 세션이 없습니다."
+            ]))
+            return
+        }
+
+        if #available(iOS 26.0, *),
+           let builder = phoneWorkoutBuilder,
+           let session = phoneWorkoutSession {
+            session.end()
+
+            addWorkoutSamples(
+                builder: builder,
+                start: start,
+                end: end,
+                distance: distance,
+                calories: calories
+            ) { [weak self] ok, error in
+                guard let self else { return }
+                guard ok else {
+                    self.clearActivePhoneWorkout()
+                    DispatchQueue.main.async { completion(false, nil, error) }
+                    return
+                }
+
+                self.addPhoneWorkoutDetails(builder: builder, laps: laps) { ok, error in
+                    guard ok else {
+                        self.clearActivePhoneWorkout()
+                        DispatchQueue.main.async { completion(false, nil, error) }
+                        return
+                    }
+
+                    builder.endCollection(withEnd: end) { ok, error in
+                        guard ok else {
+                            self.clearActivePhoneWorkout()
+                            DispatchQueue.main.async { completion(false, nil, error) }
+                            return
+                        }
+
+                        builder.finishWorkout { workout, error in
+                            guard let workout else {
+                                self.clearActivePhoneWorkout()
+                                DispatchQueue.main.async { completion(false, nil, error) }
+                                return
+                            }
+
+                            self.lastSavedWorkout = workout
+                            self.attachRouteIfNeeded(store: store, workout: workout, locations: routeLocations) { routeError in
+                                self.clearActivePhoneWorkout()
+                                DispatchQueue.main.async {
+                                    completion(true, workout, routeError)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            return
+        }
+
+        finishFallbackPhoneWorkout(
+            store: store,
+            start: start,
+            end: end,
+            distance: distance,
+            calories: calories,
+            routeLocations: routeLocations,
+            laps: laps,
+            completion: completion
+        )
+    }
+
+    func discardCurrentWorkout(completion: @escaping (Bool, Error?) -> Void) {
+        guard let workout = lastSavedWorkout else {
+            completion(false, nil)
+            return
+        }
+
+        deleteWorkout(workout) { [weak self] success, error in
+            if success {
+                self?.lastSavedWorkout = nil
+            }
+            completion(success, error)
         }
     }
     
@@ -244,6 +436,253 @@ final class HealthKitStore {
             }
         }
     }
+
+    private func addWorkoutSamples(
+        builder: HKWorkoutBuilder,
+        start: Date,
+        end: Date,
+        distance: Double,
+        calories: Double?,
+        completion: @escaping (Bool, Error?) -> Void
+    ) {
+        let distanceType = HKQuantityType.quantityType(forIdentifier: .distanceWalkingRunning)!
+        let distanceSample = HKQuantitySample(
+            type: distanceType,
+            quantity: HKQuantity(unit: .meter(), doubleValue: distance),
+            start: start,
+            end: end
+        )
+
+        var samples: [HKSample] = [distanceSample]
+        if let calories, calories > 0 {
+            let calorieType = HKQuantityType.quantityType(forIdentifier: .activeEnergyBurned)!
+            samples.append(HKQuantitySample(
+                type: calorieType,
+                quantity: HKQuantity(unit: .kilocalorie(), doubleValue: calories),
+                start: start,
+                end: end
+            ))
+        }
+
+        builder.add(samples) { ok, error in
+            DispatchQueue.main.async { completion(ok, error) }
+        }
+    }
+
+    private func addPhoneWorkoutDetails(
+        builder: HKWorkoutBuilder,
+        laps: [IntervalLap],
+        completion: @escaping (Bool, Error?) -> Void
+    ) {
+        guard let kind = phoneWorkoutKind else {
+            completion(true, nil)
+            return
+        }
+
+        switch kind {
+        case .freeRun:
+            completion(true, nil)
+
+        case .intervalRun(let settings):
+            let group = DispatchGroup()
+            var activityError: Error?
+
+            for lap in laps {
+                group.enter()
+
+                let activityConfig = HKWorkoutConfiguration()
+                activityConfig.activityType = .running
+                activityConfig.locationType = phoneWorkoutIsIndoor ? .indoor : .outdoor
+
+                let activity = HKWorkoutActivity(
+                    workoutConfiguration: activityConfig,
+                    start: lap.startDate,
+                    end: lap.endDate,
+                    metadata: [
+                        "intervalLapType": lap.type.rawValue,
+                        "intervalLapNumber": lap.id,
+                        "intervalLapDistance": lap.distance
+                    ]
+                )
+
+                builder.addWorkoutActivity(activity) { ok, error in
+                    if !ok, activityError == nil {
+                        activityError = error
+                    }
+                    group.leave()
+                }
+            }
+
+            group.notify(queue: .main) {
+                if let activityError {
+                    completion(false, activityError)
+                    return
+                }
+
+                builder.addMetadata([
+                    "isInterval": true,
+                    "intervalSets": settings.sets,
+                    "intervalLapDistance": settings.lapDistance,
+                    "intervalRestDuration": settings.restDuration
+                ]) { ok, error in
+                    DispatchQueue.main.async { completion(ok, error) }
+                }
+            }
+        }
+    }
+
+    private func attachRouteIfNeeded(
+        store: HKHealthStore,
+        workout: HKWorkout,
+        locations: [CLLocation],
+        completion: @escaping (Error?) -> Void
+    ) {
+        guard !locations.isEmpty else {
+            completion(nil)
+            return
+        }
+
+        let routeBuilder = HKWorkoutRouteBuilder(healthStore: store, device: .local())
+        routeBuilder.insertRouteData(locations) { ok, error in
+            guard ok else {
+                print("[HealthKit] Route insert failed: \(error?.localizedDescription ?? "")")
+                DispatchQueue.main.async { completion(error) }
+                return
+            }
+
+            routeBuilder.finishRoute(with: workout, metadata: nil) { _, error in
+                if let error {
+                    print("[HealthKit] Route finish failed: \(error.localizedDescription)")
+                }
+                DispatchQueue.main.async { completion(error) }
+            }
+        }
+    }
+
+    private func clearActivePhoneWorkout() {
+        phoneWorkoutSession = nil
+        phoneWorkoutBuilder = nil
+        phoneWorkoutKind = nil
+        phoneWorkoutStartDate = nil
+        phoneWorkoutIsIndoor = false
+        resetPhoneWorkoutMetrics()
+    }
+
+    private func resetPhoneWorkoutMetrics() {
+        currentPhoneWorkoutMetrics = .empty
+        NotificationCenter.default.post(
+            name: Self.phoneWorkoutMetricsDidUpdate,
+            object: self,
+            userInfo: ["metrics": currentPhoneWorkoutMetrics]
+        )
+    }
+
+    private func updatePhoneWorkoutHeartRateMetrics(
+        heartRate: Double?,
+        avgHeartRate: Double?,
+        timestamp: Date = Date()
+    ) {
+        var samples = currentPhoneWorkoutMetrics.heartRateSamples
+        if let heartRate {
+            samples.append(HeartRateSample(date: timestamp, bpm: heartRate))
+        }
+        currentPhoneWorkoutMetrics = PhoneWorkoutMetrics(
+            heartRate: heartRate ?? currentPhoneWorkoutMetrics.heartRate,
+            avgHeartRate: avgHeartRate ?? currentPhoneWorkoutMetrics.avgHeartRate,
+            heartRateSamples: samples
+        )
+        NotificationCenter.default.post(
+            name: Self.phoneWorkoutMetricsDidUpdate,
+            object: self,
+            userInfo: ["metrics": currentPhoneWorkoutMetrics]
+        )
+    }
+
+    private func finishFallbackPhoneWorkout(
+        store: HKHealthStore,
+        start: Date,
+        end: Date,
+        distance: Double,
+        calories: Double?,
+        routeLocations: [CLLocation],
+        laps: [IntervalLap],
+        completion: @escaping (Bool, HKWorkout?, Error?) -> Void
+    ) {
+        switch phoneWorkoutKind {
+        case .freeRun:
+            saveRunningWorkout(
+                start: start,
+                end: end,
+                distance: distance,
+                calories: calories,
+                routeLocations: routeLocations,
+                isIndoor: phoneWorkoutIsIndoor
+            ) { [weak self] success, error in
+                guard let self else { return }
+                if !success {
+                    self.clearActivePhoneWorkout()
+                    completion(false, nil, error)
+                    return
+                }
+                self.fetchMostRecentWorkout(from: store, start: start, end: end) { workout in
+                    self.lastSavedWorkout = workout
+                    self.clearActivePhoneWorkout()
+                    completion(true, workout, error)
+                }
+            }
+
+        case .intervalRun(let settings):
+            saveIntervalWorkout(
+                start: start,
+                end: end,
+                distance: distance,
+                calories: calories,
+                laps: laps,
+                settings: settings,
+                routeLocations: routeLocations,
+                isIndoor: phoneWorkoutIsIndoor
+            ) { [weak self] success, error in
+                guard let self else { return }
+                if !success {
+                    self.clearActivePhoneWorkout()
+                    completion(false, nil, error)
+                    return
+                }
+                self.fetchMostRecentWorkout(from: store, start: start, end: end) { workout in
+                    self.lastSavedWorkout = workout
+                    self.clearActivePhoneWorkout()
+                    completion(true, workout, error)
+                }
+            }
+
+        case .none:
+            clearActivePhoneWorkout()
+            completion(false, nil, NSError(domain: "HealthKitStore", code: 1003, userInfo: [
+                NSLocalizedDescriptionKey: "운동 종류를 확인할 수 없습니다."
+            ]))
+        }
+    }
+
+    private func fetchMostRecentWorkout(
+        from store: HKHealthStore,
+        start: Date,
+        end: Date,
+        completion: @escaping (HKWorkout?) -> Void
+    ) {
+        let predicate = HKQuery.predicateForSamples(withStart: start.addingTimeInterval(-5), end: end.addingTimeInterval(5))
+        let sort = NSSortDescriptor(key: HKSampleSortIdentifierEndDate, ascending: false)
+        let query = HKSampleQuery(
+            sampleType: HKObjectType.workoutType(),
+            predicate: predicate,
+            limit: 1,
+            sortDescriptors: [sort]
+        ) { _, samples, _ in
+            DispatchQueue.main.async {
+                completion(samples?.first as? HKWorkout)
+            }
+        }
+        store.execute(query)
+    }
     
     //MARK: - Delete
     
@@ -253,6 +692,9 @@ final class HealthKitStore {
             return
         }
         store.delete(workout) { success, error in
+            if success, self.lastSavedWorkout?.uuid == workout.uuid {
+                self.lastSavedWorkout = nil
+            }
             DispatchQueue.main.async { completion(success, error) }
         }
     }
@@ -690,5 +1132,30 @@ final class HealthKitStore {
             samples?.forEach { print("[Route Debug] 📍 루트 발견: \($0.startDate) ~ \($0.endDate)") }
         }
         store.execute(query)
+    }
+}
+
+@available(iOS 26.0, *)
+extension HealthKitStore: HKLiveWorkoutBuilderDelegate {
+    func workoutBuilderDidCollectEvent(_ workoutBuilder: HKLiveWorkoutBuilder) {}
+
+    func workoutBuilder(_ workoutBuilder: HKLiveWorkoutBuilder, didCollectDataOf collectedTypes: Set<HKSampleType>) {
+        for sampleType in collectedTypes {
+            guard let quantityType = sampleType as? HKQuantityType,
+                  quantityType == HKQuantityType.quantityType(forIdentifier: .heartRate),
+                  let statistics = workoutBuilder.statistics(for: quantityType)
+            else { continue }
+
+            let unit = HKUnit.count().unitDivided(by: .minute())
+            let mostRecent = statistics.mostRecentQuantity()?.doubleValue(for: unit)
+            let average = statistics.averageQuantity()?.doubleValue(for: unit)
+
+            DispatchQueue.main.async { [weak self] in
+                self?.updatePhoneWorkoutHeartRateMetrics(
+                    heartRate: mostRecent,
+                    avgHeartRate: average
+                )
+            }
+        }
     }
 }
