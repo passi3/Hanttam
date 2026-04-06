@@ -763,6 +763,7 @@ struct PhotoGridPicker: View {
     @StateObject private var loader = PhotoGridLoader()
     @State private var showCamera = false
     @State private var isLoading = false
+    @State private var filter: PhotoGridFilter = .all
 
     private let spacing: CGFloat = 1.5
     private let columns: [GridItem] = Array(
@@ -771,40 +772,68 @@ struct PhotoGridPicker: View {
 
     var body: some View {
         ZStack {
-            ScrollView {
-                LazyVGrid(columns: columns, spacing: spacing) {
-                    // 카메라 실시간 프리뷰 타일
-                    Button {
-                        showCamera = true
-                    } label: {
-                        GeometryReader { geo in
-                            ZStack {
-                                CameraPreviewTile()
-                                    .frame(width: geo.size.width, height: geo.size.width)
+            VStack(spacing: 12) {
+                Picker("사진 필터", selection: $filter) {
+                    ForEach(PhotoGridFilter.allCases, id: \.self) { filter in
+                        Text(filter.title).tag(filter)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .padding(.horizontal, 16)
+                .padding(.top, 12)
 
-                                VStack {
-                                    Spacer()
-                                    HStack {
-                                        Spacer()
-                                        Image(systemName: "camera.fill")
-                                            .font(.system(size: 14, weight: .medium))
-                                            .foregroundStyle(.white)
-                                            .padding(6)
-                                            .background(.black.opacity(0.5), in: Circle())
-                                            .padding(6)
+                if loader.assets.isEmpty, filter == .favorites {
+                    VStack(spacing: 10) {
+                        Image(systemName: "heart.slash")
+                            .font(.system(size: 28, weight: .regular))
+                            .foregroundStyle(.secondary)
+                        Text("즐겨찾기 사진이 없습니다")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(.primary)
+                        Text("전체 보기로 전환하거나 사진 앱에서 즐겨찾기를 추가해보세요.")
+                            .font(.system(size: 13, weight: .regular))
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .padding(.horizontal, 24)
+                } else {
+                    ScrollView {
+                        LazyVGrid(columns: columns, spacing: spacing) {
+                            // 카메라 실시간 프리뷰 타일
+                            Button {
+                                showCamera = true
+                            } label: {
+                                GeometryReader { geo in
+                                    ZStack {
+                                        CameraPreviewTile()
+                                            .frame(width: geo.size.width, height: geo.size.width)
+
+                                        VStack {
+                                            Spacer()
+                                            HStack {
+                                                Spacer()
+                                                Image(systemName: "camera.fill")
+                                                    .font(.system(size: 14, weight: .medium))
+                                                    .foregroundStyle(.white)
+                                                    .padding(6)
+                                                    .background(.black.opacity(0.5), in: Circle())
+                                                    .padding(6)
+                                            }
+                                        }
                                     }
+                                    .frame(width: geo.size.width, height: geo.size.width)
+                                    .clipped()
+                                }
+                                .aspectRatio(1, contentMode: .fit)
+                            }
+
+                            // 사진 타일
+                            ForEach(Array(loader.assets.enumerated()), id: \.element.localIdentifier) { index, asset in
+                                PhotoThumbnail(asset: asset, isLoading: $isLoading) { image in
+                                    onSelect(image, loader.assets, index)
                                 }
                             }
-                            .frame(width: geo.size.width, height: geo.size.width)
-                            .clipped()
-                        }
-                        .aspectRatio(1, contentMode: .fit)
-                    }
-
-                    // 사진 타일
-                    ForEach(Array(loader.assets.enumerated()), id: \.element.localIdentifier) { index, asset in
-                        PhotoThumbnail(asset: asset, isLoading: $isLoading) { image in
-                            onSelect(image, loader.assets, index)
                         }
                     }
                 }
@@ -818,7 +847,10 @@ struct PhotoGridPicker: View {
                     .scaleEffect(1.2)
             }
         }
-        .onAppear { loader.fetchRecent() }
+        .onAppear { loader.fetchRecent(filter: filter) }
+        .onChange(of: filter) { _, newValue in
+            loader.fetchRecent(filter: newValue)
+        }
         .fullScreenCover(isPresented: $showCamera) {
             CameraPicker { image in
                 onSelect(image, [], -1)
@@ -833,23 +865,25 @@ struct PhotoGridPicker: View {
 final class PhotoGridLoader: ObservableObject {
     @Published var assets: [PHAsset] = []
 
-    func fetchRecent() {
+    fileprivate func fetchRecent(filter: PhotoGridFilter) {
         let status = PHPhotoLibrary.authorizationStatus(for: .readWrite)
         if status == .authorized || status == .limited {
-            loadAssets()
+            loadAssets(filter: filter)
         } else {
             PHPhotoLibrary.requestAuthorization(for: .readWrite) { [weak self] newStatus in
                 if newStatus == .authorized || newStatus == .limited {
-                    DispatchQueue.main.async { self?.loadAssets() }
+                    DispatchQueue.main.async { self?.loadAssets(filter: filter) }
                 }
             }
         }
     }
 
-    private func loadAssets() {
+    private func loadAssets(filter: PhotoGridFilter) {
         let options = PHFetchOptions()
         options.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
-        // fetchLimit을 설정하지 않으면 모든 이미지를 가져옵니다.
+        if filter == .favorites {
+            options.predicate = NSPredicate(format: "favorite == YES")
+        }
         
         DispatchQueue.global(qos: .userInitiated).async {
             let result = PHAsset.fetchAssets(with: .image, options: options)
@@ -860,6 +894,18 @@ final class PhotoGridLoader: ObservableObject {
             DispatchQueue.main.async {
                 self.assets = fetched
             }
+        }
+    }
+}
+
+fileprivate enum PhotoGridFilter: CaseIterable {
+    case all
+    case favorites
+
+    var title: String {
+        switch self {
+        case .all: return "전체"
+        case .favorites: return "즐겨찾기"
         }
     }
 }
