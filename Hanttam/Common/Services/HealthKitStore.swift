@@ -10,6 +10,9 @@ internal import HealthKit
 import CoreLocation
 
 final class HealthKitStore: NSObject {
+    static let minimumWorkoutDurationToSave: TimeInterval = 5
+    static let minimumWorkoutDistanceToSave: Double = 50
+
     enum PhoneWorkoutKind {
         case freeRun
         case intervalRun(settings: IntervalSettings)
@@ -43,6 +46,14 @@ final class HealthKitStore: NSObject {
     
     var isAvailable: Bool { HKHealthStore.isHealthDataAvailable() }
     var currentPhoneWorkoutStartDate: Date? { phoneWorkoutStartDate }
+
+    static func shouldSaveWorkout(duration: TimeInterval, distance: Double) -> Bool {
+        duration >= minimumWorkoutDurationToSave && distance >= minimumWorkoutDistanceToSave
+    }
+
+    func shouldSaveWorkout(duration: TimeInterval, distance: Double) -> Bool {
+        Self.shouldSaveWorkout(duration: duration, distance: distance)
+    }
     
     private override init() {
         super.init()
@@ -178,6 +189,17 @@ final class HealthKitStore: NSObject {
             return
         }
 
+        let duration = end.timeIntervalSince(start)
+        guard shouldSaveWorkout(duration: duration, distance: distance) else {
+            discardActivePhoneWorkout { [weak self] _, _ in
+                self?.lastSavedWorkout = nil
+                DispatchQueue.main.async {
+                    completion(true, nil, nil)
+                }
+            }
+            return
+        }
+
         if #available(iOS 26.0, *),
            let builder = phoneWorkoutBuilder,
            let session = phoneWorkoutSession {
@@ -256,6 +278,19 @@ final class HealthKitStore: NSObject {
             }
             completion(success, error)
         }
+    }
+
+    func discardActivePhoneWorkout(completion: @escaping (Bool, Error?) -> Void) {
+        if #available(iOS 26.0, *), let builder = phoneWorkoutBuilder {
+            phoneWorkoutSession?.end()
+            builder.discardWorkout()
+            clearActivePhoneWorkout()
+            completion(true, nil)
+            return
+        }
+
+        clearActivePhoneWorkout()
+        completion(true, nil)
     }
     
     // MARK: - Write
