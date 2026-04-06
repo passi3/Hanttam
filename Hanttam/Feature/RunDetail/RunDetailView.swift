@@ -1514,6 +1514,8 @@ enum RunDetailContentView {
         
         private var minVal: Double { data.map(\.value).min() ?? 0 }
         private var maxVal: Double { data.map(\.value).max() ?? 0 }
+        private var displayedMinVal: Double { metric == .pace ? maxVal : minVal }
+        private var displayedMaxVal: Double { metric == .pace ? minVal : maxVal }
         
         private var paceFloor: Double {
             -(data.map(\.value).max() ?? 0) * 1.08
@@ -1617,9 +1619,9 @@ enum RunDetailContentView {
                 .clipShape(RoundedRectangle(cornerRadius: RunDetailLayout.cardRadius))
                 
                 HStack(spacing: 8) {
-                    statCell(title: "MIN", value: metric.format(minVal))
+                    statCell(title: "MIN", value: metric.format(displayedMinVal))
                     statCell(title: "AVG", value: metric.format(avg), accent: metric.color)
-                    statCell(title: "MAX", value: metric.format(maxVal))
+                    statCell(title: "MAX", value: metric.format(displayedMaxVal))
                 }
             }
         }
