@@ -20,7 +20,7 @@ struct WatchButtonScreen: View {
 
             VStack(spacing: 4) {
                 Text("자유 목표")
-                    .font(.system(size: 16, weight: .medium))
+                    .font(.system(size: 16, weight: .bold))
 
                 HanttamCirclesView(size: 130, icon: "play", iconColor: levelManager.accentColor)
                 .scaleEffect(isPressed ? 0.93 : 1.0)
@@ -56,8 +56,4 @@ struct WatchButtonScreen: View {
             .padding(.bottom, 4)
         }
     }
-}
-
-#Preview {
-    WatchButtonScreen(selection: .constant(0), startFreeRun: {})
 }
