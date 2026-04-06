@@ -148,7 +148,7 @@ final class WatchBridge: NSObject, ObservableObject {
         pushApplicationContext()
         setCollectionState(.requesting(kind), clearPendingStart: false)
 
-        // 15초 타임아웃: 워치 응답이 없으면 phoneOnly로 폴백
+        // 3초 타임아웃: 워치 응답이 없으면 phoneOnly로 폴백
         watchStartTimeout?.cancel()
         let work = DispatchWorkItem { [weak self] in
             guard let self, case .requesting = self.collectionState else { return }
