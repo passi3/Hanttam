@@ -8,6 +8,7 @@
 import SwiftUI
 import CoreLocation
 import Combine
+import WatchKit
 import _WatchKit_SwiftUI
 
 // MARK: - Run Session
@@ -24,6 +25,7 @@ final class WatchRunSession: NSObject, ObservableObject {
     @Published var avgHeartRate: Double?
     @Published var segmentPace: TimeInterval?
     @Published var segmentAvgHeartRate: Double?
+    @Published var currentLapSummary: WatchLapSummarySnapshot?
     @Published var route: [CLLocationCoordinate2D] = []
 
     private let locationManager = CLLocationManager()
@@ -38,6 +40,8 @@ final class WatchRunSession: NSObject, ObservableObject {
     private var segmentStartDistance: Double = 0
     private var segmentStartElapsed: TimeInterval = 0
     private var segmentHeartRateSamples: [HeartRateSample] = []
+    private var lapSummaryDismissWorkItem: DispatchWorkItem?
+    private var countdownEndsAt: Date?
 
     override init() {
         super.init()
@@ -79,12 +83,15 @@ final class WatchRunSession: NSObject, ObservableObject {
         }
         phase = .preparing
         countdown = 3
+        countdownEndsAt = Date().addingTimeInterval(Double(countdown))
+        sendSnapshot()
         locationManager.requestWhenInUseAuthorization()
         Task { await hkManager.requestAuthorization() }
 
         countdownTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] t in
             guard let self else { t.invalidate(); return }
             self.countdown -= 1
+            self.sendSnapshot()
             if self.countdown <= 0 {
                 t.invalidate()
                 self.startRunning()
@@ -94,7 +101,9 @@ final class WatchRunSession: NSObject, ObservableObject {
 
     private func startRunning() {
         phase = .running
+        countdownEndsAt = nil
         resetSegmentState()
+        WKInterfaceDevice.current().play(.success)
         if !didNotifyStarted {
             // 폰이 startWatchApp으로 앱을 실행했으면 해당 설정을 재사용, 아니면 기본 설정으로 시작
             if let config = WatchBridge.shared.consumePendingWorkoutConfiguration() {
@@ -133,8 +142,12 @@ final class WatchRunSession: NSObject, ObservableObject {
 
     func stop() {
         guard phase != .finished else { return }
+        dismissLapSummary(callCompletion: false)
         phase = .finished
-        hkManager.endSession()
+        countdownEndsAt = nil
+        hkManager.endSession(
+            shouldSave: WatchWorkoutSessionManager.shouldSaveWorkout(duration: elapsed, distance: totalDistance)
+        )
         locationManager.stopUpdatingLocation()
         timer?.invalidate(); timer = nil
         countdownTimer?.invalidate(); countdownTimer = nil
@@ -158,7 +171,10 @@ final class WatchRunSession: NSObject, ObservableObject {
             activeCalories: hkManager.activeCalories,
             currentLatitude: route.last?.latitude,
             currentLongitude: route.last?.longitude,
-            phase: phase.rawValue
+            phase: phase.rawValue,
+            prestartPhase: phase == .preparing ? "countdown" : nil,
+            countdownValue: phase == .preparing ? countdown : nil,
+            countdownEndsAt: phase == .preparing ? countdownEndsAt?.timeIntervalSince1970 : nil
         )
         // HK 미러링 경로로 전송 (WCSession은 내부에서 폴백으로 사용)
         hkManager.sendSnapshot(snapshot)
@@ -184,6 +200,7 @@ final class WatchRunSession: NSObject, ObservableObject {
     }
 
     private func resetSegmentState() {
+        dismissLapSummary(callCompletion: false)
         nextSegmentBoundary = 1000
         segmentStartDistance = 0
         segmentStartElapsed = 0
@@ -195,6 +212,16 @@ final class WatchRunSession: NSObject, ObservableObject {
 
     private func advanceSegmentBoundaryIfNeeded() {
         while totalDistance >= nextSegmentBoundary {
+            let completedBoundary = nextSegmentBoundary
+            let summary = WatchLapSummarySnapshot(
+                totalDistance: totalDistance,
+                lapDisplayDistance: completedBoundary,
+                avgPace: avgPace,
+                lapPace: segmentPace,
+                avgHeartRate: avgHeartRate,
+                lapHeartRate: segmentAvgHeartRate
+            )
+            showLapSummary(summary)
             nextSegmentBoundary += 1000
             segmentStartDistance = totalDistance
             segmentStartElapsed = elapsed
@@ -202,6 +229,35 @@ final class WatchRunSession: NSObject, ObservableObject {
             segmentAvgHeartRate = nil
             segmentPace = nil
             currentPace = nil
+        }
+    }
+
+    private func showLapSummary(
+        _ summary: WatchLapSummarySnapshot,
+        duration: TimeInterval = 2.2,
+        onDismiss: (() -> Void)? = nil
+    ) {
+        dismissLapSummary(callCompletion: false)
+        currentLapSummary = summary
+        WKInterfaceDevice.current().play(.notification)
+
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.currentLapSummary = nil
+            self.lapSummaryDismissWorkItem = nil
+            onDismiss?()
+        }
+        lapSummaryDismissWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + duration, execute: workItem)
+    }
+
+    private func dismissLapSummary(callCompletion: Bool) {
+        let workItem = lapSummaryDismissWorkItem
+        lapSummaryDismissWorkItem = nil
+        workItem?.cancel()
+        currentLapSummary = nil
+        if callCompletion {
+            workItem?.perform()
         }
     }
 
@@ -259,8 +315,8 @@ extension WatchRunSession: CLLocationManagerDelegate {
             if recentLocations.count > 8 { recentLocations.removeFirst() }
             totalDistance = zip(allLocations, allLocations.dropFirst())
                 .reduce(0.0) { $0 + $1.1.distance(from: $1.0) }
-            advanceSegmentBoundaryIfNeeded()
             recalcPace()
+            advanceSegmentBoundaryIfNeeded()
         }
     }
 }
@@ -284,18 +340,28 @@ struct WatchFreeRunView: View {
                     countdownOverlay
                 }
             } else {
-                TabView(selection: $selection) {
-                    controlsTab
-                        .tag(0)
+                ZStack {
+                    TabView(selection: $selection) {
+                        controlsTab
+                            .tag(0)
 
-                    metricsTab
-                        .tag(1)
+                        metricsTab
+                            .tag(1)
 
-                    nowPlayingTab
-                        .tag(2)
+                        nowPlayingTab
+                            .tag(2)
+                    }
+                    .tabViewStyle(.page(indexDisplayMode: .automatic))
+                    .background(Color.black)
+
+                    if let lapSummary = session.currentLapSummary {
+                        WatchLapSummaryOverlay(
+                            summary: lapSummary,
+                            accentColor: RunningLevelManager.shared.accentColor
+                        )
+                        .zIndex(1)
+                    }
                 }
-                .tabViewStyle(.page(indexDisplayMode: .automatic))
-                .background(Color.black)
             }
         }
         .onAppear { session.beginCountdown(skip: skipCountdown) }
@@ -356,26 +422,22 @@ struct WatchFreeRunView: View {
     private var metricsTab: some View {
         WatchWorkoutDashboardPage(
             topIcon: "figure.run",
-            topLeading: "SESSION",
-            topTrailingText: session.phase == .paused ? "PAUSED" : nil,
+            topLeading: session.phase == .paused ? "일시 정지" : "자유 목표",
             accentColor: RunningLevelManager.shared.accentColor,
             primaryValue: session.distanceText,
             primaryUnit: "KM",
             leftMetricTitle: "TIME",
             leftMetricValue: session.durationText,
-            rightMetricTitle: showingAveragePace ? "AVG PACE" : "SEGMENT PACE",
+            rightMetricTitle: showingAveragePace ? "AVG PACE" : "LAP PACE",
             rightMetricValue: showingAveragePace ? averagePaceText : currentPaceText,
             rightMetricAction: { showingAveragePace.toggle() },
             bottomIcon: "heart.fill",
             bottomTint: showingAverageHeartRate ? .pink : .red,
-            bottomLabel: showingAverageHeartRate ? "AVERAGE BPM" : "SEGMENT BPM",
+            bottomLabel: showingAverageHeartRate ? "AVERAGE BPM" : "LAP BPM",
             bottomValue: showingAverageHeartRate
                 ? session.hrText(session.avgHeartRate)
                 : session.hrText(session.segmentAvgHeartRate),
             bottomUnit: "BPM",
-            bottomProgress: heartRateProgress(
-                showingAverageHeartRate ? session.avgHeartRate : session.segmentAvgHeartRate
-            ),
             bottomAction: { showingAverageHeartRate.toggle() }
         )
     }
@@ -407,6 +469,9 @@ struct WatchFreeRunView: View {
             Text("\(session.countdown)")
                 .font(.system(size: 56, weight: .bold, design: .monospaced))
                 .foregroundStyle(RunningLevelManager.shared.accentColor)
+                .onChange(of: session.countdown) { oldValue, newValue in
+                    WKInterfaceDevice.current().play(.click)
+                }
             Text("준비하세요")
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(.secondary)

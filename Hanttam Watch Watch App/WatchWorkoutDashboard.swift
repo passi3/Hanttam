@@ -7,10 +7,19 @@
 
 import SwiftUI
 
+struct WatchLapSummarySnapshot: Equatable, Identifiable {
+    let id = UUID()
+    let totalDistance: Double
+    let lapDisplayDistance: Double
+    let avgPace: TimeInterval?
+    let lapPace: TimeInterval?
+    let avgHeartRate: Double?
+    let lapHeartRate: Double?
+}
+
 struct WatchWorkoutDashboardPage: View {
     let topIcon: String
     let topLeading: String
-    let topTrailingText: String?
     let accentColor: Color
     let primaryValue: String
     let primaryUnit: String
@@ -24,14 +33,13 @@ struct WatchWorkoutDashboardPage: View {
     let bottomLabel: String
     let bottomValue: String
     let bottomUnit: String
-    let bottomProgress: Double?
     let bottomAction: (() -> Void)?
 
     var body: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: 4) {
             topBar
             primaryMetric
-            HStack(spacing: 8) {
+            HStack(spacing: 4) {
                 WatchWorkoutMetricTile(title: leftMetricTitle, value: leftMetricValue)
                 WatchWorkoutMetricTile(
                     title: rightMetricTitle,
@@ -45,53 +53,29 @@ struct WatchWorkoutDashboardPage: View {
                 label: bottomLabel,
                 value: bottomValue,
                 unit: bottomUnit,
-                progress: bottomProgress,
                 action: bottomAction
             )
         }
-        .padding(.horizontal, 12)
+        .padding(.horizontal, 10)
         .padding(.vertical, 10)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .background(
-            RoundedRectangle(cornerRadius: 26, style: .continuous)
-                .fill(Color.white.opacity(0.06))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 26, style: .continuous)
-                        .stroke(Color.white.opacity(0.08), lineWidth: 1)
-                )
-        )
-        .padding(.horizontal, 8)
-        .padding(.vertical, 6)
     }
 
     private var topBar: some View {
-        HStack(spacing: 6) {
+        HStack {
             Label(topLeading, systemImage: topIcon)
                 .font(.system(size: 10, weight: .bold, design: .rounded))
                 .foregroundStyle(accentColor)
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
-
-            Spacer(minLength: 4)
-
-            if let topTrailingText {
-                Text(topTrailingText)
-                    .font(.system(size: 9, weight: .semibold, design: .rounded))
-                    .foregroundStyle(Color.white.opacity(0.68))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
-            } else {
-                Circle()
-                    .fill(accentColor)
-                    .frame(width: 8, height: 8)
-            }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var primaryMetric: some View {
         HStack(alignment: .lastTextBaseline, spacing: 4) {
             Text(primaryValue)
-                .font(.system(size: 42, weight: .black, design: .rounded))
+                .font(.system(size: 52, weight: .black, design: .rounded))
                 .foregroundStyle(accentColor)
                 .monospacedDigit()
                 .lineLimit(1)
@@ -101,6 +85,95 @@ struct WatchWorkoutDashboardPage: View {
                 .foregroundStyle(Color.white.opacity(0.64))
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+struct WatchLapSummaryOverlay: View {
+    let summary: WatchLapSummarySnapshot
+    let accentColor: Color
+
+    var body: some View {
+        VStack {
+            Spacer()
+
+            VStack(alignment: .leading, spacing: 10) {
+                Text("LAP COMPLETE")
+                    .font(.system(size: 10, weight: .bold, design: .rounded))
+                    .foregroundStyle(accentColor)
+
+                HStack(spacing: 8) {
+                    summaryTile(title: "TOTAL DISTANCE", value: distanceText(summary.totalDistance))
+                    summaryTile(title: "LAP DISTANCE", value: distanceText(summary.lapDisplayDistance))
+                }
+
+                HStack(spacing: 8) {
+                    summaryTile(title: "AVG PACE", value: paceText(summary.avgPace))
+                    summaryTile(title: "LAP PACE", value: paceText(summary.lapPace))
+                }
+
+                HStack(spacing: 8) {
+                    summaryTile(title: "AVG HR", value: heartRateText(summary.avgHeartRate))
+                    summaryTile(title: "LAP HR", value: heartRateText(summary.lapHeartRate))
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    .fill(Color.black.opacity(0.92))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 24, style: .continuous)
+                            .stroke(accentColor.opacity(0.24), lineWidth: 1)
+                    )
+            )
+            .padding(.horizontal, 10)
+            .padding(.bottom, 12)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color.black.opacity(0.35).ignoresSafeArea())
+        .allowsHitTesting(false)
+        .transition(.opacity.combined(with: .scale(scale: 0.96)))
+    }
+
+    private func summaryTile(title: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(.system(size: 8, weight: .bold, design: .rounded))
+                .foregroundStyle(Color.white.opacity(0.52))
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+
+            Text(value)
+                .font(.system(size: 16, weight: .heavy, design: .rounded))
+                .foregroundStyle(.white)
+                .monospacedDigit()
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+        }
+        .frame(maxWidth: .infinity, minHeight: 50, alignment: .leading)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(Color.white.opacity(0.07))
+        )
+    }
+
+    private func distanceText(_ meters: Double) -> String {
+        String(format: "%.2f KM", meters / 1000)
+    }
+
+    private func paceText(_ secondsPerKm: TimeInterval?) -> String {
+        guard let secondsPerKm, secondsPerKm.isFinite, secondsPerKm > 0, secondsPerKm < 3600 else {
+            return "--'--\""
+        }
+        return String(format: "%d'%02d\"", Int(secondsPerKm) / 60, Int(secondsPerKm) % 60)
+    }
+
+    private func heartRateText(_ bpm: Double?) -> String {
+        guard let bpm else { return "--" }
+        return String(format: "%.0f BPM", bpm)
     }
 }
 
@@ -129,9 +202,9 @@ struct WatchWorkoutMetricTile: View {
     }
 
     private var content: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 4) {
             Text(title)
-                .font(.system(size: 9, weight: .bold, design: .rounded))
+                .font(.system(size: 8, weight: .bold, design: .rounded))
                 .foregroundStyle(Color.white.opacity(0.55))
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
@@ -143,9 +216,7 @@ struct WatchWorkoutMetricTile: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
         }
-        .frame(maxWidth: .infinity, minHeight: 54, alignment: .leading)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
+        .frame(maxWidth: .infinity, minHeight: 52, alignment: .center)
         .background(
             RoundedRectangle(cornerRadius: 18, style: .continuous)
                 .fill(Color.white.opacity(0.07))
@@ -159,7 +230,6 @@ struct WatchWorkoutBottomMetricRow: View {
     let label: String
     let value: String
     let unit: String
-    let progress: Double?
     let action: (() -> Void)?
 
     init(
@@ -168,7 +238,6 @@ struct WatchWorkoutBottomMetricRow: View {
         label: String,
         value: String,
         unit: String,
-        progress: Double?,
         action: (() -> Void)? = nil
     ) {
         self.icon = icon
@@ -176,7 +245,6 @@ struct WatchWorkoutBottomMetricRow: View {
         self.label = label
         self.value = value
         self.unit = unit
-        self.progress = progress
         self.action = action
     }
 
@@ -194,7 +262,7 @@ struct WatchWorkoutBottomMetricRow: View {
     }
 
     private var content: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 4) {
             Image(systemName: icon)
                 .font(.system(size: 16, weight: .semibold))
                 .foregroundStyle(tint)
@@ -215,44 +283,12 @@ struct WatchWorkoutBottomMetricRow: View {
                         .foregroundStyle(Color.white.opacity(0.52))
                 }
             }
-
-            Spacer(minLength: 8)
-
-            if let progress {
-                WatchWorkoutProgressBar(progress: progress, tint: tint)
-                    .frame(width: 46)
-            }
         }
-        .frame(maxWidth: .infinity, minHeight: 58)
+        .frame(maxWidth: .infinity, minHeight: 48)
         .padding(.horizontal, 12)
         .background(
             RoundedRectangle(cornerRadius: 18, style: .continuous)
                 .fill(Color.white.opacity(0.07))
         )
-    }
-}
-
-struct WatchWorkoutProgressBar: View {
-    let progress: Double
-    let tint: Color
-
-    var body: some View {
-        GeometryReader { proxy in
-            let width = max(0, min(1, progress)) * proxy.size.width
-            ZStack(alignment: .leading) {
-                Capsule()
-                    .fill(Color.white.opacity(0.08))
-                Capsule()
-                    .fill(
-                        LinearGradient(
-                            colors: [tint.opacity(0.85), tint],
-                            startPoint: .leading,
-                            endPoint: .trailing
-                        )
-                    )
-                    .frame(width: width)
-            }
-        }
-        .frame(height: 10)
     }
 }

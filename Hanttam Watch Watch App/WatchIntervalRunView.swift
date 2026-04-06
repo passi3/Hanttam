@@ -46,6 +46,7 @@ final class WatchIntervalSession: NSObject, ObservableObject {
     @Published var avgHeartRate: Double?
     @Published var lapPace: TimeInterval?
     @Published var lapAvgHeartRate: Double?
+    @Published var currentLapSummary: WatchLapSummarySnapshot?
     @Published var route: [CLLocationCoordinate2D] = []
 
     // Internal
@@ -67,6 +68,10 @@ final class WatchIntervalSession: NSObject, ObservableObject {
     private var lapHeartRateSamples: [HeartRateSample] = []
     private(set) var lastRunLapPace: TimeInterval?
     private(set) var lastRunLapAvgHeartRate: Double?
+    private var pendingRestTransition = false
+    private var pendingFinishAfterOverlay = false
+    private var lapSummaryDismissWorkItem: DispatchWorkItem?
+    private var countdownEndsAt: Date?
 
     init(sets: Int, lapDistance: Double, restDuration: TimeInterval) {
         self.totalSets = sets
@@ -114,12 +119,15 @@ final class WatchIntervalSession: NSObject, ObservableObject {
         }
         phase = .preparing
         countdown = 3
+        countdownEndsAt = Date().addingTimeInterval(Double(countdown))
+        sendSnapshot()
         locationManager.requestWhenInUseAuthorization()
         Task { await hkManager.requestAuthorization() }
 
-        countdownTimer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: true) { [weak self] t in
+        countdownTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] t in
             guard let self else { t.invalidate(); return }
             self.countdown -= 1
+            self.sendSnapshot()
             if self.countdown <= 0 {
                 t.invalidate()
                 self.startRunningLap()
@@ -128,6 +136,9 @@ final class WatchIntervalSession: NSObject, ObservableObject {
     }
 
     private func startRunningLap() {
+        pendingRestTransition = false
+        pendingFinishAfterOverlay = false
+        countdownEndsAt = nil
         phase = .runningLap
         lapElapsed = 0
         lapDistanceCurrent = 0
@@ -162,16 +173,16 @@ final class WatchIntervalSession: NSObject, ObservableObject {
 
         locationManager.startUpdatingLocation()
         startTimer()
-        WKInterfaceDevice.current().play(.start)
+        WKInterfaceDevice.current().play(.success)
     }
 
     private func startResting() {
-        recordLap(type: .run)
+        pendingRestTransition = false
         phase = .resting
         restRemaining = restDuration
         lapStartDate = Date()
         locationManager.stopUpdatingLocation()
-        WKInterfaceDevice.current().play(.success)
+        startTimer()
     }
 
     private func restFinished() {
@@ -185,6 +196,7 @@ final class WatchIntervalSession: NSObject, ObservableObject {
     }
 
     func pause() {
+        dismissLapSummary(callCompletion: false)
         let prior: Phase.PriorPhase = phase == .resting ? .resting : .runningLap
         phase = .paused(prior: prior)
 
@@ -212,13 +224,16 @@ final class WatchIntervalSession: NSObject, ObservableObject {
 
     func stop() {
         guard phase != .finished else { return }
+        dismissLapSummary(callCompletion: false)
+        pendingRestTransition = false
+        pendingFinishAfterOverlay = false
         // record in-progress lap
         if case .paused(let prior) = phase {
             switch prior {
             case .runningLap: recordLap(type: .run)
             case .resting: recordLap(type: .rest)
             }
-        } else if phase == .runningLap {
+        } else if phase == .runningLap, !currentRunLapAlreadyRecorded {
             recordLap(type: .run)
         } else if phase == .resting {
             recordLap(type: .rest)
@@ -228,12 +243,7 @@ final class WatchIntervalSession: NSObject, ObservableObject {
 
     func manualLap() {
         guard phase == .runningLap else { return }
-        if currentSet >= totalSets {
-            recordLap(type: .run)
-            finishWorkout()
-        } else {
-            startResting()
-        }
+        completeRunLapTransition(isFinalRunLap: currentSet >= totalSets)
     }
 
     // MARK: - Timer
@@ -284,10 +294,55 @@ final class WatchIntervalSession: NSObject, ObservableObject {
             totalRunTime += dur
             lastRunLapPace = pace
             lastRunLapAvgHeartRate = lapAvgHeartRate
+            currentPace = pace
+        }
+    }
+
+    private var currentRunLapAlreadyRecorded: Bool {
+        guard let last = laps.last else { return false }
+        return last.type == .run && last.endDate >= lapStartDate
+    }
+
+    private func makeRunLapSummary() -> WatchLapSummarySnapshot {
+        WatchLapSummarySnapshot(
+            totalDistance: totalRunDistance,
+            lapDisplayDistance: totalRunDistance,
+            avgPace: avgPace,
+            lapPace: lastRunLapPace,
+            avgHeartRate: avgHeartRate,
+            lapHeartRate: lastRunLapAvgHeartRate
+        )
+    }
+
+    private func completeRunLapTransition(isFinalRunLap: Bool) {
+        guard phase == .runningLap else { return }
+
+        timer?.invalidate()
+        timer = nil
+        locationManager.stopUpdatingLocation()
+
+        recordLap(type: .run)
+        recalcPace()
+
+        pendingRestTransition = !isFinalRunLap
+        pendingFinishAfterOverlay = isFinalRunLap
+
+        showLapSummary(makeRunLapSummary()) { [weak self] in
+            guard let self, self.phase != .finished else { return }
+            if self.pendingFinishAfterOverlay {
+                self.pendingFinishAfterOverlay = false
+                self.finishWorkout()
+            } else if self.pendingRestTransition {
+                self.startResting()
+            }
         }
     }
 
     private func finishWorkout() {
+        dismissLapSummary(callCompletion: false)
+        pendingRestTransition = false
+        pendingFinishAfterOverlay = false
+        countdownEndsAt = nil
         phase = .finished
   
         timer?.invalidate()
@@ -295,7 +350,12 @@ final class WatchIntervalSession: NSObject, ObservableObject {
         countdownTimer?.invalidate()
         countdownTimer = nil
         locationManager.stopUpdatingLocation()
-        hkManager.endSession()
+        hkManager.endSession(
+            shouldSave: WatchWorkoutSessionManager.shouldSaveWorkout(
+                duration: elapsed,
+                distance: totalRunDistance + lapDistanceCurrent
+            )
+        )
         if didNotifyStarted {
             WatchBridge.shared.sendWorkoutStopped(kind: .intervalRun)
             WatchBridge.shared.sendSessionEvent(WorkoutStreamKey.sessionEnded)
@@ -339,6 +399,35 @@ final class WatchIntervalSession: NSObject, ObservableObject {
         lapAvgHeartRate = lapHeartRateSamples.reduce(0) { $0 + $1.bpm } / Double(lapHeartRateSamples.count)
     }
 
+    private func showLapSummary(
+        _ summary: WatchLapSummarySnapshot,
+        duration: TimeInterval = 2.2,
+        onDismiss: (() -> Void)? = nil
+    ) {
+        dismissLapSummary(callCompletion: false)
+        currentLapSummary = summary
+        WKInterfaceDevice.current().play(.notification)
+
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.currentLapSummary = nil
+            self.lapSummaryDismissWorkItem = nil
+            onDismiss?()
+        }
+        lapSummaryDismissWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + duration, execute: workItem)
+    }
+
+    private func dismissLapSummary(callCompletion: Bool) {
+        let workItem = lapSummaryDismissWorkItem
+        lapSummaryDismissWorkItem = nil
+        workItem?.cancel()
+        currentLapSummary = nil
+        if callCompletion {
+            workItem?.perform()
+        }
+    }
+
     // MARK: - Snapshot
 
     private func sendSnapshot() {
@@ -371,6 +460,9 @@ final class WatchIntervalSession: NSObject, ObservableObject {
             currentLatitude: route.last?.latitude,
             currentLongitude: route.last?.longitude,
             phase: phaseString,
+            prestartPhase: phase == .preparing ? "countdown" : nil,
+            countdownValue: phase == .preparing ? countdown : nil,
+            countdownEndsAt: phase == .preparing ? countdownEndsAt?.timeIntervalSince1970 : nil,
             currentSet: currentSet,
             totalSets: totalSets,
             lapDistanceCurrent: lapDistanceCurrent,
@@ -435,12 +527,7 @@ extension WatchIntervalSession: CLLocationManagerDelegate {
 
             // Auto-complete lap
             if self.lapDistanceCurrent >= self.lapDistance {
-                if self.currentSet >= self.totalSets {
-                    self.recordLap(type: .run)
-                    self.finishWorkout()
-                } else {
-                    self.startResting()
-                }
+                self.completeRunLapTransition(isFinalRunLap: self.currentSet >= self.totalSets)
             }
         }
     }
@@ -486,18 +573,28 @@ struct WatchIntervalRunView: View {
                     countdownOverlay
                 }
             } else {
-                TabView(selection: $selection) {
-                    controlsTab
-                        .tag(0)
+                ZStack {
+                    TabView(selection: $selection) {
+                        controlsTab
+                            .tag(0)
 
-                    metricsTab
-                        .tag(1)
+                        metricsTab
+                            .tag(1)
 
-                    nowPlayingTab
-                        .tag(2)
+                        nowPlayingTab
+                            .tag(2)
+                    }
+                    .tabViewStyle(.page(indexDisplayMode: .automatic))
+                    .background(Color.black)
+
+                    if let lapSummary = session.currentLapSummary {
+                        WatchLapSummaryOverlay(
+                            summary: lapSummary,
+                            accentColor: RunningLevelManager.shared.accentColor
+                        )
+                        .zIndex(1)
+                    }
                 }
-                .tabViewStyle(.page(indexDisplayMode: .automatic))
-                .background(Color.black)
             }
         }
         .onAppear { session.beginCountdown(skip: skipCountdown) }
@@ -514,7 +611,6 @@ struct WatchIntervalRunView: View {
         WatchWorkoutDashboardPage(
             topIcon: session.phase == .resting ? "pause.circle.fill" : "repeat",
             topLeading: session.phase == .resting ? "REST" : "CURRENT LAP",
-            topTrailingText: session.lapText,
             accentColor: RunningLevelManager.shared.accentColor,
             primaryValue: totalDistText,
             primaryUnit: "KM",
@@ -530,11 +626,6 @@ struct WatchIntervalRunView: View {
                 ? hrText(session.avgHeartRate)
                 : hrText(session.phase == .runningLap ? session.lapAvgHeartRate : session.lastRunLapAvgHeartRate),
             bottomUnit: "BPM",
-            bottomProgress: heartRateProgress(
-                showingAverageHeartRate
-                    ? session.avgHeartRate
-                    : (session.phase == .runningLap ? session.lapAvgHeartRate : session.lastRunLapAvgHeartRate)
-            ),
             bottomAction: { showingAverageHeartRate.toggle() }
         )
     }
@@ -660,6 +751,9 @@ struct WatchIntervalRunView: View {
                 .font(.system(size: 56, weight: .bold, design: .monospaced))
                 .foregroundStyle(AppColor.orange)
                 .contentTransition(.numericText())
+                .onChange(of: session.countdown) { oldValue, newValue in
+                    WKInterfaceDevice.current().play(.click)
+                }
             Text("준비하세요")
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(.secondary)

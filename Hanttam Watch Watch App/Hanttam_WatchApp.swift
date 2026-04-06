@@ -226,6 +226,8 @@ extension WatchBridge: WCSessionDelegate {
 
 final class WatchWorkoutSessionManager: NSObject, ObservableObject {
     static let shared = WatchWorkoutSessionManager()
+    static let minimumWorkoutDurationToSave: TimeInterval = 5
+    static let minimumWorkoutDistanceToSave: Double = 50
 
     @Published var heartRate: Double?
     @Published var avgHeartRate: Double?
@@ -235,6 +237,10 @@ final class WatchWorkoutSessionManager: NSObject, ObservableObject {
     private let healthStore = HKHealthStore()
     private var session: HKWorkoutSession?
     private var builder: HKLiveWorkoutBuilder?
+
+    static func shouldSaveWorkout(duration: TimeInterval, distance: Double) -> Bool {
+        duration >= minimumWorkoutDurationToSave && distance >= minimumWorkoutDistanceToSave
+    }
 
     func requestAuthorization() async {
         guard HKHealthStore.isHealthDataAvailable() else { return }
@@ -285,9 +291,28 @@ final class WatchWorkoutSessionManager: NSObject, ObservableObject {
         session?.resume()
     }
 
-    func endSession() {
+    func endSession(shouldSave: Bool = true) {
         session?.end()
-        builder?.endCollection(withEnd: Date()) { [weak self] _, _ in
+
+        guard let builder else {
+            DispatchQueue.main.async {
+                self.session = nil
+                self.isSessionActive = false
+            }
+            return
+        }
+
+        if !shouldSave {
+            builder.discardWorkout()
+            DispatchQueue.main.async {
+                self.session = nil
+                self.builder = nil
+                self.isSessionActive = false
+            }
+            return
+        }
+
+        builder.endCollection(withEnd: Date()) { [weak self] _, _ in
             self?.builder?.finishWorkout { _, _ in
                 DispatchQueue.main.async {
                     self?.session = nil
