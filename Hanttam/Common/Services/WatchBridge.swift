@@ -155,7 +155,7 @@ final class WatchBridge: NSObject, ObservableObject {
             self.setCollectionState(.phoneOnly(kind))
         }
         watchStartTimeout = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 15, execute: work)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3, execute: work)
 
         // Primary path: HKHealthStore.startWatchApp — auto-launches watch app
         let config = HKWorkoutConfiguration()
@@ -219,10 +219,12 @@ final class WatchBridge: NSObject, ObservableObject {
         setCollectionState(.phoneOnly(kind))
     }
 
-    func sendWorkoutCommand(_ command: String) {
+    @discardableResult
+    func sendWorkoutCommand(_ command: String) -> Bool {
         guard WCSession.default.activationState == .activated,
-              WCSession.default.isReachable else { return }
+              WCSession.default.isReachable else { return false }
         WCSession.default.sendMessage([WorkoutStreamKey.command: command], replyHandler: nil, errorHandler: nil)
+        return true
     }
 
     private func makePendingStartRequest(kind: WorkoutKind, payload: [String: Any]) -> PendingStartRequest {
