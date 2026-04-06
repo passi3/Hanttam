@@ -41,7 +41,7 @@ struct WorkoutView: View {
     @AppStorage("intervalRestDuration") private var restDuration: Double = 20
     @AppStorage("workoutIsIndoor") private var isIndoor: Bool = false
     @State private var position: MapCameraPosition
-    private static let mapDistance: Double = 800
+    private static let mapDistance: Double = 1500
 
     private var isRunning: Bool { showFreeRun || showIntervalRun }
 
