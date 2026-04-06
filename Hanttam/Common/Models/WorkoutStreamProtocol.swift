@@ -20,6 +20,9 @@ struct WorkoutDataSnapshot: Codable {
     var currentLatitude: Double?
     var currentLongitude: Double?
     var phase: String                 // "preparing","running","paused","finished"
+    var prestartPhase: String?        // "countdown"
+    var countdownValue: Int?
+    var countdownEndsAt: TimeInterval?
     // 인터벌 전용
     var currentSet: Int?
     var totalSets: Int?
