@@ -10,6 +10,7 @@ import MapKit
 import CoreLocation
 import SwiftUI
 import SnapKit
+internal import HealthKit
 
 // MARK: - ViewController
 
@@ -31,7 +32,7 @@ class IntervalRunViewController: UIViewController, CLLocationManagerDelegate, MK
     private let lapDistance   : Double
     private let restDuration  : TimeInterval
     private let isIndoor      : Bool
-    private let isWatchPrimary: Bool
+    private var isWatchPrimary: Bool
 
     init(sets: Int, lapDistance: Double, restDuration: TimeInterval, isIndoor: Bool = false, isWatchPrimary: Bool = false) {
         self.totalSets      = sets
@@ -55,9 +56,21 @@ class IntervalRunViewController: UIViewController, CLLocationManagerDelegate, MK
     private var countdown: Int              = 3
     private var timer: Timer?
     private var snapshotObserver: NSObjectProtocol?
+    private var phoneMetricsObserver: NSObjectProtocol?
     private var lastSnapshotDate: Date?
     private var disconnectTimer: Timer?
+    private var watchCountdownTimer: Timer?
+    private var watchCountdownEndsAt: Date?
     private var hasShownResult = false
+    private var isFirstMapUpdate = true
+    private var workoutStartDate: Date?
+    private var isPresentingResult = false
+    private var watchAvgPace: TimeInterval?
+    private var watchLapPace: TimeInterval?
+    private var watchAvgHeartRate: Double?
+    private var watchLapAvgHeartRate: Double?
+    private var lastRunLapPace: TimeInterval?
+    private var lastRunLapAvgHeartRate: Double?
 
     // location
     private let locationManager = CLLocationManager()
@@ -80,6 +93,8 @@ class IntervalRunViewController: UIViewController, CLLocationManagerDelegate, MK
     private let lapDistanceLabel = UILabel()
     private let avgPaceLabel     = UILabel()
     private let currPaceLabel    = UILabel()
+    private let avgHeartRateLabel = UILabel()
+    private let currHeartRateLabel = UILabel()
     private let setLabel         = UILabel()
 
     private let pauseButton     = UIButton()
@@ -98,6 +113,7 @@ class IntervalRunViewController: UIViewController, CLLocationManagerDelegate, MK
     private let pausedOverlay = UIView()
     private let pausedLabel   = UILabel()
     private let sourceBadge   = UILabel()
+    private let hrStack       = UIStackView()
 
     // MARK: - Lifecycle
 
@@ -107,9 +123,20 @@ class IntervalRunViewController: UIViewController, CLLocationManagerDelegate, MK
         if !isWatchPrimary {
             setupLocationManager()
         }
-        beginCountdown()
+        setupPhoneMetricsObserver()
+        if isWatchPrimary {
+            enterWatchPreparingState()
+        } else {
+            beginCountdown()
+        }
         if isWatchPrimary {
             setupSnapshotObserver()
+            NotificationCenter.default.addObserver(
+                self,
+                selector: #selector(fallbackToPhone),
+                name: WatchBridge.watchFailedFallbackNotification,
+                object: nil
+            )
         }
         NotificationCenter.default.addObserver(self,
                                                selector: #selector(stopFromMirror),
@@ -119,15 +146,25 @@ class IntervalRunViewController: UIViewController, CLLocationManagerDelegate, MK
 
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
-        if case .finished = phase {} else {
-            finishWorkout()
+        if case .finished = phase {} else if !isPresentingResult {
+            finishWorkout(showResult: false)
         }
+    }
+
+    deinit {
+        if let snapshotObserver {
+            NotificationCenter.default.removeObserver(snapshotObserver)
+        }
+        if let phoneMetricsObserver {
+            NotificationCenter.default.removeObserver(phoneMetricsObserver)
+        }
+        watchCountdownTimer?.invalidate()
     }
 
     // MARK: - Setup UI
 
     private func setupUI() {
-        view.backgroundColor = AppColor.UI.workoutBg
+        view.backgroundColor = AppColor.UI.backgroundGrouped
 
         // MapView
         mapView.delegate = self
@@ -136,13 +173,19 @@ class IntervalRunViewController: UIViewController, CLLocationManagerDelegate, MK
         config.emphasisStyle = .muted
         config.pointOfInterestFilter = .excludingAll
         mapView.preferredConfiguration = config
+        mapView.layer.cornerRadius = 30
+        mapView.layer.masksToBounds = true
         view.addSubview(mapView)
         view.addSubview(sourceBadge)
 
         // Stats Panel
         statsPanel.axis = .vertical
         statsPanel.spacing = 0
-        statsPanel.backgroundColor = AppColor.UI.workoutBg
+        statsPanel.backgroundColor = AppColor.UI.cardBackground.withAlphaComponent(0.96)
+        statsPanel.layer.cornerRadius = 28
+        statsPanel.layer.borderWidth = 1
+        statsPanel.layer.borderColor = AppColor.UI.border.withAlphaComponent(0.7).cgColor
+        statsPanel.layer.masksToBounds = true
         view.addSubview(statsPanel)
 
         // Stats Rows
@@ -154,18 +197,27 @@ class IntervalRunViewController: UIViewController, CLLocationManagerDelegate, MK
         let paceStack = UIStackView()
         paceStack.axis = .horizontal
         paceStack.distribution = .fillEqually
-        paceStack.addArrangedSubview(createStatRow(label: "Avg. PACE", valueLabel: avgPaceLabel))
+        paceStack.addArrangedSubview(createStatRow(label: "AVG PACE", valueLabel: avgPaceLabel))
         let d1 = createDivider(isVertical: true)
         paceStack.addSubview(d1)
-        paceStack.addArrangedSubview(createStatRow(label: "Curr. PACE", valueLabel: currPaceLabel))
+        paceStack.addArrangedSubview(createStatRow(label: "LAP PACE", valueLabel: currPaceLabel))
         statsPanel.addArrangedSubview(paceStack)
+        statsPanel.addArrangedSubview(createDivider())
+
+        hrStack.axis = .horizontal
+        hrStack.distribution = .fillEqually
+        hrStack.addArrangedSubview(createStatRow(label: "AVG HR", valueLabel: avgHeartRateLabel))
+        let d2 = createDivider(isVertical: true)
+        hrStack.addSubview(d2)
+        hrStack.addArrangedSubview(createStatRow(label: "LAP HR", valueLabel: currHeartRateLabel))
+        statsPanel.addArrangedSubview(hrStack)
         statsPanel.addArrangedSubview(createDivider())
 
         statsPanel.addArrangedSubview(createStatRow(label: "SET", valueLabel: setLabel))
         statsPanel.addArrangedSubview(createDivider())
 
         // Button Container
-        buttonContainer.backgroundColor = AppColor.UI.workoutBg
+        buttonContainer.backgroundColor = .clear
         view.addSubview(buttonContainer)
 
         // Buttons
@@ -188,7 +240,7 @@ class IntervalRunViewController: UIViewController, CLLocationManagerDelegate, MK
         buttonContainer.addSubview(manualLapButton)
 
         // Countdown
-        countdownContainer.backgroundColor = AppColor.UI.workoutBg
+        countdownContainer.backgroundColor = AppColor.UI.backgroundGrouped
         view.addSubview(countdownContainer)
         countdownLabel.font = AppFont.UI.metricDisplayXL
         countdownLabel.textColor = AppColor.UI.workoutPause
@@ -228,30 +280,33 @@ class IntervalRunViewController: UIViewController, CLLocationManagerDelegate, MK
         pausedOverlay.addSubview(pausedLabel)
 
         sourceBadge.font = AppFont.UI.labelSM
-        sourceBadge.textColor = AppColor.UI.success
-        sourceBadge.backgroundColor = AppColor.UI.cardBackground.withAlphaComponent(0.92)
+        sourceBadge.textColor = AppColor.UI.textSecondary
+        sourceBadge.backgroundColor = AppColor.UI.backgroundTertiary.withAlphaComponent(0.95)
         sourceBadge.layer.cornerRadius = 12
         sourceBadge.layer.masksToBounds = true
         sourceBadge.textAlignment = .center
         sourceBadge.text = " Apple Watch에서 센서 측정 중 "
         sourceBadge.isHidden = !isWatchPrimary
+        sourceBadge.layer.cornerRadius = 14
+        sourceBadge.layer.borderWidth = 1
+        sourceBadge.layer.borderColor = AppColor.UI.border.withAlphaComponent(0.8).cgColor
 
         // Layout
         mapView.snp.makeConstraints { make in
             make.top.leading.trailing.equalToSuperview()
-            make.bottom.equalTo(statsPanel.snp.top)
+            make.bottom.equalTo(statsPanel.snp.top).offset(-12)
         }
         sourceBadge.snp.makeConstraints { make in
             make.top.equalTo(view.safeAreaLayoutGuide.snp.top).offset(10)
             make.centerX.equalToSuperview()
         }
         statsPanel.snp.makeConstraints { make in
-            make.leading.trailing.equalToSuperview()
+            make.leading.trailing.equalToSuperview().inset(12)
             make.bottom.equalTo(buttonContainer.snp.top)
         }
         buttonContainer.snp.makeConstraints { make in
-            make.leading.trailing.equalToSuperview()
-            make.bottom.equalTo(view.safeAreaLayoutGuide.snp.bottom)
+            make.leading.trailing.equalToSuperview().inset(12)
+            make.bottom.equalTo(view.safeAreaLayoutGuide.snp.bottom).offset(-12)
             make.height.equalTo(116)
         }
         pauseButton.snp.makeConstraints { make in
@@ -274,6 +329,11 @@ class IntervalRunViewController: UIViewController, CLLocationManagerDelegate, MK
             make.width.height.equalTo(56)
         }
         d1.snp.makeConstraints { make in
+            make.centerX.equalToSuperview()
+            make.top.bottom.equalToSuperview()
+            make.width.equalTo(1)
+        }
+        d2.snp.makeConstraints { make in
             make.centerX.equalToSuperview()
             make.top.bottom.equalToSuperview()
             make.width.equalTo(1)
@@ -310,9 +370,11 @@ class IntervalRunViewController: UIViewController, CLLocationManagerDelegate, MK
         lapDistanceLabel.text = "0m / \(Int(lapDistance))m"
         avgPaceLabel.text = "--'--\""
         currPaceLabel.text = "--'--\""
+        avgHeartRateLabel.text = "--"
+        currHeartRateLabel.text = "--"
         setLabel.text = "1 / \(totalSets)"
 
-        statsPanel.alpha = 0.3
+        statsPanel.alpha = 1
         buttonContainer.isHidden = true
     }
 
@@ -325,41 +387,73 @@ class IntervalRunViewController: UIViewController, CLLocationManagerDelegate, MK
     }
 
     private func createStatRow(label: String, valueLabel: UILabel) -> UIView {
-        let container             = UIView()
-        container.backgroundColor = AppColor.UI.workoutBg
+        let container = UIView()
+        container.backgroundColor = AppColor.UI.backgroundSecondary
+        container.layer.cornerRadius = 18
+        container.layer.masksToBounds = true
 
         let lLabel           = UILabel()
         lLabel.text          = label
-        lLabel.font          = AppFont.UI.captionMD
+        lLabel.font          = AppFont.UI.labelMD
         lLabel.textColor     = AppColor.UI.textSecondary
-        lLabel.textAlignment = .center
+        lLabel.textAlignment = .left
 
-        valueLabel.font          = AppFont.UI.metricBody
-        valueLabel.textColor     = AppColor.UI.textPrimary
-        valueLabel.textAlignment = .center
+        if valueLabel === lapDistanceLabel {
+            valueLabel.font = UIFont.systemFont(ofSize: 34, weight: .black)
+            valueLabel.textColor = RunningLevelManager.shared.accentUIColor
+        } else if valueLabel === currPaceLabel {
+            valueLabel.font = AppFont.UI.metricTitle
+            valueLabel.textColor = AppColor.UI.textPrimary
+        } else if valueLabel === currHeartRateLabel {
+            valueLabel.font = AppFont.UI.metricTitle
+            valueLabel.textColor = AppColor.UI.textPrimary
+        } else {
+            valueLabel.font = AppFont.UI.metricBody
+            valueLabel.textColor = AppColor.UI.textPrimary
+        }
+        valueLabel.textAlignment = .left
+        valueLabel.adjustsFontSizeToFitWidth = true
+        valueLabel.minimumScaleFactor = 0.7
 
         let stack = UIStackView(arrangedSubviews: [lLabel, valueLabel])
         stack.axis    = .vertical
-        stack.spacing = 3
+        stack.spacing = 6
         container.addSubview(stack)
         stack.snp.makeConstraints { make in
             make.top.equalToSuperview().offset(14)
             make.bottom.equalToSuperview().offset(-14)
-            make.centerX.equalToSuperview()
+            make.leading.trailing.equalToSuperview().inset(16)
+        }
+        let rowHeight: CGFloat = valueLabel === lapDistanceLabel ? 110 : 72
+        container.snp.makeConstraints { make in
+            make.height.equalTo(rowHeight)
         }
         return container
     }
 
     private func createDivider(isVertical: Bool = false) -> UIView {
-        let divider             = UIView()
-        divider.backgroundColor = AppColor.UI.separator
-        if !isVertical {
-            divider.snp.makeConstraints { make in make.height.equalTo(0.5) }
+        let divider = UIView()
+        divider.backgroundColor = .clear
+        if isVertical {
+            divider.snp.makeConstraints { make in make.width.equalTo(10) }
+        } else {
+            divider.snp.makeConstraints { make in make.height.equalTo(10) }
         }
         return divider
     }
 
     // MARK: - Location
+
+    private func setupPhoneMetricsObserver() {
+        phoneMetricsObserver = NotificationCenter.default.addObserver(
+            forName: HealthKitStore.phoneWorkoutMetricsDidUpdate,
+            object: HealthKitStore.shared,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self, !self.isWatchPrimary else { return }
+            self.updateUI()
+        }
+    }
 
     private func setupLocationManager() {
         locationManager.delegate        = self
@@ -404,7 +498,65 @@ class IntervalRunViewController: UIViewController, CLLocationManagerDelegate, MK
             self.countdownContainer.isHidden = true
             self.buttonContainer.isHidden    = false
         }
+        if isWatchPrimary {
+            startWorkoutFlow(startDate: Date())
+            return
+        }
+
+        let startDate = Date()
+        let settings = IntervalSettings(sets: totalSets, lapDistance: lapDistance, restDuration: restDuration)
+        HealthKitStore.shared.startPhoneWorkout(
+            kind: .intervalRun(settings: settings),
+            isIndoor: isIndoor,
+            start: startDate
+        ) { [weak self] ok, error in
+            guard let self else { return }
+            guard ok else {
+                self.showAlert(
+                    title: "운동 시작 실패",
+                    message: error?.localizedDescription ?? "건강 권한 또는 세션 상태를 확인해주세요."
+                ) { [weak self] in
+                    self?.dismiss(animated: true)
+                }
+                return
+            }
+            self.startWorkoutFlow(startDate: startDate)
+        }
+    }
+
+    private func startWorkoutFlow(startDate: Date) {
+        workoutStartDate = startDate
         startRunningLap()
+    }
+
+    private func enterWatchPreparingState(countdownValue: Int? = nil) {
+        phase = .preparing
+        if let countdownValue {
+            countdown = countdownValue
+        }
+        countdownLabel.text = "\(max(countdown, 0))"
+        countdownContainer.alpha = 1
+        countdownContainer.isHidden = false
+        buttonContainer.isHidden = true
+        pausedOverlay.isHidden = true
+        restOverlay.isHidden = true
+    }
+
+    private func updateWatchPreparingCountdown(endsAt: Date?, countdownValue: Int?) {
+        watchCountdownEndsAt = endsAt
+        enterWatchPreparingState(countdownValue: countdownValue)
+        watchCountdownTimer?.invalidate()
+
+        guard let endsAt else { return }
+        watchCountdownTimer = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { [weak self] timer in
+            guard let self else { timer.invalidate(); return }
+            let remaining = max(0, Int(ceil(endsAt.timeIntervalSinceNow)))
+            self.countdownLabel.text = "\(remaining)"
+            if remaining <= 0 {
+                timer.invalidate()
+                self.watchCountdownTimer = nil
+            }
+        }
     }
 
     // MARK: - State Transitions
@@ -495,7 +647,10 @@ class IntervalRunViewController: UIViewController, CLLocationManagerDelegate, MK
 
     @objc private func pauseTapped() {
         if isWatchPrimary {
-            WatchBridge.shared.sendWorkoutCommand(WorkoutStreamKey.commandPause)
+            guard WatchBridge.shared.sendWorkoutCommand(WorkoutStreamKey.commandPause) else {
+                showAlert(title: "워치 연결 필요", message: "워치 연결을 확인해주세요.")
+                return
+            }
             return
         }
         guard case .runningLap = phase else {
@@ -511,13 +666,17 @@ class IntervalRunViewController: UIViewController, CLLocationManagerDelegate, MK
         phase = .paused(prior: .runningLap)
         timer?.invalidate()
         locationManager.stopUpdatingLocation()
+        HealthKitStore.shared.pausePhoneWorkout()
         pausedOverlay.isHidden = false
         showPausedButtons()
     }
 
     @objc private func resumeTapped() {
         if isWatchPrimary {
-            WatchBridge.shared.sendWorkoutCommand(WorkoutStreamKey.commandResume)
+            guard WatchBridge.shared.sendWorkoutCommand(WorkoutStreamKey.commandResume) else {
+                showAlert(title: "워치 연결 필요", message: "워치 연결을 확인해주세요.")
+                return
+            }
             return
         }
         guard case .paused(let prior) = phase else { return }
@@ -527,11 +686,13 @@ class IntervalRunViewController: UIViewController, CLLocationManagerDelegate, MK
         case .runningLap:
             phase = .runningLap
             locationManager.startUpdatingLocation()
+            HealthKitStore.shared.resumePhoneWorkout()
             startTimer()
             showRunningButtons()
             manualLapButton.isHidden = false
         case .resting:
             phase = .resting
+            HealthKitStore.shared.resumePhoneWorkout()
             startTimer()
             showRunningButtons()
             manualLapButton.isHidden = true
@@ -542,9 +703,22 @@ class IntervalRunViewController: UIViewController, CLLocationManagerDelegate, MK
 
     @objc private func stopTapped() {
         if isWatchPrimary {
-            WatchBridge.shared.sendWorkoutCommand(WorkoutStreamKey.commandStop)
+            guard WatchBridge.shared.sendWorkoutCommand(WorkoutStreamKey.commandStop) else {
+                showAlert(title: "워치 연결 필요", message: "워치 연결을 확인해주세요.")
+                return
+            }
             return
         }
+
+        switch phase {
+        case .runningLap:
+            recordLap(type: .run)
+        case .resting:
+            recordLap(type: .rest)
+        default:
+            break
+        }
+
         // record current in-progress lap
         if case .paused(let prior) = phase {
             switch prior {
@@ -553,6 +727,7 @@ class IntervalRunViewController: UIViewController, CLLocationManagerDelegate, MK
             default: break
             }
         }
+        isPresentingResult = true
         finishAndShowResult()
     }
 
@@ -593,47 +768,132 @@ class IntervalRunViewController: UIViewController, CLLocationManagerDelegate, MK
             avgPace: pace
         )
         laps.append(lap)
+        if type == .run {
+            lastRunLapPace = pace
+            lastRunLapAvgHeartRate = calculateCurrentLapAverageHeartRate(from: HealthKitStore.shared.currentPhoneWorkoutMetrics)
+        }
     }
 
-    private func finishWorkout() {
+    private func finishWorkout(showResult: Bool, completion: ((HKWorkout?) -> Void)? = nil) {
+        if case .finished = phase {
+            completion?(nil)
+            return
+        }
+
         phase = .finished
         timer?.invalidate()
         timer = nil
         locationManager.stopUpdatingLocation()
 
         // 워치 프라이머리일 때 폰에서는 HealthKit 저장 안 함 (워치 HKLiveWorkoutBuilder가 저장)
-        guard !isWatchPrimary else { return }
+        guard !isWatchPrimary else {
+            if showResult {
+                showResultScreen(workout: nil)
+            }
+            completion?(nil)
+            return
+        }
 
         let totalDist = laps.filter { $0.type == .run }.reduce(0) { $0 + $1.distance }
         let endDate = Date()
-        let startDate = endDate.addingTimeInterval(-elapsed)
-        let settings = IntervalSettings(sets: totalSets, lapDistance: lapDistance, restDuration: restDuration)
+        let duration = endDate.timeIntervalSince(workoutStartDate ?? endDate)
 
-        HealthKitStore.shared.saveIntervalWorkout(
-            start: startDate,
+        guard HealthKitStore.shared.shouldSaveWorkout(duration: duration, distance: totalDist) else {
+            HealthKitStore.shared.discardActivePhoneWorkout { [weak self] _, _ in
+                guard let self else { return }
+                completion?(nil)
+                if showResult {
+                    self.showResultScreen(workout: nil)
+                }
+            }
+            return
+        }
+
+        HealthKitStore.shared.finishPhoneWorkout(
             end: endDate,
             distance: totalDist,
             calories: nil,
-            laps: laps,
-            settings: settings,
             routeLocations: allLocations,
-            isIndoor: isIndoor
-        ) { success, error in
-            if !success {
-                print("[Interval] HealthKit 저장 실패: \(error?.localizedDescription ?? "")")
+            laps: laps
+        ) { [weak self] success, workout, error in
+            guard let self else { return }
+
+            let finishUI = {
+                completion?(workout)
+                if showResult {
+                    self.showResultScreen(workout: workout)
+                }
+            }
+
+            if success {
+                if let error {
+                    self.showAlert(title: "운동 저장 완료", message: "운동은 저장됐지만 경로 저장 중 일부 문제가 발생했습니다.\n\(error.localizedDescription)") {
+                        finishUI()
+                    }
+                } else {
+                    finishUI()
+                }
+            } else {
+                self.showAlert(title: "운동 저장 실패", message: error?.localizedDescription ?? "운동을 저장하지 못했습니다.") {
+                    finishUI()
+                }
             }
         }
     }
 
     @objc private func stopFromMirror() {
+        isPresentingResult = true
         finishAndShowResult()
+    }
+
+    @objc private func fallbackToPhone() {
+        guard isWatchPrimary else { return }
+        isWatchPrimary = false
+        // 스냅샷 옵저버 제거
+        if let obs = snapshotObserver {
+            NotificationCenter.default.removeObserver(obs)
+            snapshotObserver = nil
+        }
+        disconnectTimer?.invalidate()
+        disconnectTimer = nil
+        sourceBadge.isHidden = true
+
+        setupLocationManager()
+        locationManager.requestWhenInUseAuthorization()
+
+        if case .preparing = phase {
+            watchCountdownTimer?.invalidate()
+            watchCountdownTimer = nil
+            beginCountdown()
+            return
+        }
+
+        // 카운트다운 중이면 countdownFinished()에서 폰 HK 세션 자동 시작
+        guard case .runningLap = phase else { return }
+
+        let settings = IntervalSettings(sets: totalSets, lapDistance: lapDistance, restDuration: restDuration)
+        let startDate = workoutStartDate ?? Date()
+        HealthKitStore.shared.startPhoneWorkout(
+            kind: .intervalRun(settings: settings),
+            isIndoor: isIndoor,
+            start: startDate
+        ) { [weak self] ok, _ in
+            guard let self, ok else { return }
+            DispatchQueue.main.async {
+                self.locationManager.startUpdatingLocation()
+                self.startTimer()
+            }
+        }
     }
 
     private func finishAndShowResult() {
         guard !hasShownResult else { return }
-        hasShownResult = true
-        finishWorkout()
+        finishWorkout(showResult: true)
+    }
 
+    private func showResultScreen(workout: HKWorkout?) {
+        guard !hasShownResult else { return }
+        hasShownResult = true
         let runLaps = laps.filter { $0.type == .run }
         let totalDist = runLaps.reduce(0) { $0 + $1.distance }
         let avgPace: TimeInterval? = totalDist > 10 ? elapsed / (totalDist / 1000) : nil
@@ -646,7 +906,7 @@ class IntervalRunViewController: UIViewController, CLLocationManagerDelegate, MK
 
         let coords = routeCoordinates.map { (lat: $0.latitude, lng: $0.longitude) }
         let endDate = Date()
-        let startDate = endDate.addingTimeInterval(-elapsed)
+        let startDate = workoutStartDate ?? endDate.addingTimeInterval(-elapsed)
         let resultData = WorkoutResultDataModel(
             startDate: startDate,
             endDate: endDate,
@@ -657,8 +917,9 @@ class IntervalRunViewController: UIViewController, CLLocationManagerDelegate, MK
             splits: splits,
             routeCoordinates: coords,
             routeLocations: allLocations,
+            workout: workout,
             isIndoor: isIndoor,
-            alreadySaved: true  // 인터벌은 항상 alreadySaved (워치에서든 폰에서든 finishWorkout에서 저장)
+            alreadySaved: HealthKitStore.shouldSaveWorkout(duration: elapsed, distance: totalDist) && (isWatchPrimary || workout != nil)
         )
         let resultVC = WorkoutResultViewController(data: resultData)
         resultVC.modalPresentationStyle = .fullScreen
@@ -703,13 +964,21 @@ class IntervalRunViewController: UIViewController, CLLocationManagerDelegate, MK
         // Phase sync
         let phaseStr = snapshot.phase
         switch phaseStr {
+        case "preparing":
+            let endsAt = snapshot.countdownEndsAt.map(Date.init(timeIntervalSince1970:))
+            updateWatchPreparingCountdown(endsAt: endsAt, countdownValue: snapshot.countdownValue)
+            return
         case "paused":
+            watchCountdownTimer?.invalidate()
+            watchCountdownTimer = nil
             if case .paused = phase {} else {
                 phase = .paused(prior: .runningLap)
                 pausedOverlay.isHidden = false
                 showPausedButtons()
             }
         case "running":
+            watchCountdownTimer?.invalidate()
+            watchCountdownTimer = nil
             if snapshot.intervalPhase == "resting" {
                 if case .resting = phase {} else {
                     phase = .resting
@@ -727,8 +996,10 @@ class IntervalRunViewController: UIViewController, CLLocationManagerDelegate, MK
                 }
             }
         case "finished":
+            watchCountdownTimer?.invalidate()
+            watchCountdownTimer = nil
             if case .finished = phase {} else {
-                finishWorkout()
+                finishWorkout(showResult: false)
                 finishAndShowResult()
                 return
             }
@@ -759,8 +1030,14 @@ class IntervalRunViewController: UIViewController, CLLocationManagerDelegate, MK
         }
 
         // Pace
-        avgPaceLabel.text = formatPace(snapshot.avgPace ?? 0)
-        currPaceLabel.text = formatPace(snapshot.currentPace ?? 0)
+        watchAvgPace = snapshot.avgPace
+        watchLapPace = snapshot.segmentPace ?? snapshot.currentPace
+        watchAvgHeartRate = snapshot.avgHeartRate
+        watchLapAvgHeartRate = snapshot.segmentAvgHeartRate ?? snapshot.heartRate
+        avgPaceLabel.text = formatPace(watchAvgPace)
+        currPaceLabel.text = formatPace(watchLapPace)
+        avgHeartRateLabel.text = formatHeartRate(watchAvgHeartRate)
+        currHeartRateLabel.text = formatHeartRate(watchLapAvgHeartRate)
 
         // Map
         if let lat = snapshot.currentLatitude, let lng = snapshot.currentLongitude {
@@ -789,6 +1066,14 @@ class IntervalRunViewController: UIViewController, CLLocationManagerDelegate, MK
         // Set
         setLabel.text = "\(currentSet) / \(totalSets)"
 
+        if isWatchPrimary {
+            avgPaceLabel.text = formatPace(watchAvgPace)
+            currPaceLabel.text = formatPace(watchLapPace)
+            avgHeartRateLabel.text = formatHeartRate(watchAvgHeartRate)
+            currHeartRateLabel.text = formatHeartRate(watchLapAvgHeartRate)
+            return
+        }
+
         // Pace
         let runDist = laps.filter { $0.type == .run }.reduce(0) { $0 + $1.distance } + lapDistance_
         let runTime = laps.filter { $0.type == .run }.reduce(0) { $0 + $1.duration } + lapElapsed
@@ -798,27 +1083,45 @@ class IntervalRunViewController: UIViewController, CLLocationManagerDelegate, MK
             avgPaceLabel.text = "--'--\""
         }
 
-        if let cp = calculateCurrentPace() {
-            currPaceLabel.text = formatPace(cp)
+        let metrics = HealthKitStore.shared.currentPhoneWorkoutMetrics
+        avgHeartRateLabel.text = formatHeartRate(metrics.avgHeartRate)
+        currHeartRateLabel.text = formatHeartRate(
+            currentLapAverageHeartRate(from: metrics)
+        )
+
+        if case .resting = phase {
+            currPaceLabel.text = formatPace(lastRunLapPace)
         } else {
-            currPaceLabel.text = "--'--\""
+            currPaceLabel.text = formatPace(calculateCurrentLapPace())
         }
     }
 
-    private func calculateCurrentPace() -> TimeInterval? {
-        guard recentLocations.count >= 2 else { return nil }
-        var dist: CLLocationDistance = 0
-        for i in 0..<recentLocations.count - 1 {
-            dist += recentLocations[i + 1].distance(from: recentLocations[i])
-        }
-        guard dist > 5 else { return nil }
-        let time = recentLocations.last!.timestamp.timeIntervalSince(recentLocations.first!.timestamp)
-        return time / (dist / 1000.0)
+    private func calculateCurrentLapPace() -> TimeInterval? {
+        guard lapDistance_ > 10, lapElapsed > 0 else { return nil }
+        return lapElapsed / (lapDistance_ / 1000.0)
     }
 
-    private func formatPace(_ secPerKm: TimeInterval) -> String {
-        guard secPerKm.isFinite, secPerKm > 0, secPerKm < 3600 else { return "--'--\"" }
+    private func currentLapAverageHeartRate(from metrics: HealthKitStore.PhoneWorkoutMetrics) -> Double? {
+        if case .resting = phase {
+            return lastRunLapAvgHeartRate
+        }
+        return calculateCurrentLapAverageHeartRate(from: metrics)
+    }
+
+    private func calculateCurrentLapAverageHeartRate(from metrics: HealthKitStore.PhoneWorkoutMetrics) -> Double? {
+        let samples = metrics.heartRateSamples.filter { $0.date >= lapStartDate }
+        guard !samples.isEmpty else { return nil }
+        return samples.reduce(0) { $0 + $1.bpm } / Double(samples.count)
+    }
+
+    private func formatPace(_ secPerKm: TimeInterval?) -> String {
+        guard let secPerKm, secPerKm.isFinite, secPerKm > 0, secPerKm < 3600 else { return "--'--\"" }
         return String(format: "%d'%02d\"", Int(secPerKm) / 60, Int(secPerKm) % 60)
+    }
+
+    private func formatHeartRate(_ bpm: Double?) -> String {
+        guard let bpm, bpm.isFinite, bpm > 0 else { return "--" }
+        return String(format: "%.0f", bpm)
     }
 
     // MARK: - GPS → Lap auto-complete
@@ -854,8 +1157,14 @@ class IntervalRunViewController: UIViewController, CLLocationManagerDelegate, MK
     }
 
     private func updateMap(with coordinate: CLLocationCoordinate2D) {
-        let camera = MKMapCamera(lookingAtCenter: coordinate, fromDistance: 300, pitch: 0, heading: 0)
-        mapView.setCamera(camera, animated: true)
+        if isFirstMapUpdate {
+            let region = MKCoordinateRegion(center: coordinate, latitudinalMeters: 300, longitudinalMeters: 300)
+            mapView.setRegion(region, animated: false)
+            isFirstMapUpdate = false
+        } else {
+            let camera = MKMapCamera(lookingAtCenter: coordinate, fromDistance: 300, pitch: 0, heading: 0)
+            mapView.setCamera(camera, animated: true)
+        }
 
         mapView.removeOverlays(mapView.overlays)
         if routeCoordinates.count >= 2 {
@@ -899,6 +1208,14 @@ class IntervalRunViewController: UIViewController, CLLocationManagerDelegate, MK
 
     private func triggerHaptic(_ type: UINotificationFeedbackGenerator.FeedbackType) {
         UINotificationFeedbackGenerator().notificationOccurred(type)
+    }
+
+    private func showAlert(title: String, message: String, completion: (() -> Void)? = nil) {
+        let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "확인", style: .default) { _ in
+            completion?()
+        })
+        present(alert, animated: true)
     }
 }
 

@@ -12,7 +12,7 @@ struct FreeRunScreen: View {
     let startAction: () -> Void
     @ObservedObject private var levelManager = RunningLevelManager.shared
     
-    private let ringSize: CGFloat            = 280
+    private let ringSize: CGFloat = 280
     
     var body: some View {
         ZStack {
