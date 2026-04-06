@@ -13,6 +13,9 @@ struct WorkoutDataSnapshot: Codable {
     var avgPace: TimeInterval?        // sec/km
     var currentPace: TimeInterval?    // sec/km
     var heartRate: Double?            // bpm
+    var avgHeartRate: Double?         // bpm
+    var segmentPace: TimeInterval?    // sec/km
+    var segmentAvgHeartRate: Double?  // bpm
     var activeCalories: Double        // kcal
     var currentLatitude: Double?
     var currentLongitude: Double?
