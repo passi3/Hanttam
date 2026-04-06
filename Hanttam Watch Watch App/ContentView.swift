@@ -9,89 +9,126 @@ import SwiftUI
 internal import HealthKit
 
 struct ContentView: View {
+    private enum WatchRoute {
+        case homeFreeRun
+        case homeIntervalSetup
+        case freeRunWorkout(skipCountdown: Bool)
+        case intervalWorkout(sets: Int, lapDistance: Double, restDuration: TimeInterval, skipCountdown: Bool)
+        case workoutSummary(WatchWorkoutSummaryData)
+    }
+
     @State private var selection = 0
     @State private var totalSets: Int = 0
     @State private var crownValue: Double = 0
-    @State private var showRun = false
-    @State private var showIntervalRun = false
-    @State private var skipCountdown = false
+    @State private var route: WatchRoute = .homeFreeRun
 
     @AppStorage("intervalLapDistance") private var lapDistance: Double = 400
     @AppStorage("intervalRestDuration") private var restDuration: Double = 20
 
     var body: some View {
         Group {
-            if selection == 0 {
-                WatchButtonScreen(selection: $selection, showRun: $showRun)
-            } else {
+            switch route {
+            case .homeFreeRun, .homeIntervalSetup:
                 WatchDialPage(
                     selection: $selection,
                     totalSets: $totalSets,
                     crownValue: $crownValue,
-                    showIntervalRun: $showIntervalRun
+                    startIntervalRun: startIntervalRun
+                )
+                .overlay {
+                    if selection == 0 {
+                        WatchButtonScreen(selection: $selection, startFreeRun: startFreeRun)
+                    }
+                }
+            case .freeRunWorkout(let skipCountdown):
+                WatchFreeRunView(skipCountdown: skipCountdown, onFinish: showSummary)
+            case .intervalWorkout(let sets, let lapDistance, let restDuration, let skipCountdown):
+                WatchIntervalRunView(
+                    sets: sets,
+                    lapDistance: lapDistance,
+                    restDuration: restDuration,
+                    skipCountdown: skipCountdown,
+                    onFinish: showSummary
+                )
+            case .workoutSummary(let data):
+                WatchWorkoutSummaryView(
+                    data: data,
+                    onBack: returnToHome,
+                    onFinishReview: returnToHome
                 )
             }
         }
-        .fullScreenCover(isPresented: $showRun) {
-            WatchFreeRunView(skipCountdown: skipCountdown)
-                .onAppear { skipCountdown = false }
+        .onReceive(NotificationCenter.default.publisher(for: WatchBridge.workoutStartedNotification)) { _ in
+            if case .homeIntervalSetup = route {
+                route = .freeRunWorkout(skipCountdown: true)
+            }
         }
-        .fullScreenCover(isPresented: $showIntervalRun) {
-            WatchIntervalRunView(
+        .onReceive(NotificationCenter.default.publisher(for: WatchBridge.workoutStoppedNotification)) { _ in
+            returnToHome()
+        }
+        .onAppear(perform: presentPendingStartIfNeeded)
+        .onReceive(NotificationCenter.default.publisher(for: WatchBridge.workoutLaunchRequestedNotification)) { _ in
+            presentPendingStartIfNeeded()
+        }
+        .onChange(of: selection) { _, newValue in
+            if case .homeFreeRun = route, newValue == 1 {
+                route = .homeIntervalSetup
+            } else if case .homeIntervalSetup = route, newValue == 0 {
+                route = .homeFreeRun
+            }
+        }
+    }
+
+    private func presentPendingStartIfNeeded() {
+        guard let request = WatchBridge.shared.consumePendingStartRequest() else { return }
+
+        switch request.kind {
+        case .freeRun:
+            selection = 0
+            route = .freeRunWorkout(skipCountdown: request.skipCountdown)
+
+        case .intervalRun:
+            if let sets = request.sets {
+                totalSets = sets
+            }
+            if let lapDistance = request.lapDistance {
+                self.lapDistance = lapDistance
+            }
+            if let restDuration = request.restDuration {
+                self.restDuration = restDuration
+            }
+            selection = 1
+            route = .intervalWorkout(
                 sets: totalSets,
                 lapDistance: lapDistance,
                 restDuration: restDuration,
-                skipCountdown: skipCountdown
+                skipCountdown: request.skipCountdown
             )
-            .onAppear { skipCountdown = false }
         }
-        .onReceive(NotificationCenter.default.publisher(for: WatchBridge.workoutStartedNotification)) { _ in
-            showRun = true
-        }
-        .onReceive(NotificationCenter.default.publisher(for: WatchBridge.workoutStoppedNotification)) { _ in
-            showRun = false
-            showIntervalRun = false
-        }
-        .onAppear {
-            guard let config = WatchBridge.shared.pendingWorkoutConfiguration else { return }
-            let kind: WatchBridge.WorkoutKind = config.locationType == .indoor ? .intervalRun : .freeRun
-            switch kind {
-            case .freeRun:
-                selection = 0
-                showIntervalRun = false
-                showRun = true
-            case .intervalRun:
-                selection = 1
-                showRun = false
-                showIntervalRun = true
-            }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: WatchBridge.workoutLaunchRequestedNotification)) { note in
-            guard let kindRaw = note.userInfo?["kind"] as? String,
-                  let kind = WatchBridge.WorkoutKind(rawValue: kindRaw) else { return }
+    }
 
-            skipCountdown = true
-            switch kind {
-            case .freeRun:
-                selection = 0
-                showIntervalRun = false
-                showRun = true
+    private func startFreeRun() {
+        selection = 0
+        route = .freeRunWorkout(skipCountdown: false)
+    }
 
-            case .intervalRun:
-                if let sets = note.userInfo?["sets"] as? Int {
-                    totalSets = sets
-                }
-                if let lapDistance = note.userInfo?["lapDistance"] as? Double {
-                    self.lapDistance = lapDistance
-                }
-                if let restDuration = note.userInfo?["restDuration"] as? Double {
-                    self.restDuration = restDuration
-                }
-                selection = 1
-                showRun = false
-                showIntervalRun = true
-            }
-        }
+    private func startIntervalRun() {
+        guard totalSets > 0 else { return }
+        selection = 1
+        route = .intervalWorkout(
+            sets: totalSets,
+            lapDistance: lapDistance,
+            restDuration: restDuration,
+            skipCountdown: false
+        )
+    }
+
+    private func returnToHome() {
+        route = selection == 0 ? .homeFreeRun : .homeIntervalSetup
+    }
+
+    private func showSummary(_ data: WatchWorkoutSummaryData) {
+        route = .workoutSummary(data)
     }
 }
 
@@ -101,7 +138,7 @@ struct WatchDialPage: View {
     @Binding var selection: Int
     @Binding var totalSets: Int
     @Binding var crownValue: Double
-    @Binding var showIntervalRun: Bool
+    let startIntervalRun: () -> Void
 
     @AppStorage("intervalLapDistance") private var lapDistance: Double = 400
     @AppStorage("intervalRestDuration") private var restDuration: Double = 20
@@ -165,7 +202,7 @@ struct WatchDialPage: View {
                 }
                 .onTapGesture {
                     if totalSets > 0 {
-                        showIntervalRun = true
+                        startIntervalRun()
                     }
                 }
 
@@ -193,19 +230,6 @@ struct WatchDialPage: View {
             .padding(.trailing, 4)
             .padding(.bottom, 4)
 
-            // if totalSets > 0 {
-            //     Button { showIntervalRun = true } label: {
-            //         Image(systemName: "play.fill")
-            //             .font(.system(size: 14, weight: .semibold))
-            //             .foregroundStyle(.black)
-            //             .frame(width: 32, height: 32)
-            //             .background(levelManager.accentColor, in: Circle())
-            //     }
-            //     .buttonStyle(.plain)
-            //     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
-            //     .padding(.trailing, 4)
-            //     .padding(.bottom, 4)
-            // }
         }
     }
 
