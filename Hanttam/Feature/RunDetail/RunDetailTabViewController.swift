@@ -518,17 +518,14 @@ class RunDetailChartsViewController: UIViewController {
         contentStack.arrangedSubviews.forEach { $0.removeFromSuperview() }
         children.forEach { if $0 !== self { $0.removeFromParent() } }
         let chartHelper = RunDetailContentView.ChartHelper(record: record, data: data)
-
-        let header = RunDetailContentView.SectionHeader(title: "PERFORMANCE METRICS", icon: "chart.line.uptrend.xyaxis")
-        embedSwiftUI(header, height: 24)
-
-        for metric in MetricType.allCases {
+        let metrics = MetricType.allCases.compactMap { metric -> (MetricType, [TSPoint])? in
             let ts = chartHelper.timeSeries(for: metric)
-            if !ts.isEmpty {
-                let card = RunDetailContentView.PerformanceMetricCard(metric: metric, data: ts)
-                embedSwiftUI(card, height: 210)
-            }
+            return ts.isEmpty ? nil : (metric, ts)
         }
+        guard !metrics.isEmpty else { return }
+
+        let metricsSection = RunDetailContentView.PerformanceMetricsSection(metrics: metrics)
+        embedSwiftUI(metricsSection)
     }
 
     private func embedSwiftUI<V: View>(_ swiftUIView: V, height: CGFloat? = nil) {
@@ -579,12 +576,13 @@ class RunDetailLapsViewController: UIViewController {
         view.subviews.forEach { $0.removeFromSuperview() }
         children.forEach { $0.removeFromParent() }
         guard !sanitizedData.lapRows.isEmpty else { return }
+        let chartHelper = RunDetailContentView.ChartHelper(record: record, data: sanitizedData)
 
         let lapsContent = RunDetailContentView.LapsFullSection(
             record: record,
             lapRows: sanitizedData.lapRows,
             heartRates: sanitizedData.heartRates,
-            stepSamples: sanitizedData.stepSamples,
+            avgCadence: chartHelper.averageValue(for: .cadence),
             strideSamples: sanitizedData.strideSamples,
             voSamples: sanitizedData.voSamples,
             speedSamples: sanitizedData.speedSamples

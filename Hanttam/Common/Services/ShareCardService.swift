@@ -10,6 +10,31 @@ import SwiftUI
 import Vision
 import CoreImage.CIFilterBuiltins
 
+struct ExtractedSubject: Identifiable, Equatable {
+    let id: Int
+    let image: UIImage
+    let boundingBox: CGRect
+    let area: CGFloat
+
+    func contains(_ point: CGPoint, alphaThreshold: UInt8 = 10) -> Bool {
+        guard boundingBox.contains(point),
+              let cgImage = image.cgImage,
+              let data = cgImage.dataProvider?.data,
+              let ptr = CFDataGetBytePtr(data)
+        else { return false }
+
+        let x = Int(point.x.rounded(.down))
+        let y = Int(point.y.rounded(.down))
+        guard x >= 0, y >= 0, x < cgImage.width, y < cgImage.height else { return false }
+
+        let bytesPerPixel = max(cgImage.bitsPerPixel / 8, 1)
+        let bytesPerRow = cgImage.bytesPerRow
+        let alphaOffset = cgImage.alphaInfo == .premultipliedFirst || cgImage.alphaInfo == .first ? 0 : bytesPerPixel - 1
+        let alpha = ptr[y * bytesPerRow + x * bytesPerPixel + alphaOffset]
+        return alpha > alphaThreshold
+    }
+}
+
 // MARK: - Share Card Service
 
 final class ShareCardService: NSObject {
@@ -79,38 +104,92 @@ final class ShareCardService: NSObject {
 
     // MARK: - 피사체 추출
 
-    func extractSubject(from photo: UIImage) -> UIImage? {
-        guard let cgImage = photo.cgImage else { return nil }
+    func extractSubjects(from photo: UIImage) -> [ExtractedSubject] {
+        guard let cgImage = photo.cgImage else { return [] }
 
         let request = VNGenerateForegroundInstanceMaskRequest()
         let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
 
         do {
             try handler.perform([request])
-            guard let result = request.results?.first else { return nil }
+            guard let result = request.results?.first else { return [] }
 
-            let maskPixelBuffer = try result.generateScaledMaskForImage(
-                forInstances: result.allInstances,
-                from: handler
-            )
-
-            let ciContext = CIContext()
-            let maskCI = CIImage(cvPixelBuffer: maskPixelBuffer)
             let originalCI = CIImage(cgImage: cgImage)
+            let ciContext = CIContext()
+            let imageRect = CGRect(x: 0, y: 0, width: cgImage.width, height: cgImage.height)
 
-            let blendFilter = CIFilter.blendWithMask()
-            blendFilter.inputImage = originalCI
-            blendFilter.backgroundImage = CIImage.empty()
-            blendFilter.maskImage = maskCI
+            return result.allInstances.compactMap { instance in
+                do {
+                    let instanceID = Int(instance)
+                    let maskPixelBuffer = try result.generateScaledMaskForImage(
+                        forInstances: IndexSet(integer: instanceID),
+                        from: handler
+                    )
+                    let maskCI = CIImage(cvPixelBuffer: maskPixelBuffer)
 
-            guard let outputCI = blendFilter.outputImage,
-                  let outputCG = ciContext.createCGImage(outputCI, from: originalCI.extent)
-            else { return nil }
+                    let blendFilter = CIFilter.blendWithMask()
+                    blendFilter.inputImage = originalCI
+                    blendFilter.backgroundImage = CIImage.empty()
+                    blendFilter.maskImage = maskCI
 
-            return UIImage(cgImage: outputCG, scale: photo.scale, orientation: photo.imageOrientation)
+                    guard let outputCI = blendFilter.outputImage,
+                          let outputCG = ciContext.createCGImage(outputCI, from: originalCI.extent)
+                    else { return nil }
+
+                    let subjectImage = UIImage(cgImage: outputCG, scale: photo.scale, orientation: photo.imageOrientation)
+                    guard let boundingBox = self.alphaBoundingBox(in: outputCG), !boundingBox.isEmpty else { return nil }
+
+                    let clippedBox = boundingBox.intersection(imageRect)
+                    guard !clippedBox.isEmpty else { return nil }
+
+                    return ExtractedSubject(
+                        id: instanceID,
+                        image: subjectImage,
+                        boundingBox: clippedBox,
+                        area: clippedBox.width * clippedBox.height
+                    )
+                } catch {
+                    return nil
+                }
+            }
         } catch {
-            return nil
+            return []
         }
+    }
+
+    func extractSubject(from photo: UIImage) -> UIImage? {
+        extractSubjects(from: photo).first?.image
+    }
+
+    private func alphaBoundingBox(in cgImage: CGImage, alphaThreshold: UInt8 = 10) -> CGRect? {
+        guard let data = cgImage.dataProvider?.data,
+              let ptr = CFDataGetBytePtr(data)
+        else { return nil }
+
+        let width = cgImage.width
+        let height = cgImage.height
+        let bytesPerPixel = max(cgImage.bitsPerPixel / 8, 1)
+        let bytesPerRow = cgImage.bytesPerRow
+        let alphaOffset = cgImage.alphaInfo == .premultipliedFirst || cgImage.alphaInfo == .first ? 0 : bytesPerPixel - 1
+
+        var minX = width
+        var minY = height
+        var maxX = -1
+        var maxY = -1
+
+        for y in 0..<height {
+            for x in 0..<width {
+                let alpha = ptr[y * bytesPerRow + x * bytesPerPixel + alphaOffset]
+                guard alpha > alphaThreshold else { continue }
+                minX = min(minX, x)
+                minY = min(minY, y)
+                maxX = max(maxX, x)
+                maxY = max(maxY, y)
+            }
+        }
+
+        guard maxX >= minX, maxY >= minY else { return nil }
+        return CGRect(x: minX, y: minY, width: maxX - minX + 1, height: maxY - minY + 1)
     }
 
 }
@@ -135,4 +214,3 @@ enum ShareSaveResult {
         }
     }
 }
-
