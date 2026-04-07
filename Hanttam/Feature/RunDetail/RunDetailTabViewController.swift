@@ -576,12 +576,13 @@ class RunDetailLapsViewController: UIViewController {
         view.subviews.forEach { $0.removeFromSuperview() }
         children.forEach { $0.removeFromParent() }
         guard !sanitizedData.lapRows.isEmpty else { return }
+        let chartHelper = RunDetailContentView.ChartHelper(record: record, data: sanitizedData)
 
         let lapsContent = RunDetailContentView.LapsFullSection(
             record: record,
             lapRows: sanitizedData.lapRows,
             heartRates: sanitizedData.heartRates,
-            stepSamples: sanitizedData.stepSamples,
+            avgCadence: chartHelper.averageValue(for: .cadence),
             strideSamples: sanitizedData.strideSamples,
             voSamples: sanitizedData.voSamples,
             speedSamples: sanitizedData.speedSamples

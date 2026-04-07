@@ -276,7 +276,7 @@ enum RunDetailContentView {
         }
 
         private var valueFont: Font {
-            isShareStyle ? .system(size: 20, weight: .ultraLight, design: .monospaced) : .system(size: 28, weight: .ultraLight, design: .monospaced)
+            isShareStyle ? .system(size: 20, weight: .ultraLight, design: .monospaced) : .system(size: 24, weight: .ultraLight, design: .monospaced)
         }
 
         private var labelColor: Color {
@@ -310,6 +310,12 @@ enum RunDetailContentView {
         let data: RunDetailViewModel.DetailData
         private let maxChartPoints = 1000
         private let bucketInterval: TimeInterval = 10
+
+        func averageValue(for metric: MetricType) -> Double? {
+            let series = timeSeries(for: metric)
+            guard !series.isEmpty else { return nil }
+            return series.reduce(0) { $0 + $1.value } / Double(series.count)
+        }
         
         func timeSeries(for metric: MetricType) -> [TSPoint] {
             let startDate = record.date
@@ -529,6 +535,10 @@ enum RunDetailContentView {
         @State private var animatedPace: Double = 0
         @State private var animatedCadence: Double = 0
         @State private var animatedHR: Double = 0
+
+        private var chartHelper: ChartHelper {
+            ChartHelper(record: record, data: data)
+        }
         
         private var avgPace: TimeInterval {
             guard record.distance > 0 else { return 0 }
@@ -538,12 +548,8 @@ enum RunDetailContentView {
             guard !heartRates.isEmpty else { return 0 }
             return heartRates.reduce(0) { $0 + $1.bpm } / Double(heartRates.count)
         }
-        private var totalSteps: Double {
-            data.stepSamples.reduce(0) { $0 + $1.value}
-        }
         private var avgCadence: Double {
-            guard record.duration > 0 else { return 0 }
-            return totalSteps / (record.duration / 60)
+            chartHelper.averageValue(for: .cadence) ?? 0
         }
         private var totalElevationGain: Double {
             guard data.altPoints.count >= 2 else { return 0 }
@@ -1144,7 +1150,7 @@ enum RunDetailContentView {
         let record: RunningRecord
         let lapRows: [RunDetailLapRow]
         let heartRates: [HeartRateSample]
-        let stepSamples: [QuantitySamplePoint]
+        let avgCadence: Double?
         let strideSamples: [QuantitySamplePoint]
         let voSamples: [QuantitySamplePoint]
         let speedSamples: [QuantitySamplePoint]
@@ -1160,12 +1166,6 @@ enum RunDetailContentView {
             let values = lapRows.compactMap(\.avgHeartRate)
             guard !values.isEmpty else { return heartRates.isEmpty ? nil : heartRates.reduce(0) { $0 + $1.bpm } / Double(heartRates.count) }
             return values.reduce(0, +) / Double(values.count)
-        }
-        
-        private var avgCadence: Double? {
-            let totalSteps = stepSamples.reduce(0) { $0 + $1.value }
-            guard record.duration > 0, totalSteps > 0 else { return nil }
-            return totalSteps / (record.duration / 60)
         }
         
         private var avgStrideLength: Double? {
