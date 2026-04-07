@@ -36,6 +36,16 @@ extension EnvironmentValues {
 
 struct ChartPhotoShareView<ChartContent: View>: View {
 
+    private struct SelectedSubjectLayer: Identifiable, Equatable {
+        let id: Int
+        var isBehindOverlay: Bool
+        var selectionOrder: Int
+        var isLifted: Bool = false
+        var scanProgress: CGFloat = 0
+        var topRatio: CGFloat = 0
+        var bottomRatio: CGFloat = 1
+    }
+
     @ViewBuilder let chartContent: () -> ChartContent
 
     @Environment(\.dismiss) private var dismiss
@@ -43,7 +53,8 @@ struct ChartPhotoShareView<ChartContent: View>: View {
     // Photo
     @State private var photo: UIImage?
     @State private var glassPhoto: UIImage?
-    @State private var subjectImage: UIImage?
+    @State private var subjects: [ExtractedSubject] = []
+    @State private var selectedSubjects: [SelectedSubjectLayer] = []
     @State private var isExtracting = false
 
     // Photo list (for swipe navigation)
@@ -59,12 +70,11 @@ struct ChartPhotoShareView<ChartContent: View>: View {
     @State private var scaleAccumulated: CGFloat = 0.8
     @State private var solidTone: Double = 0.0  // -1(흰) ~ 0(투명) ~ +1(검정)
     @State private var bgStyle: OverlayBgStyle = .solid
-    @State private var behindSubject = false
-    @State private var subjectLifted = false
-    @State private var subjectScanProgress: CGFloat = 0  // 0→1 빛 스캔 진행도
-    @State private var subjectTopRatio: CGFloat = 0     // 피사체 상단 위치 (0~1)
-    @State private var subjectBottomRatio: CGFloat = 1  // 피사체 하단 위치 (0~1)
     @State private var longPressTimer: DispatchWorkItem?
+    @State private var subjectSelectionCounter = 0
+    @State private var guidanceScanProgress: CGFloat = 0
+    @State private var touchSubjectID: ExtractedSubject.ID?
+    @State private var didHandleTouchAsSubject = false
 
     private enum OverlayBgStyle: String, CaseIterable {
         case solid = "솔리드"
@@ -79,7 +89,21 @@ struct ChartPhotoShareView<ChartContent: View>: View {
     @State private var saveResult: ShareSaveResult?
     @State private var shouldDismissAfterAlert = false
 
-    private var hasSubject: Bool { subjectImage != nil }
+    private var selectedSubjectLayers: [SelectedSubjectLayer] {
+        selectedSubjects.sorted { $0.selectionOrder < $1.selectionOrder }
+    }
+
+    private var backSubjectLayers: [SelectedSubjectLayer] {
+        selectedSubjectLayers.filter(\.isBehindOverlay)
+    }
+
+    private var frontSubjectLayers: [SelectedSubjectLayer] {
+        selectedSubjectLayers.filter { !$0.isBehindOverlay }
+    }
+
+    private var hasSelectedSubjects: Bool { !selectedSubjects.isEmpty }
+    private var shouldShowGuidanceScan: Bool { !subjects.isEmpty && selectedSubjects.isEmpty }
+    private var subjectGlowColor: Color { RunningLevelManager.shared.accentColor }
 
     /// solidTone: -1(흰) ~ 0(투명) ~ +1(검정)
     private var solidColor: Color {
@@ -210,12 +234,12 @@ struct ChartPhotoShareView<ChartContent: View>: View {
                 .animation(.easeInOut(duration: 0.3), value: isExtracting)
                 .frame(width: cardW, height: cardH)
 
-                if hasSubject {
-                    Text("길게 눌러 피사체 앞/뒤 전환")
+                if hasSelectedSubjects {
+                    Text("길게 눌러 선택/해제, 탭으로 순서 올리기")
                         .font(.system(size: 11, weight: .light))
                         .foregroundStyle(.secondary)
                 } else {
-                    Text("")
+                    Text(subjects.isEmpty ? "" : "피사체를 길게 눌러 선택하세요")
                         .font(.system(size: 11, weight: .light))
                         .foregroundStyle(.secondary)
                 }
@@ -316,7 +340,7 @@ struct ChartPhotoShareView<ChartContent: View>: View {
     private func scrubToIndex(_ index: Int) {
         guard index >= 0, index < photoAssets.count, index != currentAssetIndex else { return }
         currentAssetIndex = index
-        subjectImage = nil
+        clearSelectedSubjects()
         glassPhoto = nil
         prefetchStripThumbs()
 
@@ -360,14 +384,14 @@ struct ChartPhotoShareView<ChartContent: View>: View {
                 self.photo = fullImage
             }
             DispatchQueue.global(qos: .userInitiated).async {
-                let subject = ShareCardService.shared.extractSubject(from: fullImage)
+                let extractedSubjects = ShareCardService.shared.extractSubjects(from: fullImage)
                 let glass = ShareCardService.shared.applyGlassDistortion(to: fullImage)
                 DispatchQueue.main.async {
                     guard self.currentAssetIndex == index, self.photo != nil else { return }
-                    self.subjectImage = subject
+                    self.subjects = extractedSubjects
+                    self.clearSelectedSubjects()
                     self.glassPhoto = glass
                     self.isExtracting = false
-                    if let subject { self.updateSubjectBounds(subject) }
                 }
             }
         }
@@ -392,19 +416,19 @@ struct ChartPhotoShareView<ChartContent: View>: View {
                 guard self.photo != nil else { return }
                 currentAssetIndex = index
                 photo = image
-                subjectImage = nil
+                clearSelectedSubjects()
                 glassPhoto = nil
                 prefetchStripThumbs()
             }
             DispatchQueue.global(qos: .userInitiated).async {
-                let subject = ShareCardService.shared.extractSubject(from: image)
+                let extractedSubjects = ShareCardService.shared.extractSubjects(from: image)
                 let glass = ShareCardService.shared.applyGlassDistortion(to: image)
                 DispatchQueue.main.async {
                     guard self.currentAssetIndex == index, self.photo != nil else { return }
-                    subjectImage = subject
+                    subjects = extractedSubjects
+                    clearSelectedSubjects()
                     glassPhoto = glass
                     isExtracting = false
-                    if let subject { updateSubjectBounds(subject) }
                 }
             }
         }
@@ -443,111 +467,100 @@ struct ChartPhotoShareView<ChartContent: View>: View {
                 .resizable().scaledToFill()
                 .frame(width: cardWidth, height: cardHeight).clipped()
 
-            // 차트가 피사체 뒤에 있을 때
-            if behindSubject && hasSubject {
+            if !backSubjectLayers.isEmpty {
+                subjectLayersView(backSubjectLayers, cardWidth: cardWidth, cardHeight: cardHeight)
+            }
+
+            if shouldShowGuidanceScan {
+                guidanceLayersView(cardWidth: cardWidth, cardHeight: cardHeight)
+            }
+
+            if !backSubjectLayers.isEmpty {
                 chartOverlay(photo: photo, cardHeight: cardHeight)
             }
 
-            // 피사체 레이어 (터치 통과 — 차트 드래그 방해하지 않음)
-            if let subject = subjectImage {
-                ZStack {
-                    Image(uiImage: subject)
-                        .resizable().scaledToFill()
-                        .frame(width: cardWidth, height: cardHeight)
-                        .clipped()
-
-                    // 빛 띠 스캔 — 피사체 상단→하단 훑기
-                    if subjectScanProgress > 0 {
-                        let bandWidth: CGFloat = 0.12
-                        // progress 0→1을 피사체 실제 상하 범위로 매핑
-                        let center = subjectTopRatio + subjectScanProgress * (subjectBottomRatio - subjectTopRatio)
-                        LinearGradient(
-                            stops: [
-                                .init(color: .clear, location: max(0, center - bandWidth)),
-                                .init(color: Color.white.opacity(0.3), location: max(0, center - bandWidth * 0.4)),
-                                .init(color: Color.white.opacity(0.7), location: center),
-                                .init(color: Color.white.opacity(0.3), location: min(1, center + bandWidth * 0.4)),
-                                .init(color: .clear, location: min(1, center + bandWidth))
-                            ],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                        .frame(width: cardWidth, height: cardHeight)
-                        .blendMode(.softLight)
-                        .mask {
-                            Image(uiImage: subject)
-                                .resizable().scaledToFill()
-                                .frame(width: cardWidth, height: cardHeight)
-                        }
-                    }
-                }
-                .frame(width: cardWidth, height: cardHeight)
-                .scaleEffect(subjectLifted ? 1.05 : 1.0)
-                .shadow(
-                    color: .black.opacity(subjectLifted ? 0.5 : 0),
-                    radius: subjectLifted ? 20 : 0,
-                    y: subjectLifted ? 10 : 0
-                )
-                .allowsHitTesting(false)
+            if backSubjectLayers.isEmpty {
+                chartOverlay(photo: photo, cardHeight: cardHeight)
             }
 
-            // 차트가 피사체 앞에 있을 때
-            if !behindSubject || !hasSubject {
-                chartOverlay(photo: photo, cardHeight: cardHeight)
+            if !frontSubjectLayers.isEmpty {
+                subjectLayersView(frontSubjectLayers, cardWidth: cardWidth, cardHeight: cardHeight)
             }
         }
         .frame(width: cardWidth, height: cardHeight)
         .clipped()
         .clipShape(RoundedRectangle(cornerRadius: 16))
+        .overlay(alignment: .center) {
+            if !subjects.isEmpty && !hasSelectedSubjects {
+                Text("피사체를 길게 눌러 선택")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(.black.opacity(0.45), in: Capsule())
+            }
+        }
+        .gesture(
+            SpatialTapGesture()
+                .onEnded { value in
+                    handleSubjectTap(at: value.location, photo: photo, cardSize: CGSize(width: cardWidth, height: cardHeight))
+                }
+        )
         .simultaneousGesture(
             DragGesture(minimumDistance: 0)
                 .onChanged { value in
-                    guard hasSubject else { return }
+                    let cardSize = CGSize(width: cardWidth, height: cardHeight)
+                    if touchSubjectID == nil {
+                        touchSubjectID = hitTestSubjectID(at: value.startLocation, photo: photo, cardSize: cardSize)
+                        didHandleTouchAsSubject = false
+                    }
+
+                    guard let touchSubjectID else { return }
                     let moved = abs(value.translation.width) > 5 || abs(value.translation.height) > 5
-                    if moved {
-                        // 드래그 감지 → 타이머 취소
+                    if moved, isSubjectSelected(touchSubjectID), !didHandleTouchAsSubject {
                         longPressTimer?.cancel()
                         longPressTimer = nil
-                        if subjectLifted {
-                            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                                subjectLifted = false
-                                subjectScanProgress = 0
-                            }
-                        }
-                    } else if longPressTimer == nil && !subjectLifted {
-                        // 첫 터치 → 타이머 시작
+                        deselectSubject(touchSubjectID)
+                        didHandleTouchAsSubject = true
+                    } else if !moved, longPressTimer == nil, !didHandleTouchAsSubject {
                         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                        withAnimation(.spring(response: 0.35, dampingFraction: 0.6)) {
-                            subjectLifted = true
-                        }
-                        subjectScanProgress = 0
-                        withAnimation(.easeInOut(duration: 1.2)) {
-                            subjectScanProgress = 1
+                        if isSubjectSelected(touchSubjectID) {
+                            setLifted(true, for: touchSubjectID)
+                            setScanProgress(1, for: touchSubjectID)
                         }
                         let work = DispatchWorkItem {
                             UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                            withAnimation(.spring(response: 0.35, dampingFraction: 0.7)) {
-                                behindSubject.toggle()
-                                subjectLifted = false
-                                subjectScanProgress = 0
-                            }
+                            toggleSubjectSelection(touchSubjectID)
+                            didHandleTouchAsSubject = true
                         }
                         longPressTimer = work
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2, execute: work)
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6, execute: work)
                     }
                 }
                 .onEnded { _ in
-                    // 손을 떼면 취소
+                    if let touchSubjectID,
+                       !didHandleTouchAsSubject,
+                       isSubjectSelected(touchSubjectID) {
+                        bringSubjectToTop(touchSubjectID)
+                    }
                     longPressTimer?.cancel()
                     longPressTimer = nil
-                    if subjectLifted {
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                            subjectLifted = false
-                            subjectScanProgress = 0
-                        }
+                    if let touchSubjectID {
+                        setLifted(false, for: touchSubjectID)
+                        setScanProgress(0, for: touchSubjectID)
                     }
+                    self.touchSubjectID = nil
+                    didHandleTouchAsSubject = false
                 }
         )
+        .onAppear { startGuidanceScanIfNeeded() }
+        .onChange(of: shouldShowGuidanceScan) { _, shouldShow in
+            if shouldShow {
+                startGuidanceScanIfNeeded()
+            } else {
+                guidanceScanProgress = 0
+            }
+        }
     }
 
     // MARK: - Chart Overlay
@@ -652,47 +665,283 @@ struct ChartPhotoShareView<ChartContent: View>: View {
                 .resizable().scaledToFill()
                 .frame(width: cardW, height: cardH).clipped()
 
-            if behindSubject && hasSubject { overlayView }
-
-            if behindSubject, let subject = subjectImage {
-                Image(uiImage: subject)
-                    .resizable().scaledToFill()
-                    .frame(width: cardW, height: cardH).clipped()
+            ForEach(backSubjectLayers) { layer in
+                if let subject = subject(for: layer.id) {
+                    subjectImageView(
+                        subject,
+                        layer: layer,
+                        cardWidth: cardW,
+                        cardHeight: cardH,
+                        showsScan: false,
+                        showsInteractionEffect: false
+                    )
+                }
             }
 
-            if !behindSubject || !hasSubject { overlayView }
+            overlayView
+
+            ForEach(frontSubjectLayers) { layer in
+                if let subject = subject(for: layer.id) {
+                    subjectImageView(
+                        subject,
+                        layer: layer,
+                        cardWidth: cardW,
+                        cardHeight: cardH,
+                        showsScan: false,
+                        showsInteractionEffect: false
+                    )
+                }
+            }
         }
         .frame(width: cardW, height: cardH)
         .clipped()
         .clipShape(RoundedRectangle(cornerRadius: 16))
     }
 
-    // MARK: - Subject Bounds
+    // MARK: - Subject Helpers
 
-    private func updateSubjectBounds(_ image: UIImage) {
-        guard let cgImage = image.cgImage else { return }
-        let w = cgImage.width, h = cgImage.height
-        guard let data = cgImage.dataProvider?.data,
-              let ptr = CFDataGetBytePtr(data) else { return }
-        let bytesPerPixel = cgImage.bitsPerPixel / 8
-        let bytesPerRow = cgImage.bytesPerRow
-        let alphaOffset = cgImage.alphaInfo == .premultipliedFirst || cgImage.alphaInfo == .first ? 0 : bytesPerPixel - 1
-
-        var topRow = h, bottomRow = 0
-        for y in 0..<h {
-            for x in 0..<w {
-                let alpha = ptr[y * bytesPerRow + x * bytesPerPixel + alphaOffset]
-                if alpha > 10 {
-                    topRow = min(topRow, y)
-                    bottomRow = max(bottomRow, y)
-                    break
-                }
+    @ViewBuilder
+    private func subjectLayersView(_ layers: [SelectedSubjectLayer], cardWidth: CGFloat, cardHeight: CGFloat) -> some View {
+        ForEach(layers) { layer in
+            if let subject = subject(for: layer.id) {
+                subjectImageView(
+                    subject,
+                    layer: layer,
+                    cardWidth: cardWidth,
+                    cardHeight: cardHeight,
+                    showsScan: layer.scanProgress > 0,
+                    showsInteractionEffect: layer.isLifted || layer.scanProgress > 0
+                )
             }
         }
-        if topRow <= bottomRow {
-            subjectTopRatio = CGFloat(topRow) / CGFloat(h)
-            subjectBottomRatio = CGFloat(bottomRow) / CGFloat(h)
+    }
+
+    @ViewBuilder
+    private func guidanceLayersView(cardWidth: CGFloat, cardHeight: CGFloat) -> some View {
+        ForEach(subjects) { subject in
+            Image(uiImage: subject.image)
+                .resizable().scaledToFill()
+                .frame(width: cardWidth, height: cardHeight)
+                .clipped()
+                .overlay {
+                    subjectGlowOverlay(
+                        image: subject.image,
+                        cardWidth: cardWidth,
+                        cardHeight: cardHeight,
+                        intensity: guidanceScanProgress
+                    )
+                }
+                .opacity(0.92)
+                .allowsHitTesting(false)
         }
+    }
+
+    private func subjectImageView(
+        _ subject: ExtractedSubject,
+        layer: SelectedSubjectLayer,
+        cardWidth: CGFloat,
+        cardHeight: CGFloat,
+        showsScan: Bool,
+        showsInteractionEffect: Bool
+    ) -> some View {
+        ZStack {
+            Image(uiImage: subject.image)
+                .resizable().scaledToFill()
+                .frame(width: cardWidth, height: cardHeight)
+                .clipped()
+
+            if showsScan {
+                subjectGlowOverlay(
+                    image: subject.image,
+                    cardWidth: cardWidth,
+                    cardHeight: cardHeight,
+                    intensity: layer.scanProgress
+                )
+            }
+        }
+        .frame(width: cardWidth, height: cardHeight)
+        .scaleEffect(showsInteractionEffect && layer.isLifted ? 1.05 : 1.0)
+        .shadow(
+            color: .black.opacity(showsInteractionEffect && layer.isLifted ? 0.5 : 0),
+            radius: showsInteractionEffect && layer.isLifted ? 20 : 0,
+            y: showsInteractionEffect && layer.isLifted ? 10 : 0
+        )
+        .overlay {
+            if showsInteractionEffect {
+                Image(uiImage: subject.image)
+                    .resizable().scaledToFill()
+                    .frame(width: cardWidth, height: cardHeight)
+                    .overlay(Color.white.opacity(0.18))
+                    .mask(
+                        Image(uiImage: subject.image)
+                            .resizable().scaledToFill()
+                            .frame(width: cardWidth, height: cardHeight)
+                    )
+            }
+        }
+        .allowsHitTesting(false)
+    }
+
+    private func subjectGlowOverlay(image: UIImage, cardWidth: CGFloat, cardHeight: CGFloat, intensity: CGFloat) -> some View {
+        let baseOpacity = 0.25 + 0.35 * intensity
+        return ZStack {
+            ForEach([20.0, 12.0, 6.0], id: \.self) { radius in
+                Image(uiImage: image)
+                    .resizable().scaledToFill()
+                    .frame(width: cardWidth, height: cardHeight)
+                    .colorMultiply(subjectGlowColor)
+                    .blur(radius: radius)
+                    .opacity(baseOpacity * (radius == 20.0 ? 0.35 : radius == 12.0 ? 0.5 : 0.75))
+            }
+
+            Image(uiImage: image)
+                .resizable().scaledToFill()
+                .frame(width: cardWidth, height: cardHeight)
+                .colorMultiply(subjectGlowColor)
+                .blur(radius: 1.8)
+                .opacity(0.28 + 0.22 * intensity)
+        }
+        .blendMode(.screen)
+    }
+
+    private func clearSelectedSubjects() {
+        selectedSubjects = []
+        subjectSelectionCounter = 0
+        guidanceScanProgress = 0
+        touchSubjectID = nil
+        didHandleTouchAsSubject = false
+        longPressTimer?.cancel()
+        longPressTimer = nil
+    }
+
+    private func subject(for id: ExtractedSubject.ID) -> ExtractedSubject? {
+        subjects.first(where: { $0.id == id })
+    }
+
+    private func isSubjectSelected(_ id: ExtractedSubject.ID) -> Bool {
+        selectedSubjects.contains(where: { $0.id == id })
+    }
+
+    private func normalizedTopRatio(for subject: ExtractedSubject) -> CGFloat {
+        guard let photo, let cgImage = photo.cgImage, cgImage.height > 0 else { return 0 }
+        return max(0, min(1, subject.boundingBox.minY / CGFloat(cgImage.height)))
+    }
+
+    private func normalizedBottomRatio(for subject: ExtractedSubject) -> CGFloat {
+        guard let photo, let cgImage = photo.cgImage, cgImage.height > 0 else { return 1 }
+        return max(0, min(1, subject.boundingBox.maxY / CGFloat(cgImage.height)))
+    }
+
+    private func makeLayer(for subject: ExtractedSubject) -> SelectedSubjectLayer {
+        SelectedSubjectLayer(
+            id: subject.id,
+            isBehindOverlay: false,
+            selectionOrder: nextSelectionOrder(),
+            topRatio: normalizedTopRatio(for: subject),
+            bottomRatio: normalizedBottomRatio(for: subject)
+        )
+    }
+
+    private func nextSelectionOrder() -> Int {
+        subjectSelectionCounter += 1
+        return subjectSelectionCounter
+    }
+
+    private func deselectSubject(_ id: ExtractedSubject.ID) {
+        withAnimation(.easeInOut(duration: 0.2)) {
+            selectedSubjects.removeAll(where: { $0.id == id })
+        }
+    }
+
+    private func selectSubject(_ subject: ExtractedSubject) {
+        guard !isSubjectSelected(subject.id) else { return }
+        withAnimation(.easeInOut(duration: 0.2)) {
+            selectedSubjects.append(makeLayer(for: subject))
+        }
+    }
+
+    private func toggleSubjectSelection(_ id: ExtractedSubject.ID) {
+        if isSubjectSelected(id) {
+            deselectSubject(id)
+        } else if let subject = subject(for: id) {
+            selectSubject(subject)
+        }
+    }
+
+    private func bringSubjectToTop(_ id: ExtractedSubject.ID) {
+        guard let index = selectedSubjects.firstIndex(where: { $0.id == id }) else { return }
+        withAnimation(.easeInOut(duration: 0.2)) {
+            selectedSubjects[index].selectionOrder = nextSelectionOrder()
+        }
+    }
+
+    private func setLifted(_ isLifted: Bool, for id: ExtractedSubject.ID) {
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.6)) {
+            if let index = selectedSubjects.firstIndex(where: { $0.id == id }) {
+                selectedSubjects[index].isLifted = isLifted
+            }
+        }
+    }
+
+    private func setScanProgress(_ progress: CGFloat, for id: ExtractedSubject.ID) {
+        if let index = selectedSubjects.firstIndex(where: { $0.id == id }) {
+            selectedSubjects[index].scanProgress = progress
+        }
+    }
+
+    private func handleSubjectTap(at point: CGPoint, photo: UIImage, cardSize: CGSize) {
+        guard let tappedSubjectID = hitTestSubjectID(at: point, photo: photo, cardSize: cardSize),
+              isSubjectSelected(tappedSubjectID)
+        else { return }
+        bringSubjectToTop(tappedSubjectID)
+    }
+
+    private func hitTestSubjectID(at point: CGPoint, photo: UIImage, cardSize: CGSize) -> ExtractedSubject.ID? {
+        guard let imagePoint = imagePoint(from: point, photo: photo, cardSize: cardSize) else { return nil }
+
+        let selectedOrder = Dictionary(uniqueKeysWithValues: selectedSubjects.map { ($0.id, $0.selectionOrder) })
+        let matchingSubjects = subjects
+            .filter { $0.boundingBox.contains(imagePoint) && $0.contains(imagePoint) }
+            .sorted {
+                let lhsOrder = selectedOrder[$0.id] ?? Int.min
+                let rhsOrder = selectedOrder[$1.id] ?? Int.min
+                if lhsOrder != rhsOrder {
+                    return lhsOrder > rhsOrder
+                }
+                return $0.area < $1.area
+            }
+
+        return matchingSubjects.first?.id
+    }
+
+    private func startGuidanceScanIfNeeded() {
+        guard shouldShowGuidanceScan else { return }
+        guidanceScanProgress = 0
+        withAnimation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true)) {
+            guidanceScanProgress = 1
+        }
+    }
+
+    private func imagePoint(from point: CGPoint, photo: UIImage, cardSize: CGSize) -> CGPoint? {
+        guard let cgImage = photo.cgImage else { return nil }
+        let imageSize = CGSize(width: cgImage.width, height: cgImage.height)
+        guard imageSize.width > 0, imageSize.height > 0, cardSize.width > 0, cardSize.height > 0 else {
+            return nil
+        }
+
+        let scale = max(cardSize.width / imageSize.width, cardSize.height / imageSize.height)
+        let displayedSize = CGSize(width: imageSize.width * scale, height: imageSize.height * scale)
+        let origin = CGPoint(
+            x: (cardSize.width - displayedSize.width) / 2,
+            y: (cardSize.height - displayedSize.height) / 2
+        )
+
+        let normalizedX = (point.x - origin.x) / scale
+        let normalizedY = (point.y - origin.y) / scale
+        guard normalizedX >= 0, normalizedY >= 0, normalizedX < imageSize.width, normalizedY < imageSize.height else {
+            return nil
+        }
+        return CGPoint(x: normalizedX, y: normalizedY)
     }
 
     // MARK: - Actions
@@ -701,14 +950,14 @@ struct ChartPhotoShareView<ChartContent: View>: View {
         photo = uiImage
         isExtracting = true
         DispatchQueue.global(qos: .userInitiated).async {
-            let subject = ShareCardService.shared.extractSubject(from: uiImage)
+            let extractedSubjects = ShareCardService.shared.extractSubjects(from: uiImage)
             let glass = ShareCardService.shared.applyGlassDistortion(to: uiImage)
             DispatchQueue.main.async {
                 guard self.photo === uiImage else { return }
-                subjectImage = subject
+                subjects = extractedSubjects
+                clearSelectedSubjects()
                 glassPhoto = glass
                 isExtracting = false
-                if let subject { updateSubjectBounds(subject) }
             }
         }
         prefetchStripThumbs()
@@ -717,15 +966,14 @@ struct ChartPhotoShareView<ChartContent: View>: View {
     private func resetState() {
         photo = nil
         glassPhoto = nil
-        subjectImage = nil
+        subjects = []
+        clearSelectedSubjects()
         overlayOffset = .zero
         dragAccumulated = .zero
         overlayScale = 0.8
         scaleAccumulated = 0.8
         solidTone = 0.0
         bgStyle = .solid
-        behindSubject = false
-        subjectLifted = false
         shouldDismissAfterAlert = false
         currentAssetIndex = -1
         adjacentThumbs = [:]
