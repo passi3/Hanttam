@@ -34,6 +34,7 @@ enum RunDetailLayout {
     static let compactCardRadius: CGFloat = 12
     static let cardPadding: CGFloat = 16
     static let metricChartYAxisWidth: CGFloat = 56
+    static let summaryMetricColumnSpacing: CGFloat = 28
 }
 
 // Color(hex:) extension is defined in RunningLevelView.swift
@@ -262,6 +263,45 @@ private struct ShareButton: View {
 }
 
 enum RunDetailContentView {
+    struct SummaryMetricGridCell: View {
+        let label: String
+        let value: String
+        var isShareStyle: Bool = false
+
+        @Environment(\.overlayTextColor) private var overlayTextColor
+        @Environment(\.overlaySubTextColor) private var overlaySubTextColor
+
+        private var labelFont: Font {
+            isShareStyle ? .system(size: 8, weight: .bold) : AppFont.captionMD.weight(.medium)
+        }
+
+        private var valueFont: Font {
+            isShareStyle ? .system(size: 20, weight: .ultraLight, design: .monospaced) : .system(size: 28, weight: .ultraLight, design: .monospaced)
+        }
+
+        private var labelColor: Color {
+            isShareStyle ? overlaySubTextColor : DS.textDim
+        }
+
+        private var valueColor: Color {
+            isShareStyle ? overlayTextColor : DS.textLabel
+        }
+
+        var body: some View {
+            VStack(spacing: isShareStyle ? 2 : 4) {
+                Text(label)
+                    .font(labelFont)
+                    .tracking(isShareStyle ? 1 : 1.5)
+                    .foregroundStyle(labelColor)
+                    .multilineTextAlignment(.center)
+                Text(value)
+                    .font(valueFont)
+                    .foregroundStyle(valueColor)
+                    .multilineTextAlignment(.center)
+            }
+            .frame(maxWidth: .infinity, alignment: .center)
+        }
+    }
     
     // MARK: - Chart Helper
     
@@ -269,6 +309,7 @@ enum RunDetailContentView {
         let record: RunningRecord
         let data: RunDetailViewModel.DetailData
         private let maxChartPoints = 1000
+        private let bucketInterval: TimeInterval = 10
         
         func timeSeries(for metric: MetricType) -> [TSPoint] {
             let startDate = record.date
@@ -276,50 +317,134 @@ enum RunDetailContentView {
             
             switch metric {
             case .pace:
-                raw = data.speedSamples.compactMap { s in
-                    guard s.value > 0 else { return nil }
-                    return TSPoint(id: 0, elapsed: s.startDate.timeIntervalSince(startDate) / 60, value: 1000.0 / s.value)
-                }
+                raw = bucketedAverageSeries(
+                    data.speedSamples.compactMap { s in
+                        guard s.value > 0 else { return nil }
+                        return TimedMetricSample(
+                            elapsed: s.startDate.timeIntervalSince(startDate),
+                            value: 1000.0 / s.value
+                        )
+                    }
+                )
             case .heartRate:
-                raw = data.heartRates.map { s in
-                    TSPoint(id: 0, elapsed: s.date.timeIntervalSince(startDate) / 60, value: s.bpm)
-                }
+                raw = bucketedAverageSeries(
+                    data.heartRates.map { s in
+                        TimedMetricSample(
+                            elapsed: s.date.timeIntervalSince(startDate),
+                            value: s.bpm
+                        )
+                    }
+                )
             case .cadence:
-                raw = data.stepSamples.compactMap { s in
-                    let dur = s.endDate.timeIntervalSince(s.startDate) / 60
-                    guard dur > 0 else { return nil }
-                    return TSPoint(id: 0, elapsed: s.startDate.timeIntervalSince(startDate) / 60, value: s.value / dur)
-                }
-            case .strideLength:       raw = quantityTS(data.strideSamples, from: startDate)
-            case .verticalOscillation: raw = quantityTS(data.voSamples, from: startDate)
-            case .power:              raw = quantityTS(data.powerSamples, from: startDate)
-            case .groundContactTime:  raw = quantityTS(data.gctSamples, from: startDate)
+                raw = bucketedAverageSeries(
+                    data.stepSamples.compactMap { s in
+                        let dur = s.endDate.timeIntervalSince(s.startDate) / 60
+                        guard dur > 0 else { return nil }
+                        return TimedMetricSample(
+                            elapsed: s.startDate.timeIntervalSince(startDate),
+                            value: s.value / dur
+                        )
+                    }
+                )
+            case .strideLength:
+                raw = bucketedAverageSeries(quantityTimedSamples(data.strideSamples, from: startDate))
+            case .verticalOscillation:
+                raw = bucketedAverageSeries(quantityTimedSamples(data.voSamples, from: startDate))
+            case .power:
+                raw = bucketedAverageSeries(quantityTimedSamples(data.powerSamples, from: startDate))
+            case .groundContactTime:
+                raw = bucketedAverageSeries(quantityTimedSamples(data.gctSamples, from: startDate))
             case .cumulativeElevation:
-                raw = buildCumulativeElevation(from: data.altPoints, startDate: startDate)
+                raw = bucketedCumulativeElevation(from: data.altPoints, startDate: startDate)
             case .altitude:
-                raw = data.altPoints.enumerated().map { i, p in
-                    TSPoint(id: i, elapsed: p.date.timeIntervalSince(startDate) / 60, value: p.altitude)
-                }
+                raw = bucketedAverageSeries(
+                    data.altPoints.map { p in
+                        TimedMetricSample(
+                            elapsed: p.date.timeIntervalSince(startDate),
+                            value: p.altitude
+                        )
+                    }
+                )
             }
             
             return downsample(raw)
         }
-        
-        private func quantityTS(_ samples: [QuantitySamplePoint], from startDate: Date) -> [TSPoint] {
+
+        private struct TimedMetricSample {
+            let elapsed: TimeInterval
+            let value: Double
+        }
+
+        private func quantityTimedSamples(_ samples: [QuantitySamplePoint], from startDate: Date) -> [TimedMetricSample] {
             samples.map { s in
-                TSPoint(id: 0, elapsed: s.startDate.timeIntervalSince(startDate) / 60, value: s.value)
+                TimedMetricSample(
+                    elapsed: s.startDate.timeIntervalSince(startDate),
+                    value: s.value
+                )
             }
         }
-        
-        private func buildCumulativeElevation(from altPoints: [AltitudePoint], startDate: Date) -> [TSPoint] {
-            guard altPoints.count >= 2 else { return [] }
-            var cumGain: Double = 0
-            var result: [TSPoint] = [TSPoint(id: 0, elapsed: altPoints[0].date.timeIntervalSince(startDate) / 60, value: 0)]
-            for i in 1..<altPoints.count {
-                let diff = altPoints[i].altitude - altPoints[i - 1].altitude
-                if diff > 0 { cumGain += diff }
-                result.append(TSPoint(id: i, elapsed: altPoints[i].date.timeIntervalSince(startDate) / 60, value: cumGain))
+
+        private func bucketedAverageSeries(_ samples: [TimedMetricSample]) -> [TSPoint] {
+            guard !samples.isEmpty else { return [] }
+
+            let grouped = Dictionary(grouping: samples) { sample in
+                Int(floor(max(sample.elapsed, 0) / bucketInterval))
             }
+
+            let sortedKeys = grouped.keys.sorted()
+            return sortedKeys.enumerated().compactMap { index, key in
+                guard let values = grouped[key], !values.isEmpty else { return nil }
+                let average = values.reduce(0) { $0 + $1.value } / Double(values.count)
+                return TSPoint(
+                    id: index,
+                    elapsed: (Double(key) * bucketInterval) / 60,
+                    value: average
+                )
+            }
+        }
+
+        private func bucketedCumulativeElevation(from altPoints: [AltitudePoint], startDate: Date) -> [TSPoint] {
+            guard altPoints.count >= 2 else { return [] }
+
+            var cumulativeSamples: [TimedMetricSample] = []
+            var cumulativeGain: Double = 0
+            cumulativeSamples.append(TimedMetricSample(elapsed: altPoints[0].date.timeIntervalSince(startDate), value: 0))
+
+            for index in 1..<altPoints.count {
+                let diff = altPoints[index].altitude - altPoints[index - 1].altitude
+                if diff > 0 { cumulativeGain += diff }
+                cumulativeSamples.append(
+                    TimedMetricSample(
+                        elapsed: altPoints[index].date.timeIntervalSince(startDate),
+                        value: cumulativeGain
+                    )
+                )
+            }
+
+            let maxElapsed = max(cumulativeSamples.last?.elapsed ?? 0, 0)
+            let bucketCount = Int(floor(maxElapsed / bucketInterval))
+            guard bucketCount >= 0 else { return [] }
+
+            var result: [TSPoint] = []
+            var sampleIndex = 0
+
+            for bucket in 0...bucketCount {
+                let bucketElapsed = Double(bucket) * bucketInterval
+                while sampleIndex + 1 < cumulativeSamples.count,
+                      cumulativeSamples[sampleIndex + 1].elapsed <= bucketElapsed {
+                    sampleIndex += 1
+                }
+
+                let value = cumulativeSamples[sampleIndex].value
+                result.append(
+                    TSPoint(
+                        id: result.count,
+                        elapsed: bucketElapsed / 60,
+                        value: value
+                    )
+                )
+            }
+
             return result
         }
         
@@ -380,9 +505,16 @@ enum RunDetailContentView {
     // MARK: - Summary Hero Section
     
     struct SummaryHeroSection: View {
-        enum SummaryShareType {
+        enum SummaryShareType: Identifiable {
             case metrics
             case lapPace
+
+            var id: String {
+                switch self {
+                case .metrics: return "metrics"
+                case .lapPace: return "lapPace"
+                }
+            }
         }
         
         let record: RunningRecord
@@ -390,8 +522,7 @@ enum RunDetailContentView {
         let data: RunDetailViewModel.DetailData
         
         @State private var locationName: String = ""
-        @State private var showShareSheet = false
-        @State private var shareType: SummaryShareType = .metrics
+        @State private var activeShareType: SummaryShareType?
         
         @State private var animatedDistance: Double = 0
         @State private var animatedDuration: Double = 0
@@ -469,7 +600,7 @@ enum RunDetailContentView {
                     animatedHR = avgHR
                 }
             }
-            .sheet(isPresented: $showShareSheet) {
+            .sheet(item: $activeShareType) { shareType in
                 ChartPhotoShareView {
                     if shareType == .metrics {
                         RunDetailContentView.SummaryMetricsShareOverlay(
@@ -519,8 +650,7 @@ enum RunDetailContentView {
                 .frame(maxWidth: .infinity)
                 
                 ShareButton {
-                    shareType = .metrics
-                    showShareSheet = true
+                    activeShareType = .metrics
                 }
                 .padding(.trailing, 20)
                 .padding(.top, 0)
@@ -530,26 +660,24 @@ enum RunDetailContentView {
         // MARK: - Metric Grid
         
         private var metricGrid: some View {
-            let columns = [GridItem(.flexible(), spacing: 0), GridItem(.flexible(), spacing: 0)]
+            let columns = [
+                GridItem(.flexible(), spacing: RunDetailLayout.summaryMetricColumnSpacing),
+                GridItem(.flexible(), spacing: RunDetailLayout.summaryMetricColumnSpacing)
+            ]
             return LazyVGrid(columns: columns, spacing: 0) {
                 metricCell(label: "TIME", value: animatedDuration) { formatDuration($0) }
                 metricCell(label: "PACE", value: animatedPace) { formatPaceValue($0) }
                 metricCell(label: "CADENCE", value: animatedCadence) { $0 > 0 ? String(format: "%.0f", $0) : "--" }
                 metricCell(label: "AVG HEART RATE", value: animatedHR) { $0 > 0 ? String(format: "%.0f", $0) : "--" }
             }
+            .padding(.horizontal, 8)
         }
         
         private func metricCell(label: String, value: Double, formatter: @escaping (Double) -> String) -> some View {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(label)
-                    .font(AppFont.captionMD.weight(.medium))
-                    .tracking(1.5)
-                    .foregroundStyle(DS.textDim)
-                AnimatableValueText(value: value, formatter: formatter)
-                    .font(.system(size: 28, weight: .ultraLight, design: .monospaced))
-                    .foregroundStyle(DS.textLabel)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            SummaryMetricGridCell(
+                label: label,
+                value: formatter(value)
+            )
             .padding(.horizontal, 20)
             .padding(.vertical, 16)
         }
@@ -583,8 +711,7 @@ enum RunDetailContentView {
                         .foregroundStyle(DS.textDim)
                     Spacer()
                     ShareButton {
-                        shareType = .lapPace
-                        showShareSheet = true
+                        activeShareType = .lapPace
                     }
                 }
                 .padding(.horizontal, 20)
@@ -1676,8 +1803,20 @@ enum RunDetailContentView {
             }
             .chartPlotBorderStyle(borderColor: DS.border.opacity(0.9))
             .chartYScale(domain: chartDomain)
-            .chartXSelection(value: $selectedElapsed)
             .frame(height: 120)
+            .chartOverlay { proxy in
+                GeometryReader { geometry in
+                    Rectangle()
+                        .fill(Color.clear)
+                        .contentShape(Rectangle())
+                        .gesture(
+                            SpatialTapGesture()
+                                .onEnded { value in
+                                    handleChartTap(at: value.location, proxy: proxy, geometry: geometry)
+                                }
+                        )
+                }
+            }
             .overlay(alignment: .topLeading) {
                 GeometryReader { proxy in
                     if let selectedElapsed, let point = selectedPoint {
@@ -1690,6 +1829,25 @@ enum RunDetailContentView {
         private func metricAxisText(for axisValue: Double) -> String {
             let displayedValue = metric.invertedY ? abs(axisValue) : axisValue
             return metric.format(displayedValue)
+        }
+
+        private func handleChartTap(at location: CGPoint, proxy: ChartProxy, geometry: GeometryProxy) {
+            guard let plotFrameAnchor = proxy.plotFrame else { return }
+            let plotFrame = geometry[plotFrameAnchor]
+            guard plotFrame.contains(location), !data.isEmpty else { return }
+
+            let relativeX = location.x - plotFrame.origin.x
+            guard relativeX >= 0, relativeX <= plotFrame.width else { return }
+
+            let ratio = max(0, min(1, relativeX / max(plotFrame.width, 1)))
+            let targetElapsed = ratio * maxElapsed
+            guard let nearestPoint = data.min(by: { abs($0.elapsed - targetElapsed) < abs($1.elapsed - targetElapsed) }) else { return }
+
+            if selectedElapsed == nearestPoint.elapsed {
+                selectedElapsed = nil
+            } else {
+                selectedElapsed = nearestPoint.elapsed
+            }
         }
 
         @ViewBuilder
@@ -2128,13 +2286,17 @@ enum RunDetailContentView {
                 }
                 
                 // 2x2 그리드 스탯
-                let columns = [GridItem(.flexible()), GridItem(.flexible())]
+                let columns = [
+                    GridItem(.flexible(), spacing: RunDetailLayout.summaryMetricColumnSpacing),
+                    GridItem(.flexible(), spacing: RunDetailLayout.summaryMetricColumnSpacing)
+                ]
                 LazyVGrid(columns: columns, spacing: 16) {
-                    shareMetric(label: "TIME", value: formatDuration(record.duration))
-                    shareMetric(label: "PACE", value: formatPaceValue(avgPace))
-                    shareMetric(label: "CADENCE", value: avgCadence > 0 ? String(format: "%.0f", avgCadence) : "--")
-                    shareMetric(label: "HEART RATE", value: avgHR > 0 ? String(format: "%.0f", avgHR) : "--")
+                    SummaryMetricGridCell(label: "TIME", value: formatDuration(record.duration), isShareStyle: true)
+                    SummaryMetricGridCell(label: "PACE", value: formatPaceValue(avgPace), isShareStyle: true)
+                    SummaryMetricGridCell(label: "CADENCE", value: avgCadence > 0 ? String(format: "%.0f", avgCadence) : "--", isShareStyle: true)
+                    SummaryMetricGridCell(label: "HEART RATE", value: avgHR > 0 ? String(format: "%.0f", avgHR) : "--", isShareStyle: true)
                 }
+                .padding(.horizontal, 8)
                 
                 // 미니 맵 경로 (실외일 경우)
                 if !record.isIndoor && !data.altPoints.isEmpty {
@@ -2151,19 +2313,6 @@ enum RunDetailContentView {
                     .foregroundStyle(subTextColor)
             }
             .padding(.horizontal, 10)
-        }
-        
-        private func shareMetric(label: String, value: String) -> some View {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(label)
-                    .font(.system(size: 8, weight: .bold))
-                    .tracking(1)
-                    .foregroundStyle(subTextColor)
-                Text(value)
-                    .font(.system(size: 20, weight: .ultraLight, design: .monospaced))
-                    .foregroundStyle(textColor)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
     
