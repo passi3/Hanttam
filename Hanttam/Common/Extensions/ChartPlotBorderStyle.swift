@@ -17,6 +17,7 @@ extension View {
         chartPlotStyle { plotArea in
             plotArea
                 .background(Color.clear)
+                .clipShape(PlotBorderShape(cornerRadius: cornerRadius))
                 .overlay {
                     if cornerRadius > 0 {
                         RoundedRectangle(cornerRadius: cornerRadius)
@@ -26,6 +27,18 @@ extension View {
                             .stroke(borderColor, lineWidth: lineWidth)
                     }
                 }
+        }
+    }
+}
+
+private struct PlotBorderShape: Shape {
+    let cornerRadius: CGFloat
+
+    func path(in rect: CGRect) -> Path {
+        if cornerRadius > 0 {
+            return RoundedRectangle(cornerRadius: cornerRadius).path(in: rect)
+        } else {
+            return Rectangle().path(in: rect)
         }
     }
 }

@@ -33,8 +33,12 @@ enum RunDetailLayout {
     static let cardRadius: CGFloat = 14
     static let compactCardRadius: CGFloat = 12
     static let cardPadding: CGFloat = 16
-    static let metricChartYAxisWidth: CGFloat = 56
+    static let metricChartYAxisWidth: CGFloat = 28
     static let summaryMetricColumnSpacing: CGFloat = 28
+    static let compactMetricHeaderMinHeight: CGFloat = 36
+    static let compactMetricHeaderSpacing: CGFloat = 10
+    static let compactMetricStatWidth: CGFloat = 48
+    static let compactMetricStatsGroupSpacing: CGFloat = 8
 }
 
 // Color(hex:) extension is defined in RunningLevelView.swift
@@ -1680,16 +1684,23 @@ enum RunDetailContentView {
         
         var body: some View {
             VStack(alignment: .leading, spacing: 12) {
-                Text(metric.title.uppercased())
-                    .font(AppFont.labelSM)
-                    .tracking(1.2)
-                    .foregroundStyle(DS.textDim)
+                HStack(alignment: .top, spacing: 10) {
+                    Text(metric.title.uppercased())
+                        .font(AppFont.labelMD)
+                        .tracking(1.2)
+                        .foregroundStyle(DS.textDim)
+                        .lineLimit(1)
+                        .layoutPriority(1)
 
-                HStack(spacing: 8) {
-                    statCell(title: "MIN", value: metric.format(displayedMinVal))
-                    statCell(title: "AVG", value: metric.format(avg), accent: metric.color)
-                    statCell(title: "MAX", value: metric.format(displayedMaxVal))
+                    Spacer(minLength: 8)
+
+                    HStack(spacing: RunDetailLayout.compactMetricStatsGroupSpacing) {
+                        statCell(title: "MIN", value: metric.format(displayedMinVal))
+                        statCell(title: "AVG", value: metric.format(avg), accent: metric.color)
+                        statCell(title: "MAX", value: metric.format(displayedMaxVal))
+                    }
                 }
+                .frame(minHeight: RunDetailLayout.compactMetricHeaderMinHeight, alignment: .top)
 
                 chartContent
             }
@@ -1699,18 +1710,20 @@ enum RunDetailContentView {
         }
         
         private func statCell(title: String, value: String, accent: Color = DS.textLabel) -> some View {
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .center, spacing: 4) {
                 Text(title)
                     .font(AppFont.labelSM)
                     .tracking(1)
                     .foregroundStyle(DS.textDim)
+                    .frame(maxWidth: .infinity, alignment: .center)
                 Text(value)
                     .font(AppFont.metricSmall)
                     .foregroundStyle(accent)
+                    .frame(maxWidth: .infinity, alignment: .center)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 8)
+            .frame(width: RunDetailLayout.compactMetricStatWidth, alignment: .center)
+            .padding(.horizontal, 9)
+            .padding(.vertical, 7)
             .background(DS.cardActive, in: RoundedRectangle(cornerRadius: RunDetailLayout.compactCardRadius))
         }
 
