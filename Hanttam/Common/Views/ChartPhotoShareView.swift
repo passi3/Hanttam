@@ -39,7 +39,6 @@ struct ChartPhotoShareView<ChartContent: View>: View {
     private struct SelectedSubjectLayer: Identifiable, Equatable {
         let id: Int
         var isBehindOverlay: Bool
-        var selectionOrder: Int
         var isLifted: Bool = false
         var scanProgress: CGFloat = 0
         var topRatio: CGFloat = 0
@@ -71,10 +70,13 @@ struct ChartPhotoShareView<ChartContent: View>: View {
     @State private var solidTone: Double = 0.0  // -1(흰) ~ 0(투명) ~ +1(검정)
     @State private var bgStyle: OverlayBgStyle = .solid
     @State private var longPressTimer: DispatchWorkItem?
-    @State private var subjectSelectionCounter = 0
     @State private var guidanceScanProgress: CGFloat = 0
     @State private var touchSubjectID: ExtractedSubject.ID?
     @State private var didHandleTouchAsSubject = false
+    @State private var activeDismissSubjectID: ExtractedSubject.ID?
+
+    private let subjectDragDismissThreshold: CGFloat = 24
+    private let subjectLongPressMovementThreshold: CGFloat = 10
 
     private enum OverlayBgStyle: String, CaseIterable {
         case solid = "솔리드"
@@ -89,9 +91,7 @@ struct ChartPhotoShareView<ChartContent: View>: View {
     @State private var saveResult: ShareSaveResult?
     @State private var shouldDismissAfterAlert = false
 
-    private var selectedSubjectLayers: [SelectedSubjectLayer] {
-        selectedSubjects.sorted { $0.selectionOrder < $1.selectionOrder }
-    }
+    private var selectedSubjectLayers: [SelectedSubjectLayer] { selectedSubjects }
 
     private var backSubjectLayers: [SelectedSubjectLayer] {
         selectedSubjectLayers.filter(\.isBehindOverlay)
@@ -235,7 +235,7 @@ struct ChartPhotoShareView<ChartContent: View>: View {
                 .frame(width: cardW, height: cardH)
 
                 if hasSelectedSubjects {
-                    Text("길게 눌러 선택/해제, 탭으로 순서 올리기")
+                    Text("길게 눌러 선택/해제, 드래그로 해제")
                         .font(.system(size: 11, weight: .light))
                         .foregroundStyle(.secondary)
                 } else {
@@ -485,6 +485,12 @@ struct ChartPhotoShareView<ChartContent: View>: View {
 
             if !frontSubjectLayers.isEmpty {
                 subjectLayersView(frontSubjectLayers, cardWidth: cardWidth, cardHeight: cardHeight)
+                subjectDismissInteractionLayers(
+                    frontSubjectLayers,
+                    photo: photo,
+                    cardWidth: cardWidth,
+                    cardHeight: cardHeight
+                )
             }
         }
         .frame(width: cardWidth, height: cardHeight)
@@ -500,58 +506,8 @@ struct ChartPhotoShareView<ChartContent: View>: View {
                     .background(.black.opacity(0.45), in: Capsule())
             }
         }
-        .gesture(
-            SpatialTapGesture()
-                .onEnded { value in
-                    handleSubjectTap(at: value.location, photo: photo, cardSize: CGSize(width: cardWidth, height: cardHeight))
-                }
-        )
         .simultaneousGesture(
-            DragGesture(minimumDistance: 0)
-                .onChanged { value in
-                    let cardSize = CGSize(width: cardWidth, height: cardHeight)
-                    if touchSubjectID == nil {
-                        touchSubjectID = hitTestSubjectID(at: value.startLocation, photo: photo, cardSize: cardSize)
-                        didHandleTouchAsSubject = false
-                    }
-
-                    guard let touchSubjectID else { return }
-                    let moved = abs(value.translation.width) > 5 || abs(value.translation.height) > 5
-                    if moved, isSubjectSelected(touchSubjectID), !didHandleTouchAsSubject {
-                        longPressTimer?.cancel()
-                        longPressTimer = nil
-                        deselectSubject(touchSubjectID)
-                        didHandleTouchAsSubject = true
-                    } else if !moved, longPressTimer == nil, !didHandleTouchAsSubject {
-                        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                        if isSubjectSelected(touchSubjectID) {
-                            setLifted(true, for: touchSubjectID)
-                            setScanProgress(1, for: touchSubjectID)
-                        }
-                        let work = DispatchWorkItem {
-                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                            toggleSubjectSelection(touchSubjectID)
-                            didHandleTouchAsSubject = true
-                        }
-                        longPressTimer = work
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6, execute: work)
-                    }
-                }
-                .onEnded { _ in
-                    if let touchSubjectID,
-                       !didHandleTouchAsSubject,
-                       isSubjectSelected(touchSubjectID) {
-                        bringSubjectToTop(touchSubjectID)
-                    }
-                    longPressTimer?.cancel()
-                    longPressTimer = nil
-                    if let touchSubjectID {
-                        setLifted(false, for: touchSubjectID)
-                        setScanProgress(0, for: touchSubjectID)
-                    }
-                    self.touchSubjectID = nil
-                    didHandleTouchAsSubject = false
-                }
+            subjectSelectionTrackingGesture(photo: photo, cardSize: CGSize(width: cardWidth, height: cardHeight))
         )
         .onAppear { startGuidanceScanIfNeeded() }
         .onChange(of: shouldShowGuidanceScan) { _, shouldShow in
@@ -804,14 +760,47 @@ struct ChartPhotoShareView<ChartContent: View>: View {
         .blendMode(.screen)
     }
 
+    @ViewBuilder
+    private func subjectDismissInteractionLayers(
+        _ layers: [SelectedSubjectLayer],
+        photo: UIImage,
+        cardWidth: CGFloat,
+        cardHeight: CGFloat
+    ) -> some View {
+        let cardSize = CGSize(width: cardWidth, height: cardHeight)
+        ForEach(layers) { layer in
+            if let subject = subject(for: layer.id),
+               let frame = subjectFrame(for: subject, photo: photo, cardSize: cardSize) {
+                Color.clear
+                    .contentShape(Rectangle())
+                    .frame(width: frame.width, height: frame.height)
+                    .position(x: frame.midX, y: frame.midY)
+                    .highPriorityGesture(
+                        DragGesture(minimumDistance: subjectDragDismissThreshold)
+                            .onChanged { value in
+                                handleSelectedSubjectDismissDrag(
+                                    subjectID: layer.id,
+                                    localStart: value.startLocation,
+                                    frame: frame,
+                                    photo: photo,
+                                    cardSize: cardSize
+                                )
+                            }
+                            .onEnded { _ in
+                                if activeDismissSubjectID == layer.id {
+                                    activeDismissSubjectID = nil
+                                }
+                            }
+                    )
+            }
+        }
+    }
+
     private func clearSelectedSubjects() {
         selectedSubjects = []
-        subjectSelectionCounter = 0
         guidanceScanProgress = 0
-        touchSubjectID = nil
-        didHandleTouchAsSubject = false
-        longPressTimer?.cancel()
-        longPressTimer = nil
+        activeDismissSubjectID = nil
+        cancelSubjectTracking()
     }
 
     private func subject(for id: ExtractedSubject.ID) -> ExtractedSubject? {
@@ -836,15 +825,9 @@ struct ChartPhotoShareView<ChartContent: View>: View {
         SelectedSubjectLayer(
             id: subject.id,
             isBehindOverlay: false,
-            selectionOrder: nextSelectionOrder(),
             topRatio: normalizedTopRatio(for: subject),
             bottomRatio: normalizedBottomRatio(for: subject)
         )
-    }
-
-    private func nextSelectionOrder() -> Int {
-        subjectSelectionCounter += 1
-        return subjectSelectionCounter
     }
 
     private func deselectSubject(_ id: ExtractedSubject.ID) {
@@ -868,13 +851,6 @@ struct ChartPhotoShareView<ChartContent: View>: View {
         }
     }
 
-    private func bringSubjectToTop(_ id: ExtractedSubject.ID) {
-        guard let index = selectedSubjects.firstIndex(where: { $0.id == id }) else { return }
-        withAnimation(.easeInOut(duration: 0.2)) {
-            selectedSubjects[index].selectionOrder = nextSelectionOrder()
-        }
-    }
-
     private func setLifted(_ isLifted: Bool, for id: ExtractedSubject.ID) {
         withAnimation(.spring(response: 0.35, dampingFraction: 0.6)) {
             if let index = selectedSubjects.firstIndex(where: { $0.id == id }) {
@@ -889,29 +865,76 @@ struct ChartPhotoShareView<ChartContent: View>: View {
         }
     }
 
-    private func handleSubjectTap(at point: CGPoint, photo: UIImage, cardSize: CGSize) {
-        guard let tappedSubjectID = hitTestSubjectID(at: point, photo: photo, cardSize: cardSize),
-              isSubjectSelected(tappedSubjectID)
-        else { return }
-        bringSubjectToTop(tappedSubjectID)
+    private func subjectSelectionTrackingGesture(photo: UIImage, cardSize: CGSize) -> some Gesture {
+        DragGesture(minimumDistance: 0)
+            .onChanged { value in
+                if touchSubjectID == nil {
+                    touchSubjectID = hitTestSubjectID(at: value.startLocation, photo: photo, cardSize: cardSize)
+                    didHandleTouchAsSubject = false
+
+                    guard let touchSubjectID else { return }
+
+                    let work = DispatchWorkItem {
+                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                        toggleSubjectSelection(touchSubjectID)
+                        didHandleTouchAsSubject = true
+                    }
+                    longPressTimer = work
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.6, execute: work)
+                }
+
+                guard touchSubjectID != nil else { return }
+                let moved = hypot(value.translation.width, value.translation.height) >= subjectLongPressMovementThreshold
+                if moved, !didHandleTouchAsSubject {
+                    cancelSubjectTracking()
+                }
+            }
+            .onEnded { _ in
+                cancelSubjectTracking()
+            }
     }
 
     private func hitTestSubjectID(at point: CGPoint, photo: UIImage, cardSize: CGSize) -> ExtractedSubject.ID? {
         guard let imagePoint = imagePoint(from: point, photo: photo, cardSize: cardSize) else { return nil }
 
-        let selectedOrder = Dictionary(uniqueKeysWithValues: selectedSubjects.map { ($0.id, $0.selectionOrder) })
         let matchingSubjects = subjects
             .filter { $0.boundingBox.contains(imagePoint) && $0.contains(imagePoint) }
             .sorted {
-                let lhsOrder = selectedOrder[$0.id] ?? Int.min
-                let rhsOrder = selectedOrder[$1.id] ?? Int.min
-                if lhsOrder != rhsOrder {
-                    return lhsOrder > rhsOrder
-                }
                 return $0.area < $1.area
             }
 
         return matchingSubjects.first?.id
+    }
+
+    private func handleSelectedSubjectDismissDrag(
+        subjectID: ExtractedSubject.ID,
+        localStart: CGPoint,
+        frame: CGRect,
+        photo: UIImage,
+        cardSize: CGSize
+    ) {
+        guard activeDismissSubjectID != subjectID else { return }
+
+        let cardPoint = CGPoint(x: frame.minX + localStart.x, y: frame.minY + localStart.y)
+        guard subjectContains(subjectID, at: cardPoint, photo: photo, cardSize: cardSize) else { return }
+
+        activeDismissSubjectID = subjectID
+        cancelSubjectTracking()
+        deselectSubject(subjectID)
+    }
+
+    private func subjectContains(
+        _ subjectID: ExtractedSubject.ID,
+        at point: CGPoint,
+        photo: UIImage,
+        cardSize: CGSize
+    ) -> Bool {
+        guard let subject = subject(for: subjectID),
+              let imagePoint = imagePoint(from: point, photo: photo, cardSize: cardSize) else {
+            return false
+        }
+
+        return subject.boundingBox.contains(imagePoint) && subject.contains(imagePoint)
     }
 
     private func startGuidanceScanIfNeeded() {
@@ -923,6 +946,32 @@ struct ChartPhotoShareView<ChartContent: View>: View {
     }
 
     private func imagePoint(from point: CGPoint, photo: UIImage, cardSize: CGSize) -> CGPoint? {
+        guard let geometry = imageDisplayGeometry(for: photo, cardSize: cardSize) else {
+            return nil
+        }
+
+        let normalizedX = (point.x - geometry.origin.x) / geometry.scale
+        let normalizedY = (point.y - geometry.origin.y) / geometry.scale
+        guard normalizedX >= 0,
+              normalizedY >= 0,
+              normalizedX < geometry.imageSize.width,
+              normalizedY < geometry.imageSize.height else {
+            return nil
+        }
+        return CGPoint(x: normalizedX, y: normalizedY)
+    }
+
+    private func subjectFrame(for subject: ExtractedSubject, photo: UIImage, cardSize: CGSize) -> CGRect? {
+        guard let geometry = imageDisplayGeometry(for: photo, cardSize: cardSize) else { return nil }
+        return CGRect(
+            x: geometry.origin.x + subject.boundingBox.minX * geometry.scale,
+            y: geometry.origin.y + subject.boundingBox.minY * geometry.scale,
+            width: subject.boundingBox.width * geometry.scale,
+            height: subject.boundingBox.height * geometry.scale
+        )
+    }
+
+    private func imageDisplayGeometry(for photo: UIImage, cardSize: CGSize) -> (imageSize: CGSize, scale: CGFloat, origin: CGPoint)? {
         guard let cgImage = photo.cgImage else { return nil }
         let imageSize = CGSize(width: cgImage.width, height: cgImage.height)
         guard imageSize.width > 0, imageSize.height > 0, cardSize.width > 0, cardSize.height > 0 else {
@@ -935,13 +984,20 @@ struct ChartPhotoShareView<ChartContent: View>: View {
             x: (cardSize.width - displayedSize.width) / 2,
             y: (cardSize.height - displayedSize.height) / 2
         )
+        return (imageSize, scale, origin)
+    }
 
-        let normalizedX = (point.x - origin.x) / scale
-        let normalizedY = (point.y - origin.y) / scale
-        guard normalizedX >= 0, normalizedY >= 0, normalizedX < imageSize.width, normalizedY < imageSize.height else {
-            return nil
+    private func cancelSubjectTracking() {
+        longPressTimer?.cancel()
+        longPressTimer = nil
+
+        if let touchSubjectID {
+            setLifted(false, for: touchSubjectID)
+            setScanProgress(0, for: touchSubjectID)
         }
-        return CGPoint(x: normalizedX, y: normalizedY)
+
+        touchSubjectID = nil
+        didHandleTouchAsSubject = false
     }
 
     // MARK: - Actions
