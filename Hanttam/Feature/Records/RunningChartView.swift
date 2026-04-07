@@ -219,6 +219,7 @@ struct RunningChartView: View {
                     AxisTick()
                 }
             }
+            .chartPlotBorderStyle(borderColor: AppColor.separator.opacity(0.9))
             .frame(height: 160)
             .animation(.spring(duration: 0.3), value: offset)
         }
@@ -461,6 +462,7 @@ struct RunningChartShareView: View {
                     AxisTick()
                 }
             }
+            .chartPlotBorderStyle(borderColor: subTextColor.opacity(0.35))
             .frame(height: 160)
         }
     }

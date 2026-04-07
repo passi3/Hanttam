@@ -33,6 +33,7 @@ enum RunDetailLayout {
     static let cardRadius: CGFloat = 14
     static let compactCardRadius: CGFloat = 12
     static let cardPadding: CGFloat = 16
+    static let metricChartYAxisWidth: CGFloat = 56
 }
 
 // Color(hex:) extension is defined in RunningLevelView.swift
@@ -641,6 +642,7 @@ enum RunDetailContentView {
                         }
                     }
                 }
+                .chartPlotBorderStyle(borderColor: DS.border.opacity(0.9))
                 .frame(height: 140)
                 .padding(.horizontal, 20)
             }
@@ -693,6 +695,7 @@ enum RunDetailContentView {
                     }
                     .chartXAxis(.hidden)
                     .chartYAxis(.hidden)
+                    .chartPlotBorderStyle(borderColor: DS.border.opacity(0.9))
                     .chartYScale(domain: .automatic(includesZero: true))
                     .frame(height: 56)
                     .padding(.horizontal, 20)
@@ -848,6 +851,7 @@ enum RunDetailContentView {
                             }
                         }
                         .chartYAxis(.hidden)
+                        .chartPlotBorderStyle(borderColor: DS.border.opacity(0.9))
                         .chartXSelection(value: $selectedElapsed)
                         .frame(height: 220)
                         
@@ -917,6 +921,7 @@ enum RunDetailContentView {
                     }
                 }
                 .chartYAxis(.hidden)
+                .chartPlotBorderStyle(borderColor: .white.opacity(0.18))
                 .frame(height: 160)
             }
         }
@@ -1349,6 +1354,7 @@ enum RunDetailContentView {
                             .foregroundStyle(DS.textLabel.opacity(0.08))
                     }
                 }
+                .chartPlotBorderStyle(borderColor: DS.border.opacity(0.9))
                 .chartYScale(domain: chartDomain)
                 .frame(height: 160)
                 
@@ -1412,6 +1418,7 @@ enum RunDetailContentView {
                                 }
                             }
                         }
+                        .chartPlotBorderStyle(borderColor: .white.opacity(0.18))
                         .chartYScale(domain: chartDomain)
                         .frame(height: 120)
                         
@@ -1506,6 +1513,7 @@ enum RunDetailContentView {
     struct PerformanceMetricCard: View {
         let metric: MetricType
         let data: [TSPoint]
+        @Binding var selectedElapsed: Double?
         
         private var avg: Double {
             guard !data.isEmpty else { return 0 }
@@ -1533,97 +1541,34 @@ enum RunDetailContentView {
             let padding = span * 0.12
             return (minVal - padding)...(maxVal + padding)
         }
+
+        private var maxElapsed: Double {
+            data.map(\.elapsed).max() ?? 0
+        }
+
+        private var selectedPoint: TSPoint? {
+            guard let selectedElapsed else { return nil }
+            return data.min(by: { abs($0.elapsed - selectedElapsed) < abs($1.elapsed - selectedElapsed) })
+        }
         
         var body: some View {
-            VStack(spacing: 8) {
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack {
-                        Text(metric.title.uppercased())
-                            .font(AppFont.labelSM)
-                            .tracking(1.2)
-                            .foregroundStyle(DS.textDim)
-                        Spacer()
-                        HStack(alignment: .firstTextBaseline, spacing: 3) {
-                            Text(metric.format(avg))
-                                .font(.system(size: 20, weight: .semibold, design: .monospaced))
-                                .foregroundStyle(DS.textLabel)
-                            Text(metric.unit)
-                                .font(.system(size: 10, weight: .medium))
-                                .foregroundStyle(metric.color)
-                        }
-                    }
-                    
-                    Chart {
-                        ForEach(data) { point in
-                            let plotY = metric.invertedY ? -point.value : point.value
-                            
-                            switch metric.chartStyle {
-                            case .line:
-                                LineMark(x: .value("t", point.elapsed), y: .value("v", plotY))
-                                    .foregroundStyle(metric.color.gradient)
-                                    .interpolationMethod(.catmullRom)
-                                AreaMark(x: .value("t", point.elapsed), y: .value("v", plotY))
-                                    .foregroundStyle(
-                                        LinearGradient(
-                                            colors: [metric.color.opacity(0.4), metric.color.opacity(0.05)],
-                                            startPoint: .bottom,
-                                            endPoint: .top
-                                        )
-                                    )
-                                    .interpolationMethod(.catmullRom)
-                                
-                            case .bar:
-                                if metric.invertedY {
-                                    BarMark(
-                                        x: .value("t", point.elapsed),
-                                        yStart: .value("floor", paceFloor),
-                                        yEnd: .value("v", plotY),
-                                        width: 3
-                                    )
-                                    .foregroundStyle(
-                                        LinearGradient(
-                                            colors: [metric.color.opacity(0.5), metric.gradientTopColor.opacity(0.8)],
-                                            startPoint: .bottom,
-                                            endPoint: .top
-                                        )
-                                    )
-                                } else {
-                                    BarMark(
-                                        x: .value("t", point.elapsed),
-                                        y: .value("v", plotY),
-                                        width: 3
-                                    )
-                                    .foregroundStyle(
-                                        LinearGradient(
-                                            colors: [metric.color.opacity(0.5), metric.color],
-                                            startPoint: .bottom,
-                                            endPoint: .top
-                                        )
-                                    )
-                                }
-                            }
-                        }
-                        
-                        if metric.invertedY {
-                            RuleMark(y: .value("ceiling", paceCeiling))
-                                .foregroundStyle(.clear)
-                        }
-                    }
-                    .chartXAxis(.hidden)
-                    .chartYAxis(.hidden)
-                    .chartYScale(domain: chartDomain)
-                    .frame(height: 80)
-                }
-                .padding(RunDetailLayout.cardPadding)
-                .background(DS.card)
-                .clipShape(RoundedRectangle(cornerRadius: RunDetailLayout.cardRadius))
-                
+            VStack(alignment: .leading, spacing: 12) {
+                Text(metric.title.uppercased())
+                    .font(AppFont.labelSM)
+                    .tracking(1.2)
+                    .foregroundStyle(DS.textDim)
+
                 HStack(spacing: 8) {
                     statCell(title: "MIN", value: metric.format(displayedMinVal))
                     statCell(title: "AVG", value: metric.format(avg), accent: metric.color)
                     statCell(title: "MAX", value: metric.format(displayedMaxVal))
                 }
+
+                chartContent
             }
+            .padding(RunDetailLayout.cardPadding)
+            .background(DS.card)
+            .clipShape(RoundedRectangle(cornerRadius: RunDetailLayout.cardRadius))
         }
         
         private func statCell(title: String, value: String, accent: Color = DS.textLabel) -> some View {
@@ -1640,6 +1585,162 @@ enum RunDetailContentView {
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
             .background(DS.cardActive, in: RoundedRectangle(cornerRadius: RunDetailLayout.compactCardRadius))
+        }
+
+        private var chartContent: some View {
+            Chart {
+                ForEach(data) { point in
+                    let plotY = metric.invertedY ? -point.value : point.value
+
+                    switch metric.chartStyle {
+                    case .line:
+                        LineMark(x: .value("t", point.elapsed), y: .value("v", plotY))
+                            .foregroundStyle(metric.color.gradient)
+                            .interpolationMethod(.catmullRom)
+                        AreaMark(x: .value("t", point.elapsed), y: .value("v", plotY))
+                            .foregroundStyle(
+                                LinearGradient(
+                                    colors: [metric.color.opacity(0.4), metric.color.opacity(0.05)],
+                                    startPoint: .bottom,
+                                    endPoint: .top
+                                )
+                            )
+                            .interpolationMethod(.catmullRom)
+
+                    case .bar:
+                        if metric.invertedY {
+                            BarMark(
+                                x: .value("t", point.elapsed),
+                                yStart: .value("floor", paceFloor),
+                                yEnd: .value("v", plotY),
+                                width: 3
+                            )
+                            .foregroundStyle(
+                                LinearGradient(
+                                    colors: [metric.color.opacity(0.5), metric.gradientTopColor.opacity(0.8)],
+                                    startPoint: .bottom,
+                                    endPoint: .top
+                                )
+                            )
+                        } else {
+                            BarMark(
+                                x: .value("t", point.elapsed),
+                                y: .value("v", plotY),
+                                width: 3
+                            )
+                            .foregroundStyle(
+                                LinearGradient(
+                                    colors: [metric.color.opacity(0.5), metric.color],
+                                    startPoint: .bottom,
+                                    endPoint: .top
+                                )
+                            )
+                        }
+                    }
+                }
+
+                if metric.invertedY {
+                    RuleMark(y: .value("ceiling", paceCeiling))
+                        .foregroundStyle(.clear)
+                }
+
+                if let selectedElapsed, let point = selectedPoint {
+                    RuleMark(x: .value("selected", selectedElapsed))
+                        .foregroundStyle(DS.textDim.opacity(0.9))
+                        .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 4]))
+
+                    PointMark(
+                        x: .value("selectedPoint", point.elapsed),
+                        y: .value("selectedValue", metric.invertedY ? -point.value : point.value)
+                    )
+                    .symbolSize(36)
+                    .foregroundStyle(metric.color)
+                }
+            }
+            .chartXAxis(.hidden)
+            .chartYAxis {
+                AxisMarks(position: .leading, values: .automatic(desiredCount: 3)) { value in
+                    AxisGridLine(stroke: StrokeStyle(lineWidth: 0.6))
+                        .foregroundStyle(DS.border.opacity(0.35))
+                    AxisTick(stroke: StrokeStyle(lineWidth: 0.6))
+                        .foregroundStyle(DS.border.opacity(0.6))
+                    AxisValueLabel {
+                        if let axisValue = value.as(Double.self) {
+                            Text(metricAxisText(for: axisValue))
+                                .font(.system(size: 9, weight: .medium, design: .monospaced))
+                                .foregroundStyle(DS.textDim)
+                                .frame(width: RunDetailLayout.metricChartYAxisWidth, alignment: .trailing)
+                        }
+                    }
+                }
+            }
+            .chartPlotBorderStyle(borderColor: DS.border.opacity(0.9))
+            .chartYScale(domain: chartDomain)
+            .chartXSelection(value: $selectedElapsed)
+            .frame(height: 120)
+            .overlay(alignment: .topLeading) {
+                GeometryReader { proxy in
+                    if let selectedElapsed, let point = selectedPoint {
+                        metricTooltip(for: point, selectedElapsed: selectedElapsed, plotWidth: proxy.size.width)
+                    }
+                }
+            }
+        }
+
+        private func metricAxisText(for axisValue: Double) -> String {
+            let displayedValue = metric.invertedY ? abs(axisValue) : axisValue
+            return metric.format(displayedValue)
+        }
+
+        @ViewBuilder
+        private func metricTooltip(for point: TSPoint, selectedElapsed: Double, plotWidth: CGFloat) -> some View {
+            let xRatio = maxElapsed > 0 ? point.elapsed / maxElapsed : 0
+            let clampedX = min(max(xRatio, 0.08), 0.78)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(String(format: "%.1f분", selectedElapsed))
+                    .font(.system(size: 9, weight: .medium))
+                    .foregroundStyle(DS.textDim)
+                HStack(alignment: .firstTextBaseline, spacing: 4) {
+                    Circle()
+                        .fill(metric.color)
+                        .frame(width: 6, height: 6)
+                    Text(metric.format(point.value))
+                        .font(.system(size: 13, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(DS.textLabel)
+                    Text(metric.unit)
+                        .font(.system(size: 9, weight: .medium))
+                        .foregroundStyle(metric.color)
+                }
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .background(DS.cardActive, in: RoundedRectangle(cornerRadius: 8))
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(DS.border.opacity(0.9), lineWidth: 1)
+            )
+            .offset(x: plotWidth * clampedX, y: 4)
+        }
+    }
+
+    struct PerformanceMetricsSection: View {
+        let metrics: [(MetricType, [TSPoint])]
+
+        @State private var selectedElapsed: Double?
+
+        var body: some View {
+            VStack(alignment: .leading, spacing: RunDetailLayout.sectionSpacing) {
+                SectionHeader(title: "PERFORMANCE METRICS", icon: "chart.line.uptrend.xyaxis")
+
+                ForEach(Array(metrics.enumerated()), id: \.offset) { _, item in
+                    PerformanceMetricCard(
+                        metric: item.0,
+                        data: item.1,
+                        selectedElapsed: $selectedElapsed
+                    )
+                }
+            }
         }
     }
     
@@ -1834,6 +1935,7 @@ enum RunDetailContentView {
                         }
                     }
                 }
+                .chartPlotBorderStyle(borderColor: DS.border.opacity(0.9))
                 .chartYScale(domain: min(floor, ceiling)...max(floor, ceiling))
                 .frame(height: 200)
             }
@@ -1933,6 +2035,7 @@ enum RunDetailContentView {
                             }
                         }
                     }
+                    .chartPlotBorderStyle(borderColor: subTextColor.opacity(0.35))
                     .chartYScale(domain: min(floor, ceiling)...max(floor, ceiling))
                     .frame(height: 140)
                 }
@@ -1968,6 +2071,7 @@ enum RunDetailContentView {
                     }
                     .chartXAxis(.hidden)
                     .chartYAxis(.hidden)
+                    .chartPlotBorderStyle(borderColor: subTextColor.opacity(0.28))
                     .chartYScale(domain: .automatic(includesZero: false))
                     .frame(height: 80)
                 }
@@ -2164,6 +2268,7 @@ enum RunDetailContentView {
                         }
                     }
                 }
+                .chartPlotBorderStyle(borderColor: subTextColor.opacity(0.35))
                 .frame(height: 180)
             }
         }
