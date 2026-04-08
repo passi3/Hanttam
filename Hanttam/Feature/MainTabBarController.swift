@@ -54,8 +54,15 @@ final class MainTabBarController: UITabBarController {
             image: UIImage(systemName: "list.bullet.rectangle.fill"),
             tag: 2
         )
+
+        let gearNav = UINavigationController(rootViewController: GearListViewController())
+        gearNav.tabBarItem = UITabBarItem(
+            title: "장비",
+            image: UIImage(systemName: "shoeprints.fill"),
+            tag: 3
+        )
         
-        viewControllers = [dashboardNav, workoutVC, recordsNav]
+        viewControllers = [dashboardNav, workoutVC, recordsNav, gearNav]
     }
 
     private func tabBarIcon(named name: String, size: CGSize) -> UIImage? {

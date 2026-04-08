@@ -11,6 +11,7 @@
 		4016F6042F73C83700BC0F12 /* RxSwift in Frameworks */ = {isa = PBXBuildFile; productRef = 4016F6032F73C83700BC0F12 /* RxSwift */; };
 		4016F6072F73C85100BC0F12 /* SnapKit in Frameworks */ = {isa = PBXBuildFile; productRef = 4016F6062F73C85100BC0F12 /* SnapKit */; };
 		409833DD2F7D5DFD0029B9CC /* Hanttam Watch Watch App.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = 409833D22F7D5DFA0029B9CC /* Hanttam Watch Watch App.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		40C68D912F8674900013CCC2 /* Supabase in Frameworks */ = {isa = PBXBuildFile; productRef = 40C68D902F8674900013CCC2 /* Supabase */; };
 		40C682422F862ACD0013CCC2 /* FirebaseAnalytics in Frameworks */ = {isa = PBXBuildFile; productRef = 40C682412F862ACD0013CCC2 /* FirebaseAnalytics */; };
 		40C682442F862ACD0013CCC2 /* FirebaseCrashlytics in Frameworks */ = {isa = PBXBuildFile; productRef = 40C682432F862ACD0013CCC2 /* FirebaseCrashlytics */; };
 /* End PBXBuildFile section */
@@ -116,6 +117,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				40C68D912F8674900013CCC2 /* Supabase in Frameworks */,
 				4016F6072F73C85100BC0F12 /* SnapKit in Frameworks */,
 				4016F6042F73C83700BC0F12 /* RxSwift in Frameworks */,
 				40C682442F862ACD0013CCC2 /* FirebaseCrashlytics in Frameworks */,
@@ -191,6 +193,7 @@
 				4016F6012F73C83700BC0F12 /* RxCocoa */,
 				4016F6032F73C83700BC0F12 /* RxSwift */,
 				4016F6062F73C85100BC0F12 /* SnapKit */,
+				40C68D902F8674900013CCC2 /* Supabase */,
 				40C682412F862ACD0013CCC2 /* FirebaseAnalytics */,
 				40C682432F862ACD0013CCC2 /* FirebaseCrashlytics */,
 			);
@@ -250,6 +253,7 @@
 			packageReferences = (
 				4016F6002F73C83700BC0F12 /* XCRemoteSwiftPackageReference "RxSwift" */,
 				4016F6052F73C85100BC0F12 /* XCRemoteSwiftPackageReference "SnapKit" */,
+				40C68D8F2F8674900013CCC2 /* XCRemoteSwiftPackageReference "supabase-swift" */,
 				40C682402F862ACD0013CCC2 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */,
 			);
 			preferredProjectObjectVersion = 77;
@@ -344,6 +348,7 @@
 				DEVELOPMENT_TEAM = 29MZ57KJPA;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Hanttam/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "한땀";
 				INFOPLIST_KEY_NSCameraUsageDescription = "편집할 사진을 촬영하기 위해 카메라 접근이 필요합니다.";
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "운동 기록 및 경로를 조회하기 위해 건강 데이터에 대한 접근이 필요합니다.";
 				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "운동 기록을 저장하기 위해 사용합니다.";
@@ -389,6 +394,7 @@
 				DEVELOPMENT_TEAM = 29MZ57KJPA;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Hanttam/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "한땀";
 				INFOPLIST_KEY_NSCameraUsageDescription = "편집할 사진을 촬영하기 위해 카메라 접근이 필요합니다.";
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "운동 기록 및 경로를 조회하기 위해 건강 데이터에 대한 접근이 필요합니다.";
 				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "운동 기록을 저장하기 위해 사용합니다.";
@@ -659,6 +665,12 @@
 				minimumVersion = 5.7.1;
 			};
 		};
+		40C68D8F2F8674900013CCC2 /* XCRemoteSwiftPackageReference "supabase-swift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/supabase-community/supabase-swift.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.5.1;
 		40C682402F862ACD0013CCC2 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/firebase/firebase-ios-sdk";
@@ -685,6 +697,10 @@
 			package = 4016F6052F73C85100BC0F12 /* XCRemoteSwiftPackageReference "SnapKit" */;
 			productName = SnapKit;
 		};
+		40C68D902F8674900013CCC2 /* Supabase */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 40C68D8F2F8674900013CCC2 /* XCRemoteSwiftPackageReference "supabase-swift" */;
+			productName = Supabase;
 		40C682412F862ACD0013CCC2 /* FirebaseAnalytics */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 40C682402F862ACD0013CCC2 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
