@@ -51,25 +51,42 @@ final class RunDetailViewModel {
     }
 
     let record: RunningRecord
-    private let intervalRecord: IntervalRecord?
+    let intervalRecord: IntervalRecord?
 
     private let isLoadingSubject = CurrentValueSubject<Bool, Never>(true)
     private let dataSubject = CurrentValueSubject<DetailData, Never>(DetailData())
+    private let linkedShoeSubject = CurrentValueSubject<RegisteredShoe?, Never>(nil)
 
     var data: AnyPublisher<DetailData, Never> { dataSubject.eraseToAnyPublisher() }
+    var linkedShoe: AnyPublisher<RegisteredShoe?, Never> { linkedShoeSubject.eraseToAnyPublisher() }
     private var cancellables = Set<AnyCancellable>()
     private let store = HealthKitStore.shared
+    private let gearStore: GearLocalStoring
 
-    init(record: RunningRecord, intervalRecord: IntervalRecord? = nil) {
+    init(
+        record: RunningRecord,
+        intervalRecord: IntervalRecord? = nil,
+        gearStore: GearLocalStoring = GearLocalStore.shared
+    ) {
         self.record = record
         self.intervalRecord = intervalRecord
+        self.gearStore = gearStore
     }
 
     // MARK: - Transform
 
     func transform(input: Input) -> Output {
         input.viewDidLoad
-            .sink { [weak self] in self?.loadDetails() }
+            .sink { [weak self] in
+                self?.loadDetails()
+                self?.refreshLinkedShoe()
+            }
+            .store(in: &cancellables)
+
+        NotificationCenter.default.publisher(for: GearLocalStore.didChangeNotification)
+            .sink { [weak self] _ in
+                self?.refreshLinkedShoe()
+            }
             .store(in: &cancellables)
 
         return Output(
@@ -167,6 +184,55 @@ final class RunDetailViewModel {
             self.dataSubject.send(result)
             self.isLoadingSubject.send(false)
         }
+    }
+
+    func fetchRegisteredShoes() -> [RegisteredShoe] {
+        gearStore.fetchRegisteredShoes()
+    }
+
+    func refreshLinkedShoe() {
+        linkedShoeSubject.send(
+            gearStore.linkedShoe(
+                for: currentSessionIdentifier,
+                kind: currentSessionKind
+            )
+        )
+    }
+
+    func linkCurrentSession(to shoe: RegisteredShoe) {
+        let link = ShoeSessionLink(
+            shoeID: shoe.id,
+            sessionKind: currentSessionKind,
+            sessionIdentifier: currentSessionIdentifier,
+            workoutStartDate: currentSessionStartDate,
+            workoutEndDate: currentSessionEndDate
+        )
+        gearStore.upsertSessionLink(link)
+        refreshLinkedShoe()
+    }
+
+    func unlinkCurrentSession() {
+        gearStore.removeSessionLink(sessionIdentifier: currentSessionIdentifier, kind: currentSessionKind)
+        refreshLinkedShoe()
+    }
+
+    private var currentSessionKind: GearSessionKind {
+        intervalRecord == nil ? .freeRun : .interval
+    }
+
+    private var currentSessionIdentifier: String {
+        if let intervalRecord {
+            return intervalRecord.gearSessionIdentifier
+        }
+        return record.gearSessionIdentifier
+    }
+
+    private var currentSessionStartDate: Date {
+        intervalRecord?.date ?? record.date
+    }
+
+    private var currentSessionEndDate: Date {
+        intervalRecord?.workout?.endDate ?? record.endDate
     }
 
     private func makeLapRows(from data: DetailData) -> [RunDetailLapRow] {
