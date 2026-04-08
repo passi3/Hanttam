@@ -115,6 +115,13 @@ class RunDetailTabViewController: UIViewController {
     }
 
     @objc private func handleEdgePan(_ gesture: UIScreenEdgePanGestureRecognizer) {
+        if shouldUseNavigationPop {
+            if gesture.state == .began {
+                navigationController?.popViewController(animated: true)
+            }
+            return
+        }
+
         let progress = min(max(gesture.translation(in: view).x / view.bounds.width, 0), 1)
 
         switch gesture.state {
@@ -154,6 +161,19 @@ class RunDetailTabViewController: UIViewController {
     private func restoreSelectedTabItem() {
         tabBar.selectedItem = tabItem(forContentIndex: currentIndex)
     }
+
+    private var shouldUseNavigationPop: Bool {
+        guard let navigationController else { return false }
+        return presentingViewController == nil && navigationController.viewControllers.count > 1
+    }
+
+    private func closeSelf(animated: Bool) {
+        if shouldUseNavigationPop {
+            navigationController?.popViewController(animated: animated)
+        } else {
+            dismiss(animated: animated)
+        }
+    }
     
     private func bind() {
         let input = RunDetailViewModel.Input(viewDidLoad: viewDidLoadSubject.eraseToAnyPublisher())
@@ -166,7 +186,7 @@ extension RunDetailTabViewController: UITabBarDelegate {
         guard let index = tabBar.items?.firstIndex(of: item) else { return }
         if item.tag == dismissTabTag {
             restoreSelectedTabItem()
-            dismiss(animated: true)
+            closeSelf(animated: true)
             return
         }
         selectTab(index - 1)
@@ -325,6 +345,7 @@ class RunDetailSummaryViewController: UIViewController {
     private let viewModel: RunDetailViewModel
     private var cancellables = Set<AnyCancellable>()
     private let contentStack = UIStackView()
+    private let gearCardView = RunDetailGearLinkCardView()
     
     init(record: RunningRecord, viewModel: RunDetailViewModel) {
         self.record = record
@@ -336,6 +357,7 @@ class RunDetailSummaryViewController: UIViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         setupUI()
+        setupGearCard()
         bind()
     }
     
@@ -364,6 +386,13 @@ class RunDetailSummaryViewController: UIViewController {
                 self?.buildContent(with: data)
             }
             .store(in: &cancellables)
+
+        viewModel.linkedShoe
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] shoe in
+                self?.gearCardView.configure(with: shoe)
+            }
+            .store(in: &cancellables)
     }
     
     private func buildContent(with data: RunDetailViewModel.DetailData) {
@@ -377,6 +406,7 @@ class RunDetailSummaryViewController: UIViewController {
             data: sanitizedData
         )
         embedSwiftUI(summaryView)
+        contentStack.addArrangedSubview(gearCardView)
     }
     
     private func embedSwiftUI<V: View>(_ swiftUIView: V, height: CGFloat? = nil) {
@@ -390,6 +420,48 @@ class RunDetailSummaryViewController: UIViewController {
             }
         }
         hosting.didMove(toParent: self)
+    }
+
+    private func setupGearCard() {
+        gearCardView.configure(with: nil)
+        gearCardView.onPrimaryTap = { [weak self] in
+            self?.presentGearSelection()
+        }
+        gearCardView.onSecondaryTap = { [weak self] in
+            self?.viewModel.unlinkCurrentSession()
+        }
+    }
+
+    private func presentGearSelection() {
+        let shoes = viewModel.fetchRegisteredShoes()
+        guard !shoes.isEmpty else {
+            presentRegisterFlow()
+            return
+        }
+
+        let alert = UIAlertController(title: "운동화 선택", message: nil, preferredStyle: .actionSheet)
+        shoes.forEach { shoe in
+            alert.addAction(UIAlertAction(title: "\(shoe.brandName.uppercased()) \(shoe.modelName)", style: .default) { [weak self] _ in
+                self?.viewModel.linkCurrentSession(to: shoe)
+            })
+        }
+        alert.addAction(UIAlertAction(title: "새 운동화 등록", style: .default) { [weak self] _ in
+            self?.presentRegisterFlow()
+        })
+        alert.addAction(UIAlertAction(title: "취소", style: .cancel))
+        if let popover = alert.popoverPresentationController {
+            popover.sourceView = gearCardView
+            popover.sourceRect = gearCardView.bounds
+        }
+        present(alert, animated: true)
+    }
+
+    private func presentRegisterFlow() {
+        let searchViewController = ShoeSearchViewController { [weak self] shoe in
+            self?.viewModel.linkCurrentSession(to: shoe)
+        }
+        let navigationController = UINavigationController(rootViewController: searchViewController)
+        present(navigationController, animated: true)
     }
 }
 
