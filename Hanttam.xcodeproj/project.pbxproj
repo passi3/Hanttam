@@ -10,10 +10,10 @@
 		4016F6022F73C83700BC0F12 /* RxCocoa in Frameworks */ = {isa = PBXBuildFile; productRef = 4016F6012F73C83700BC0F12 /* RxCocoa */; };
 		4016F6042F73C83700BC0F12 /* RxSwift in Frameworks */ = {isa = PBXBuildFile; productRef = 4016F6032F73C83700BC0F12 /* RxSwift */; };
 		4016F6072F73C85100BC0F12 /* SnapKit in Frameworks */ = {isa = PBXBuildFile; productRef = 4016F6062F73C85100BC0F12 /* SnapKit */; };
+		404058F72F86BECF0052D506 /* FirebaseAnalytics in Frameworks */ = {isa = PBXBuildFile; productRef = 404058F62F86BECF0052D506 /* FirebaseAnalytics */; };
+		404058F92F86BECF0052D506 /* FirebaseCrashlytics in Frameworks */ = {isa = PBXBuildFile; productRef = 404058F82F86BECF0052D506 /* FirebaseCrashlytics */; };
 		409833DD2F7D5DFD0029B9CC /* Hanttam Watch Watch App.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = 409833D22F7D5DFA0029B9CC /* Hanttam Watch Watch App.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		40C68D912F8674900013CCC2 /* Supabase in Frameworks */ = {isa = PBXBuildFile; productRef = 40C68D902F8674900013CCC2 /* Supabase */; };
-		40C682422F862ACD0013CCC2 /* FirebaseAnalytics in Frameworks */ = {isa = PBXBuildFile; productRef = 40C682412F862ACD0013CCC2 /* FirebaseAnalytics */; };
-		40C682442F862ACD0013CCC2 /* FirebaseCrashlytics in Frameworks */ = {isa = PBXBuildFile; productRef = 40C682432F862ACD0013CCC2 /* FirebaseCrashlytics */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -120,8 +120,8 @@
 				40C68D912F8674900013CCC2 /* Supabase in Frameworks */,
 				4016F6072F73C85100BC0F12 /* SnapKit in Frameworks */,
 				4016F6042F73C83700BC0F12 /* RxSwift in Frameworks */,
-				40C682442F862ACD0013CCC2 /* FirebaseCrashlytics in Frameworks */,
-				40C682422F862ACD0013CCC2 /* FirebaseAnalytics in Frameworks */,
+				404058F92F86BECF0052D506 /* FirebaseCrashlytics in Frameworks */,
+				404058F72F86BECF0052D506 /* FirebaseAnalytics in Frameworks */,
 				4016F6022F73C83700BC0F12 /* RxCocoa in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -178,7 +178,6 @@
 				4060D5432EEAAB2D00329FC8 /* Resources */,
 				409833DC2F7D5DFD0029B9CC /* Embed Watch Content */,
 				404E86102F7FAC0100AC76ED /* Embed Foundation Extensions */,
-				40C682452F862C380013CCC2 /* ShellScript */,
 			);
 			buildRules = (
 			);
@@ -194,8 +193,8 @@
 				4016F6032F73C83700BC0F12 /* RxSwift */,
 				4016F6062F73C85100BC0F12 /* SnapKit */,
 				40C68D902F8674900013CCC2 /* Supabase */,
-				40C682412F862ACD0013CCC2 /* FirebaseAnalytics */,
-				40C682432F862ACD0013CCC2 /* FirebaseCrashlytics */,
+				404058F62F86BECF0052D506 /* FirebaseAnalytics */,
+				404058F82F86BECF0052D506 /* FirebaseCrashlytics */,
 			);
 			productName = Hanttam;
 			productReference = 4060D5452EEAAB2D00329FC8 /* Hanttam.app */;
@@ -254,7 +253,7 @@
 				4016F6002F73C83700BC0F12 /* XCRemoteSwiftPackageReference "RxSwift" */,
 				4016F6052F73C85100BC0F12 /* XCRemoteSwiftPackageReference "SnapKit" */,
 				40C68D8F2F8674900013CCC2 /* XCRemoteSwiftPackageReference "supabase-swift" */,
-				40C682402F862ACD0013CCC2 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */,
+				404058F52F86BECF0052D506 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 4060D5462EEAAB2D00329FC8 /* Products */;
@@ -283,32 +282,6 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
-
-/* Begin PBXShellScriptBuildPhase section */
-		40C682452F862C380013CCC2 /* ShellScript */ = {
-			isa = PBXShellScriptBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputFileListPaths = (
-			);
-			inputPaths = (
-				"${DWARF_DSYM_FOLDER_PATH}/${DWARF_DSYM_FILE_NAME}",
-				"${DWARF_DSYM_FOLDER_PATH}/${DWARF_DSYM_FILE_NAME}/Contents/Resources/DWARF/${PRODUCT_NAME}",
-				"${DWARF_DSYM_FOLDER_PATH}/${DWARF_DSYM_FILE_NAME}/Contents/Info.plist",
-				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/GoogleService-Info.plist",
-				"$(TARGET_BUILD_DIR)/$(EXECUTABLE_PATH)",
-				"$(TARGET_BUILD_DIR)/$(EXECUTABLE_PATH)",
-			);
-			outputFileListPaths = (
-			);
-			outputPaths = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "# Type a script or drag a script file from your workspace to insert its path.\n\"${BUILD_DIR%/Build/*}/SourcePackages/checkouts/firebase-ios-sdk/Crashlytics/run\"\n";
-		};
-/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		4060D5412EEAAB2D00329FC8 /* Sources */ = {
@@ -344,7 +317,6 @@
 				CODE_SIGN_ENTITLEMENTS = Hanttam/Hanttam.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = 29MZ57KJPA;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Hanttam/Info.plist;
@@ -665,18 +637,20 @@
 				minimumVersion = 5.7.1;
 			};
 		};
+		404058F52F86BECF0052D506 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/firebase/firebase-ios-sdk";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 12.12.0;
+			};
+		};
 		40C68D8F2F8674900013CCC2 /* XCRemoteSwiftPackageReference "supabase-swift" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/supabase-community/supabase-swift.git";
 			requirement = {
 				kind = upToNextMajorVersion;
 				minimumVersion = 2.5.1;
-		40C682402F862ACD0013CCC2 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/firebase/firebase-ios-sdk";
-			requirement = {
-				kind = upToNextMajorVersion;
-				minimumVersion = 12.12.0;
 			};
 		};
 /* End XCRemoteSwiftPackageReference section */
@@ -697,19 +671,20 @@
 			package = 4016F6052F73C85100BC0F12 /* XCRemoteSwiftPackageReference "SnapKit" */;
 			productName = SnapKit;
 		};
+		404058F62F86BECF0052D506 /* FirebaseAnalytics */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 404058F52F86BECF0052D506 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseAnalytics;
+		};
+		404058F82F86BECF0052D506 /* FirebaseCrashlytics */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 404058F52F86BECF0052D506 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseCrashlytics;
+		};
 		40C68D902F8674900013CCC2 /* Supabase */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 40C68D8F2F8674900013CCC2 /* XCRemoteSwiftPackageReference "supabase-swift" */;
 			productName = Supabase;
-		40C682412F862ACD0013CCC2 /* FirebaseAnalytics */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 40C682402F862ACD0013CCC2 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
-			productName = FirebaseAnalytics;
-		};
-		40C682432F862ACD0013CCC2 /* FirebaseCrashlytics */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 40C682402F862ACD0013CCC2 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
-			productName = FirebaseCrashlytics;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
