@@ -30,7 +30,6 @@ struct CumulativeChartView: View {
         return raw
     }
     
-    
     private let neutralGray = AppColor.dashboardNeutral
     private let labelGray   = AppColor.dashboardLabel
     private let textDark    = AppColor.dashboardTextDark
