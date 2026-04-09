@@ -2,7 +2,7 @@
 //  ShoeDetailViewController.swift
 //  Hanttam
 //
-//  Created by Codex on 4/8/26.
+//  Created by passi on 4/8/26.
 //
 
 import UIKit
@@ -237,8 +237,9 @@ private final class GearDetailHeaderView: HTView {
 
     func configure(with shoe: RegisteredShoe, stats: ShoeAggregateStats) {
         brandLabel.text = shoe.brandName.uppercased()
-        modelLabel.text = shoe.modelName
-        metaLabel.text = [shoe.sku, shoe.colors.joined(separator: ", ")].filter { !$0.isEmpty }.joined(separator: "\n")
+        modelLabel.text = shoe.displayName
+        let modelLine = shoe.displayName == shoe.modelName ? shoe.modelName : "모델: \(shoe.modelName)"
+        metaLabel.text = [modelLine, shoe.sku, shoe.colors.joined(separator: ", ")].filter { !$0.isEmpty }.joined(separator: "\n")
         if stats.overDistance > 0 {
             progressLabel.text = "\(AppFormatter.distance1f(stats.totalDistance)) / \(AppFormatter.distance1f(shoe.targetDistanceMeters)) · +\(AppFormatter.distance1f(stats.overDistance)) 초과"
         } else {

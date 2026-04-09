@@ -2,7 +2,7 @@
 //  RunDetailGearLinkCardView.swift
 //  Hanttam
 //
-//  Created by Codex on 4/8/26.
+//  Created by passi on 4/8/26.
 //
 
 import UIKit
@@ -74,7 +74,7 @@ final class RunDetailGearLinkCardView: HTView {
 
     func configure(with shoe: RegisteredShoe?) {
         if let shoe {
-            subtitleLabel.text = "\(shoe.brandName.uppercased())\n\(shoe.modelName)"
+            subtitleLabel.text = "\(shoe.brandName.uppercased())\n\(shoe.displaySummary)"
             primaryButton.setTitle("운동화 변경", for: .normal)
             secondaryButton.setTitle("연결 해제", for: .normal)
             secondaryButton.isHidden = false

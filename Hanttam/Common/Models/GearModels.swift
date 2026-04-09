@@ -2,7 +2,7 @@
 //  GearModels.swift
 //  Hanttam
 //
-//  Created by Codex on 4/8/26.
+//  Created by passi on 4/8/26.
 //
 
 import Foundation
@@ -88,6 +88,7 @@ struct ShoeCatalogItem: Decodable, Hashable {
 struct RegisteredShoe: Codable, Hashable, Identifiable {
     let id: UUID
     let catalogID: String
+    let nickname: String?
     let brandName: String
     let modelName: String
     let sku: String
@@ -96,10 +97,27 @@ struct RegisteredShoe: Codable, Hashable, Identifiable {
     let createdAt: Date?
     let registeredAt: Date
     var targetDistanceMeters: Double
+    var initialDistanceMeters: Double
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case catalogID
+        case nickname
+        case brandName
+        case modelName
+        case sku
+        case colors
+        case imageURL
+        case createdAt
+        case registeredAt
+        case targetDistanceMeters
+        case initialDistanceMeters
+    }
 
     init(
         id: UUID = UUID(),
         catalogID: String,
+        nickname: String? = nil,
         brandName: String,
         modelName: String,
         sku: String,
@@ -107,10 +125,12 @@ struct RegisteredShoe: Codable, Hashable, Identifiable {
         imageURL: String?,
         createdAt: Date?,
         registeredAt: Date = Date(),
-        targetDistanceMeters: Double
+        targetDistanceMeters: Double,
+        initialDistanceMeters: Double = 0
     ) {
         self.id = id
         self.catalogID = catalogID
+        self.nickname = nickname
         self.brandName = brandName
         self.modelName = modelName
         self.sku = sku
@@ -119,19 +139,63 @@ struct RegisteredShoe: Codable, Hashable, Identifiable {
         self.createdAt = createdAt
         self.registeredAt = registeredAt
         self.targetDistanceMeters = targetDistanceMeters
+        self.initialDistanceMeters = initialDistanceMeters
     }
 
-    init(item: ShoeCatalogItem, targetDistanceMeters: Double) {
+    init(item: ShoeCatalogItem, nickname: String? = nil, targetDistanceMeters: Double, initialDistanceMeters: Double = 0) {
         self.init(
             catalogID: item.id,
+            nickname: nickname,
             brandName: item.brandName,
             modelName: item.modelName,
             sku: item.sku,
             colors: item.colors,
             imageURL: item.imageURL,
             createdAt: item.createdAt,
-            targetDistanceMeters: targetDistanceMeters
+            targetDistanceMeters: targetDistanceMeters,
+            initialDistanceMeters: initialDistanceMeters
         )
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        catalogID = try container.decode(String.self, forKey: .catalogID)
+        nickname = try container.decodeIfPresent(String.self, forKey: .nickname)
+        brandName = try container.decode(String.self, forKey: .brandName)
+        modelName = try container.decode(String.self, forKey: .modelName)
+        sku = try container.decode(String.self, forKey: .sku)
+        colors = try container.decode([String].self, forKey: .colors)
+        imageURL = try container.decodeIfPresent(String.self, forKey: .imageURL)
+        createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt)
+        registeredAt = try container.decode(Date.self, forKey: .registeredAt)
+        targetDistanceMeters = try container.decode(Double.self, forKey: .targetDistanceMeters)
+        initialDistanceMeters = try container.decodeIfPresent(Double.self, forKey: .initialDistanceMeters) ?? 0
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(catalogID, forKey: .catalogID)
+        try container.encodeIfPresent(nickname, forKey: .nickname)
+        try container.encode(brandName, forKey: .brandName)
+        try container.encode(modelName, forKey: .modelName)
+        try container.encode(sku, forKey: .sku)
+        try container.encode(colors, forKey: .colors)
+        try container.encodeIfPresent(imageURL, forKey: .imageURL)
+        try container.encodeIfPresent(createdAt, forKey: .createdAt)
+        try container.encode(registeredAt, forKey: .registeredAt)
+        try container.encode(targetDistanceMeters, forKey: .targetDistanceMeters)
+        try container.encode(initialDistanceMeters, forKey: .initialDistanceMeters)
+    }
+
+    var displayName: String {
+        let trimmedNickname = nickname?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmedNickname.isEmpty ? modelName : trimmedNickname
+    }
+
+    var displaySummary: String {
+        displayName == modelName ? modelName : "\(displayName) (\(modelName))"
     }
 }
 
@@ -155,10 +219,11 @@ struct ShoeAggregateStats: Hashable {
     let overDistance: Double
     let progress: Double
 
-    init(totalDistance: Double, totalDuration: TimeInterval, targetDistanceMeters: Double) {
+    init(totalDistance: Double, totalDuration: TimeInterval, targetDistanceMeters: Double, paceDistanceMeters: Double? = nil) {
         self.totalDistance = totalDistance
         self.totalDuration = totalDuration
-        self.averagePace = totalDistance > 0 ? totalDuration / (totalDistance / 1000.0) : nil
+        let effectivePaceDistance = paceDistanceMeters ?? totalDistance
+        self.averagePace = effectivePaceDistance > 0 ? totalDuration / (effectivePaceDistance / 1000.0) : nil
         self.targetDistanceMeters = targetDistanceMeters
         self.overDistance = max(0, totalDistance - targetDistanceMeters)
         if targetDistanceMeters > 0 {

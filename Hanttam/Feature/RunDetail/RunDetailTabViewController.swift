@@ -441,7 +441,7 @@ class RunDetailSummaryViewController: UIViewController {
 
         let alert = UIAlertController(title: "운동화 선택", message: nil, preferredStyle: .actionSheet)
         shoes.forEach { shoe in
-            alert.addAction(UIAlertAction(title: "\(shoe.brandName.uppercased()) \(shoe.modelName)", style: .default) { [weak self] _ in
+            alert.addAction(UIAlertAction(title: "\(shoe.brandName.uppercased()) \(shoe.displaySummary)", style: .default) { [weak self] _ in
                 self?.viewModel.linkCurrentSession(to: shoe)
             })
         }

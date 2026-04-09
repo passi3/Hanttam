@@ -2,7 +2,7 @@
 //  GearListViewModel.swift
 //  Hanttam
 //
-//  Created by Codex on 4/8/26.
+//  Created by passi on 4/8/26.
 //
 
 import Foundation
@@ -99,7 +99,12 @@ final class GearListViewModel: HTReusableVMProtocol {
                 let zeroItems = shoes.map {
                     Item(
                         shoe: $0,
-                        stats: ShoeAggregateStats(totalDistance: 0, totalDuration: 0, targetDistanceMeters: $0.targetDistanceMeters),
+                        stats: ShoeAggregateStats(
+                            totalDistance: $0.initialDistanceMeters,
+                            totalDuration: 0,
+                            targetDistanceMeters: $0.targetDistanceMeters,
+                            paceDistanceMeters: 0
+                        ),
                         linkedSessionsCount: 0
                     )
                 }
@@ -134,14 +139,16 @@ final class GearListViewModel: HTReusableVMProtocol {
                         runningRecords: runningRecords,
                         intervalRecords: intervalRecords
                     )
-                    let totalDistance = sessions.reduce(0) { $0 + $1.distance }
+                    let sessionDistance = sessions.reduce(0) { $0 + $1.distance }
                     let totalDuration = sessions.reduce(0) { $0 + $1.duration }
+                    let totalDistance = shoe.initialDistanceMeters + sessionDistance
                     return Item(
                         shoe: shoe,
                         stats: ShoeAggregateStats(
                             totalDistance: totalDistance,
                             totalDuration: totalDuration,
-                            targetDistanceMeters: shoe.targetDistanceMeters
+                            targetDistanceMeters: shoe.targetDistanceMeters,
+                            paceDistanceMeters: sessionDistance
                         ),
                         linkedSessionsCount: sessions.count
                     )
