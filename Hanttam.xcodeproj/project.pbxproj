@@ -317,6 +317,7 @@
 				CODE_SIGN_ENTITLEMENTS = Hanttam/Hanttam.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = 29MZ57KJPA;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Hanttam/Info.plist;
