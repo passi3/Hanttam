@@ -163,11 +163,11 @@ final class RegisterShoeViewController: HTViewController {
 
         nicknameTitleLabel.font = AppFont.UI.titleMD
         nicknameTitleLabel.textColor = AppColor.UI.textPrimary
-        nicknameTitleLabel.text = "별명"
+        nicknameTitleLabel.text = "별칭"
 
         previousDistanceTitleLabel.font = AppFont.UI.titleMD
         previousDistanceTitleLabel.textColor = AppColor.UI.textPrimary
-        previousDistanceTitleLabel.text = "이전 달린 거리"
+        previousDistanceTitleLabel.text = "이전 달린 거리(km)"
 
         nicknameField.borderStyle = .none
         nicknameField.layer.cornerRadius = 14
@@ -175,7 +175,10 @@ final class RegisterShoeViewController: HTViewController {
         nicknameField.layer.borderColor = AppColor.UI.border.cgColor
         nicknameField.backgroundColor = AppColor.UI.cardBackground
         nicknameField.font = AppFont.UI.titleMD
-        nicknameField.placeholder = "별명을 입력해주세요"
+        nicknameField.attributedPlaceholder = NSAttributedString(
+            string: "별칭을 입력하세요",
+            attributes: [.foregroundColor: AppColor.UI.textTertiary]
+        )
         nicknameField.setLeftPadding(16)
         nicknameField.setRightPadding(16)
         nicknameField.returnKeyType = .done
@@ -185,14 +188,22 @@ final class RegisterShoeViewController: HTViewController {
         targetDistanceButton.layer.borderWidth = 1
         targetDistanceButton.layer.borderColor = AppColor.UI.border.cgColor
         targetDistanceButton.backgroundColor = AppColor.UI.cardBackground
-        targetDistanceButton.contentHorizontalAlignment = .left
-        targetDistanceButton.contentEdgeInsets = UIEdgeInsets(top: 0, left: 16, bottom: 0, right: 16)
-        targetDistanceButton.setTitle("목표 거리를 선택하세요", for: .normal)
-        targetDistanceButton.setTitleColor(AppColor.UI.textTertiary, for: .normal)
-        targetDistanceButton.titleLabel?.font = AppFont.UI.titleMD
-        targetDistanceButton.setImage(UIImage(systemName: "chevron.down"), for: .normal)
-        targetDistanceButton.tintColor = AppColor.UI.textSecondary
-        targetDistanceButton.semanticContentAttribute = .forceRightToLeft
+        targetDistanceButton.contentHorizontalAlignment = .fill
+        var targetButtonConfiguration = UIButton.Configuration.plain()
+        targetButtonConfiguration.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16)
+        targetButtonConfiguration.image = UIImage(systemName: "chevron.up.chevron.down")
+        targetButtonConfiguration.imagePlacement = .trailing
+        targetButtonConfiguration.imagePadding = 8
+        targetButtonConfiguration.baseForegroundColor = AppColor.UI.textSecondary
+        targetButtonConfiguration.titleAlignment = .leading
+        targetButtonConfiguration.attributedTitle = AttributedString(
+            "목표 거리를 선택하세요",
+            attributes: AttributeContainer([
+                .font: AppFont.UI.titleMD,
+                .foregroundColor: AppColor.UI.textTertiary
+            ])
+        )
+        targetDistanceButton.configuration = targetButtonConfiguration
         targetDistanceButton.showsMenuAsPrimaryAction = true
         targetDistanceButton.changesSelectionAsPrimaryAction = false
         targetDistanceButton.menu = makeTargetDistanceMenu()
@@ -205,7 +216,10 @@ final class RegisterShoeViewController: HTViewController {
         previousDistanceField.font = AppFont.UI.titleMD
         previousDistanceField.keyboardType = .decimalPad
         previousDistanceField.returnKeyType = .done
-        previousDistanceField.placeholder = "예: 120.5"
+        previousDistanceField.attributedPlaceholder = NSAttributedString(
+            string: "이전 달린 거리를 입력하세요",
+            attributes: [.foregroundColor: AppColor.UI.textTertiary]
+        )
         previousDistanceField.setLeftPadding(16)
         previousDistanceField.setRightPadding(16)
         previousDistanceField.inputAccessoryView = previousDistanceToolbar
@@ -342,13 +356,25 @@ final class RegisterShoeViewController: HTViewController {
     }
 
     private func updateTargetDistanceButtonTitle(_ text: String?) {
+        var configuration = targetDistanceButton.configuration ?? UIButton.Configuration.plain()
         if let text, !text.isEmpty {
-            targetDistanceButton.setTitle(text, for: .normal)
-            targetDistanceButton.setTitleColor(AppColor.UI.textPrimary, for: .normal)
+            configuration.attributedTitle = AttributedString(
+                text,
+                attributes: AttributeContainer([
+                    .font: AppFont.UI.titleMD,
+                    .foregroundColor: AppColor.UI.textPrimary
+                ])
+            )
         } else {
-            targetDistanceButton.setTitle("목표 거리를 선택하세요", for: .normal)
-            targetDistanceButton.setTitleColor(AppColor.UI.textTertiary, for: .normal)
+            configuration.attributedTitle = AttributedString(
+                "목표 거리를 선택하세요",
+                attributes: AttributeContainer([
+                    .font: AppFont.UI.titleMD,
+                    .foregroundColor: AppColor.UI.textTertiary
+                ])
+            )
         }
+        targetDistanceButton.configuration = configuration
     }
 
     private func applySaveButtonStyle(isEnabled: Bool) {
