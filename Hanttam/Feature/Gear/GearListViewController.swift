@@ -2,7 +2,7 @@
 //  GearListViewController.swift
 //  Hanttam
 //
-//  Created by Codex on 4/8/26.
+//  Created by passi on 4/8/26.
 //
 
 import UIKit
@@ -283,7 +283,7 @@ private final class GearShoeCell: HTTableViewCell {
 
     func configure(with item: GearListViewModel.Item) {
         brandLabel.text = item.shoe.brandName.uppercased()
-        modelLabel.text = item.shoe.modelName
+        modelLabel.text = item.shoe.displayName
         summaryLabel.text = [
             AppFormatter.distance1f(item.stats.totalDistance),
             "세션 \(item.linkedSessionsCount)개"

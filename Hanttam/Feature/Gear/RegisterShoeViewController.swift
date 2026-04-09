@@ -2,7 +2,7 @@
 //  RegisterShoeViewController.swift
 //  Hanttam
 //
-//  Created by Codex on 4/8/26.
+//  Created by passi on 4/8/26.
 //
 
 import UIKit
@@ -11,9 +11,16 @@ import RxSwift
 import SnapKit
 
 final class RegisterShoeViewController: HTViewController {
+    private enum DistanceOption {
+        static let targetDistances: [Double] = stride(from: 100_000.0, through: 1_500_000.0, by: 100_000.0).map { $0 }
+        static let previousDistanceAlertMessage = "이전 달린 거리는 0km 이상, 목표 거리 이하로 입력해주세요."
+        static let targetDistanceRequiredMessage = "먼저 목표 거리를 선택해주세요."
+    }
+
     private let viewModel: RegisterShoeViewModel
     private let onRegistered: ((RegisteredShoe) -> Void)?
     private let saveTapSubject = PublishSubject<Void>()
+    private let targetDistanceSubject = BehaviorSubject<Double?>(value: nil)
     private let disposeBag = DisposeBag()
 
     private let scrollView = UIScrollView()
@@ -22,11 +29,17 @@ final class RegisterShoeViewController: HTViewController {
     private let brandLabel = UILabel()
     private let modelLabel = UILabel()
     private let metaLabel = UILabel()
+    private let nicknameTitleLabel = UILabel()
+    private let nicknameField = UITextField()
     private let distanceTitleLabel = UILabel()
-    private let targetField = UITextField()
-    private let helperLabel = UILabel()
+    private let targetDistanceButton = UIButton(type: .system)
+    private let previousDistanceTitleLabel = UILabel()
+    private let previousDistanceField = UITextField()
     private let saveButton = UIButton(type: .system)
+    private let previousDistanceToolbar = UIToolbar()
     private var imageTask: URLSessionDataTask?
+    private var selectedTargetDistanceMeters: Double?
+    private var canRegister = false
 
     init(item: ShoeCatalogItem, onRegistered: ((RegisteredShoe) -> Void)? = nil) {
         self.viewModel = RegisterShoeViewModel(item: item)
@@ -49,9 +62,12 @@ final class RegisterShoeViewController: HTViewController {
             brandLabel,
             modelLabel,
             metaLabel,
+            nicknameTitleLabel,
+            nicknameField,
             distanceTitleLabel,
-            targetField,
-            helperLabel,
+            targetDistanceButton,
+            previousDistanceTitleLabel,
+            previousDistanceField,
             saveButton
         ].forEach { contentView.addSubview($0) }
     }
@@ -81,21 +97,35 @@ final class RegisterShoeViewController: HTViewController {
             make.top.equalTo(modelLabel.snp.bottom).offset(10)
             make.leading.trailing.equalTo(brandLabel)
         }
-        distanceTitleLabel.snp.makeConstraints { make in
+        nicknameTitleLabel.snp.makeConstraints { make in
             make.top.equalTo(metaLabel.snp.bottom).offset(32)
             make.leading.trailing.equalTo(brandLabel)
         }
-        targetField.snp.makeConstraints { make in
+        nicknameField.snp.makeConstraints { make in
+            make.top.equalTo(nicknameTitleLabel.snp.bottom).offset(12)
+            make.leading.trailing.equalTo(brandLabel)
+            make.height.equalTo(52)
+        }
+        distanceTitleLabel.snp.makeConstraints { make in
+            make.top.equalTo(nicknameField.snp.bottom).offset(24)
+            make.leading.trailing.equalTo(brandLabel)
+        }
+        targetDistanceButton.snp.makeConstraints { make in
             make.top.equalTo(distanceTitleLabel.snp.bottom).offset(12)
             make.leading.trailing.equalTo(brandLabel)
             make.height.equalTo(52)
         }
-        helperLabel.snp.makeConstraints { make in
-            make.top.equalTo(targetField.snp.bottom).offset(10)
+        previousDistanceTitleLabel.snp.makeConstraints { make in
+            make.top.equalTo(targetDistanceButton.snp.bottom).offset(24)
             make.leading.trailing.equalTo(brandLabel)
         }
+        previousDistanceField.snp.makeConstraints { make in
+            make.top.equalTo(previousDistanceTitleLabel.snp.bottom).offset(12)
+            make.leading.trailing.equalTo(brandLabel)
+            make.height.equalTo(52)
+        }
         saveButton.snp.makeConstraints { make in
-            make.top.equalTo(helperLabel.snp.bottom).offset(28)
+            make.top.equalTo(previousDistanceField.snp.bottom).offset(28)
             make.leading.trailing.equalTo(brandLabel)
             make.height.equalTo(54)
             make.bottom.equalToSuperview().inset(32)
@@ -131,33 +161,71 @@ final class RegisterShoeViewController: HTViewController {
         distanceTitleLabel.textColor = AppColor.UI.textPrimary
         distanceTitleLabel.text = "목표 거리"
 
-        targetField.borderStyle = .none
-        targetField.layer.cornerRadius = 14
-        targetField.layer.borderWidth = 1
-        targetField.layer.borderColor = AppColor.UI.border.cgColor
-        targetField.backgroundColor = AppColor.UI.cardBackground
-        targetField.font = AppFont.UI.titleMD
-        targetField.keyboardType = .decimalPad
-        targetField.placeholder = "예: 600"
-        targetField.setLeftPadding(16)
-        targetField.setRightPadding(16)
+        nicknameTitleLabel.font = AppFont.UI.titleMD
+        nicknameTitleLabel.textColor = AppColor.UI.textPrimary
+        nicknameTitleLabel.text = "별명"
 
-        helperLabel.font = AppFont.UI.bodySM
-        helperLabel.textColor = AppColor.UI.textSecondary
-        helperLabel.text = "km 단위로 입력하면 내부에서는 meter로 저장됩니다."
+        previousDistanceTitleLabel.font = AppFont.UI.titleMD
+        previousDistanceTitleLabel.textColor = AppColor.UI.textPrimary
+        previousDistanceTitleLabel.text = "이전 달린 거리"
+
+        nicknameField.borderStyle = .none
+        nicknameField.layer.cornerRadius = 14
+        nicknameField.layer.borderWidth = 1
+        nicknameField.layer.borderColor = AppColor.UI.border.cgColor
+        nicknameField.backgroundColor = AppColor.UI.cardBackground
+        nicknameField.font = AppFont.UI.titleMD
+        nicknameField.placeholder = "별명을 입력해주세요"
+        nicknameField.setLeftPadding(16)
+        nicknameField.setRightPadding(16)
+        nicknameField.returnKeyType = .done
+        nicknameField.delegate = self
+
+        targetDistanceButton.layer.cornerRadius = 14
+        targetDistanceButton.layer.borderWidth = 1
+        targetDistanceButton.layer.borderColor = AppColor.UI.border.cgColor
+        targetDistanceButton.backgroundColor = AppColor.UI.cardBackground
+        targetDistanceButton.contentHorizontalAlignment = .left
+        targetDistanceButton.contentEdgeInsets = UIEdgeInsets(top: 0, left: 16, bottom: 0, right: 16)
+        targetDistanceButton.setTitle("목표 거리를 선택하세요", for: .normal)
+        targetDistanceButton.setTitleColor(AppColor.UI.textTertiary, for: .normal)
+        targetDistanceButton.titleLabel?.font = AppFont.UI.titleMD
+        targetDistanceButton.setImage(UIImage(systemName: "chevron.down"), for: .normal)
+        targetDistanceButton.tintColor = AppColor.UI.textSecondary
+        targetDistanceButton.semanticContentAttribute = .forceRightToLeft
+        targetDistanceButton.showsMenuAsPrimaryAction = true
+        targetDistanceButton.changesSelectionAsPrimaryAction = false
+        targetDistanceButton.menu = makeTargetDistanceMenu()
+
+        previousDistanceField.borderStyle = .none
+        previousDistanceField.layer.cornerRadius = 14
+        previousDistanceField.layer.borderWidth = 1
+        previousDistanceField.layer.borderColor = AppColor.UI.border.cgColor
+        previousDistanceField.backgroundColor = AppColor.UI.cardBackground
+        previousDistanceField.font = AppFont.UI.titleMD
+        previousDistanceField.keyboardType = .decimalPad
+        previousDistanceField.returnKeyType = .done
+        previousDistanceField.placeholder = "예: 120.5"
+        previousDistanceField.setLeftPadding(16)
+        previousDistanceField.setRightPadding(16)
+        previousDistanceField.inputAccessoryView = previousDistanceToolbar
+        previousDistanceField.delegate = self
 
         saveButton.setTitle("운동화 등록", for: .normal)
-        saveButton.backgroundColor = AppColor.UI.primary
         saveButton.setTitleColor(.white, for: .normal)
         saveButton.titleLabel?.font = AppFont.UI.buttonMD
         saveButton.layer.cornerRadius = 16
         saveButton.addTarget(self, action: #selector(saveTapped), for: .touchUpInside)
+        configureToolbar(previousDistanceToolbar, action: #selector(confirmPreviousDistanceEntry))
+        applySaveButtonStyle(isEnabled: false)
     }
 
     private func bind() {
         let output = viewModel.transform(
             input: .init(
-                targetDistanceText: targetField.rx.text.orEmpty.asObservable(),
+                nicknameText: nicknameField.rx.text.orEmpty.asObservable(),
+                selectedTargetDistance: targetDistanceSubject.asObservable(),
+                previousDistanceText: previousDistanceField.rx.text.orEmpty.asObservable(),
                 saveTap: saveTapSubject.asObservable()
             )
         )
@@ -174,10 +242,22 @@ final class RegisterShoeViewController: HTViewController {
             })
             .disposed(by: disposeBag)
 
+        output.targetDistanceText
+            .drive(onNext: { [weak self] text in
+                self?.updateTargetDistanceButtonTitle(text)
+            })
+            .disposed(by: disposeBag)
+
+        output.isRegisterEnabled
+            .drive(onNext: { [weak self] isEnabled in
+                self?.canRegister = isEnabled
+                self?.updateSaveButtonState(isSaving: false)
+            })
+            .disposed(by: disposeBag)
+
         output.isSaving
             .drive(onNext: { [weak self] saving in
-                self?.saveButton.isEnabled = !saving
-                self?.saveButton.alpha = saving ? 0.6 : 1.0
+                self?.updateSaveButtonState(isSaving: saving)
             })
             .disposed(by: disposeBag)
 
@@ -204,10 +284,94 @@ final class RegisterShoeViewController: HTViewController {
         saveTapSubject.onNext(())
     }
 
+    @objc private func confirmPreviousDistanceEntry() {
+        _ = validatePreviousDistanceAndDismissKeyboardIfNeeded()
+    }
+
+    private func configureToolbar(_ toolbar: UIToolbar, action: Selector) {
+        toolbar.sizeToFit()
+        toolbar.items = [
+            UIBarButtonItem(barButtonSystemItem: .flexibleSpace, target: nil, action: nil),
+            UIBarButtonItem(title: "완료", style: .done, target: self, action: action)
+        ]
+    }
+
+    @discardableResult
+    private func validatePreviousDistanceAndDismissKeyboardIfNeeded() -> Bool {
+        let text = previousDistanceField.text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if text.isEmpty {
+            previousDistanceField.resignFirstResponder()
+            return true
+        }
+
+        guard let selectedTargetDistanceMeters else {
+            showAlert(message: DistanceOption.targetDistanceRequiredMessage)
+            return false
+        }
+
+        let isValid = viewModel.validatePreviousDistance(text, targetDistanceMeters: selectedTargetDistanceMeters)
+        guard isValid else {
+            showAlert(message: DistanceOption.previousDistanceAlertMessage)
+            return false
+        }
+
+        previousDistanceField.resignFirstResponder()
+        return true
+    }
+
     private func showAlert(message: String) {
         let alert = UIAlertController(title: nil, message: message, preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: "확인", style: .default))
         present(alert, animated: true)
+    }
+
+    private func makeTargetDistanceMenu() -> UIMenu {
+        let actions = DistanceOption.targetDistances.map { distance in
+            let kilometers = Int(distance / 1000.0)
+            let isSelected = selectedTargetDistanceMeters == distance
+            return UIAction(
+                title: "\(kilometers) km",
+                state: isSelected ? .on : .off
+            ) { [weak self] _ in
+                self?.selectedTargetDistanceMeters = distance
+                self?.targetDistanceSubject.onNext(distance)
+                self?.targetDistanceButton.menu = self?.makeTargetDistanceMenu()
+            }
+        }
+        return UIMenu(title: "", children: actions)
+    }
+
+    private func updateTargetDistanceButtonTitle(_ text: String?) {
+        if let text, !text.isEmpty {
+            targetDistanceButton.setTitle(text, for: .normal)
+            targetDistanceButton.setTitleColor(AppColor.UI.textPrimary, for: .normal)
+        } else {
+            targetDistanceButton.setTitle("목표 거리를 선택하세요", for: .normal)
+            targetDistanceButton.setTitleColor(AppColor.UI.textTertiary, for: .normal)
+        }
+    }
+
+    private func applySaveButtonStyle(isEnabled: Bool) {
+        let accentColor = RunningLevelManager.shared.accentUIColor
+        saveButton.backgroundColor = isEnabled ? accentColor : accentColor.withAlphaComponent(0.35)
+    }
+
+    private func updateSaveButtonState(isSaving: Bool) {
+        let isEnabled = canRegister && !isSaving
+        saveButton.isEnabled = isEnabled
+        saveButton.alpha = isEnabled ? 1.0 : 0.6
+        applySaveButtonStyle(isEnabled: isEnabled)
+    }
+}
+
+extension RegisterShoeViewController: UITextFieldDelegate {
+    func textFieldShouldReturn(_ textField: UITextField) -> Bool {
+        if textField === nicknameField {
+            textField.resignFirstResponder()
+            return true
+        }
+        guard textField === previousDistanceField else { return true }
+        return validatePreviousDistanceAndDismissKeyboardIfNeeded()
     }
 }
 

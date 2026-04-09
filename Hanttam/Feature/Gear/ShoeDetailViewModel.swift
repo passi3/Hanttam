@@ -2,7 +2,7 @@
 //  ShoeDetailViewModel.swift
 //  Hanttam
 //
-//  Created by Codex on 4/8/26.
+//  Created by passi on 4/8/26.
 //
 
 import Foundation
@@ -54,7 +54,12 @@ final class ShoeDetailViewModel: HTReusableVMProtocol {
         self.viewDataRelay = BehaviorRelay(
             value: ViewData(
                 shoe: shoe,
-                stats: ShoeAggregateStats(totalDistance: 0, totalDuration: 0, targetDistanceMeters: shoe.targetDistanceMeters),
+                stats: ShoeAggregateStats(
+                    totalDistance: shoe.initialDistanceMeters,
+                    totalDuration: 0,
+                    targetDistanceMeters: shoe.targetDistanceMeters,
+                    paceDistanceMeters: 0
+                ),
                 sessions: []
             )
         )
@@ -97,7 +102,12 @@ final class ShoeDetailViewModel: HTReusableVMProtocol {
                 self.viewDataRelay.accept(
                     ViewData(
                         shoe: self.shoe,
-                        stats: ShoeAggregateStats(totalDistance: 0, totalDuration: 0, targetDistanceMeters: self.shoe.targetDistanceMeters),
+                        stats: ShoeAggregateStats(
+                            totalDistance: self.shoe.initialDistanceMeters,
+                            totalDuration: 0,
+                            targetDistanceMeters: self.shoe.targetDistanceMeters,
+                            paceDistanceMeters: 0
+                        ),
                         sessions: []
                     )
                 )
@@ -130,15 +140,17 @@ final class ShoeDetailViewModel: HTReusableVMProtocol {
                     runningRecords: runningRecords,
                     intervalRecords: intervalRecords
                 )
-                let totalDistance = sessions.reduce(0) { $0 + $1.distance }
+                let sessionDistance = sessions.reduce(0) { $0 + $1.distance }
                 let totalDuration = sessions.reduce(0) { $0 + $1.duration }
+                let totalDistance = self.shoe.initialDistanceMeters + sessionDistance
                 self.viewDataRelay.accept(
                     ViewData(
                         shoe: self.shoe,
                         stats: ShoeAggregateStats(
                             totalDistance: totalDistance,
                             totalDuration: totalDuration,
-                            targetDistanceMeters: self.shoe.targetDistanceMeters
+                            targetDistanceMeters: self.shoe.targetDistanceMeters,
+                            paceDistanceMeters: sessionDistance
                         ),
                         sessions: sessions
                     )
