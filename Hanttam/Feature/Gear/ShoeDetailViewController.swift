@@ -11,13 +11,10 @@ import RxSwift
 import SnapKit
 
 final class ShoeDetailViewController: HTViewController {
-    private enum DistanceOption {
-        static let targetDistances: [Double] = stride(from: 100_000.0, through: 1_500_000.0, by: 100_000.0).map { $0 }
-    }
-
     private let viewModel: ShoeDetailViewModel
     private let variantService: ShoeCatalogVariantServicing
     private let store: GearLocalStoring
+    private let initialShoe: RegisteredShoe
     private let viewDidLoadSubject = PublishSubject<Void>()
     private let disposeBag = DisposeBag()
 
@@ -25,32 +22,20 @@ final class ShoeDetailViewController: HTViewController {
     private let contentView = UIView()
     private let stackView = UIStackView()
     private let headerView: GearDetailHeaderView
-    private let editCardView = HTView()
-    private let nicknameTitleLabel = UILabel()
-    private let nicknameField = UITextField()
-    private let targetDistanceTitleLabel = UILabel()
-    private let targetDistanceField = UITextField()
-    private let saveEditsButton = UIButton(type: .system)
-    private let statsCardView = GearStatsCardView()
+    private let summaryCardView = GearStatsCardView()
     private let sessionsHeaderLabel = UILabel()
     private let sessionsStackView = UIStackView()
     private let emptySessionsLabel = UILabel()
-    private let targetDistancePicker = UIPickerView()
-    private let targetDistanceToolbar = UIToolbar()
 
-    private var sessions: [GearLinkedSessionItem] = []
     private var currentViewData: ShoeDetailViewModel.ViewData?
-    private var variants: [ShoeCatalogItem] = []
-    private var selectedTargetDistanceMeters: Double?
-    private var isApplyingViewData = false
 
     init(
         shoe: RegisteredShoe,
         variantService: ShoeCatalogVariantServicing = SupabaseShoeSearchService(),
         store: GearLocalStoring = GearLocalStore.shared
     ) {
-        let viewModel = ShoeDetailViewModel(shoe: shoe)
-        self.viewModel = viewModel
+        self.initialShoe = shoe
+        self.viewModel = ShoeDetailViewModel(shoe: shoe)
         self.variantService = variantService
         self.store = store
         self.headerView = GearDetailHeaderView(shoe: shoe)
@@ -69,10 +54,7 @@ final class ShoeDetailViewController: HTViewController {
         view.addSubview(scrollView)
         scrollView.addSubview(contentView)
         contentView.addSubview(stackView)
-        [nicknameTitleLabel, nicknameField, targetDistanceTitleLabel, targetDistanceField, saveEditsButton].forEach {
-            editCardView.addSubview($0)
-        }
-        [headerView, editCardView, statsCardView, sessionsHeaderLabel, sessionsStackView, emptySessionsLabel].forEach {
+        [headerView, summaryCardView, sessionsHeaderLabel, sessionsStackView, emptySessionsLabel].forEach {
             stackView.addArrangedSubview($0)
         }
     }
@@ -88,91 +70,22 @@ final class ShoeDetailViewController: HTViewController {
         stackView.snp.makeConstraints { make in
             make.edges.equalToSuperview().inset(UIEdgeInsets(top: 20, left: 20, bottom: 32, right: 20))
         }
-        nicknameTitleLabel.snp.makeConstraints { make in
-            make.top.leading.trailing.equalToSuperview().inset(20)
-        }
-        nicknameField.snp.makeConstraints { make in
-            make.top.equalTo(nicknameTitleLabel.snp.bottom).offset(10)
-            make.leading.trailing.equalToSuperview().inset(20)
-            make.height.equalTo(52)
-        }
-        targetDistanceTitleLabel.snp.makeConstraints { make in
-            make.top.equalTo(nicknameField.snp.bottom).offset(18)
-            make.leading.trailing.equalToSuperview().inset(20)
-        }
-        targetDistanceField.snp.makeConstraints { make in
-            make.top.equalTo(targetDistanceTitleLabel.snp.bottom).offset(10)
-            make.leading.trailing.equalToSuperview().inset(20)
-            make.height.equalTo(52)
-        }
-        saveEditsButton.snp.makeConstraints { make in
-            make.top.equalTo(targetDistanceField.snp.bottom).offset(20)
-            make.leading.trailing.bottom.equalToSuperview().inset(20)
-            make.height.equalTo(52)
-        }
     }
 
     override func configView() {
-        title = "운동화 상세"
+        title = initialShoe.displayName
         view.backgroundColor = AppColor.UI.backgroundGrouped
+
+        navigationItem.rightBarButtonItem = UIBarButtonItem(
+            title: "수정",
+            style: .plain,
+            target: self,
+            action: #selector(editButtonTapped)
+        )
+        navigationItem.rightBarButtonItem?.tintColor = AppColor.UI.textPrimary
 
         stackView.axis = .vertical
         stackView.spacing = 18
-
-        editCardView.backgroundColor = AppColor.UI.cardBackground
-        editCardView.layer.cornerRadius = 24
-        editCardView.layer.borderWidth = 1
-        editCardView.layer.borderColor = AppColor.UI.border.cgColor
-
-        nicknameTitleLabel.font = AppFont.UI.titleMD
-        nicknameTitleLabel.textColor = AppColor.UI.textPrimary
-        nicknameTitleLabel.text = "별칭"
-
-        nicknameField.borderStyle = .none
-        nicknameField.layer.cornerRadius = 14
-        nicknameField.layer.borderWidth = 1
-        nicknameField.layer.borderColor = AppColor.UI.border.cgColor
-        nicknameField.backgroundColor = AppColor.UI.cardBackground
-        nicknameField.font = AppFont.UI.titleMD
-        nicknameField.attributedPlaceholder = NSAttributedString(
-            string: "별칭을 입력하세요",
-            attributes: [.foregroundColor: AppColor.UI.textTertiary]
-        )
-        nicknameField.setLeftPadding(16)
-        nicknameField.setRightPadding(16)
-        nicknameField.returnKeyType = .done
-        nicknameField.delegate = self
-
-        targetDistanceTitleLabel.font = AppFont.UI.titleMD
-        targetDistanceTitleLabel.textColor = AppColor.UI.textPrimary
-        targetDistanceTitleLabel.text = "목표 거리"
-
-        targetDistanceField.borderStyle = .none
-        targetDistanceField.layer.cornerRadius = 14
-        targetDistanceField.layer.borderWidth = 1
-        targetDistanceField.layer.borderColor = AppColor.UI.border.cgColor
-        targetDistanceField.backgroundColor = AppColor.UI.cardBackground
-        targetDistanceField.font = AppFont.UI.titleMD
-        targetDistanceField.tintColor = .clear
-        targetDistanceField.attributedPlaceholder = NSAttributedString(
-            string: "목표 거리를 선택하세요",
-            attributes: [.foregroundColor: AppColor.UI.textTertiary]
-        )
-        targetDistanceField.setLeftPadding(16)
-        targetDistanceField.setRightPadding(40)
-        targetDistanceField.inputView = targetDistancePicker
-        targetDistanceField.inputAccessoryView = targetDistanceToolbar
-        targetDistanceField.delegate = self
-
-        targetDistancePicker.dataSource = self
-        targetDistancePicker.delegate = self
-        configureToolbar(targetDistanceToolbar, action: #selector(confirmTargetDistanceSelection))
-
-        saveEditsButton.setTitle("변경 저장", for: .normal)
-        saveEditsButton.setTitleColor(.white, for: .normal)
-        saveEditsButton.titleLabel?.font = AppFont.UI.buttonMD
-        saveEditsButton.layer.cornerRadius = 16
-        saveEditsButton.addTarget(self, action: #selector(saveEditsTapped), for: .touchUpInside)
 
         sessionsHeaderLabel.font = AppFont.UI.titleMD
         sessionsHeaderLabel.textColor = AppColor.UI.textPrimary
@@ -187,8 +100,6 @@ final class ShoeDetailViewController: HTViewController {
         emptySessionsLabel.numberOfLines = 0
         emptySessionsLabel.textAlignment = .center
         emptySessionsLabel.isHidden = true
-
-        applySaveButtonStyle(isEnabled: false)
     }
 
     private func bind() {
@@ -200,19 +111,16 @@ final class ShoeDetailViewController: HTViewController {
 
         output.viewData
             .drive(onNext: { [weak self] viewData in
-                self?.currentViewData = viewData
-                self?.applyEditableFields(with: viewData.shoe)
-                self?.headerView.configure(
+                guard let self else { return }
+                currentViewData = viewData
+                title = viewData.shoe.displayName
+                headerView.configure(with: viewData.shoe, stats: viewData.stats)
+                summaryCardView.configure(
                     with: viewData.shoe,
                     stats: viewData.stats,
-                    variants: self?.variants ?? [],
-                    onSelectVariant: { [weak self] item in
-                        self?.updateColorway(to: item)
-                    }
+                    sessionsCount: viewData.sessions.count
                 )
-                self?.statsCardView.configure(with: viewData.stats)
-                self?.renderSessions(viewData.sessions)
-                self?.fetchVariantsIfNeeded(for: viewData.shoe)
+                renderSessions(viewData.sessions)
             })
             .disposed(by: disposeBag)
 
@@ -223,133 +131,17 @@ final class ShoeDetailViewController: HTViewController {
             .disposed(by: disposeBag)
     }
 
-    private func fetchVariantsIfNeeded(for shoe: RegisteredShoe) {
-        guard !shoe.brandName.isEmpty, !shoe.modelName.isEmpty else { return }
-        if !variants.isEmpty,
-           variants.allSatisfy({ $0.brandName == shoe.brandName && $0.modelName == shoe.modelName }) {
-            return
-        }
-        variantService.fetchVariants(brandName: shoe.brandName, modelName: shoe.modelName) { [weak self] result in
-            guard let self else { return }
-            switch result {
-            case .success(let items):
-                self.variants = items
-                if let viewData = self.currentViewData {
-                    self.headerView.configure(
-                        with: viewData.shoe,
-                        stats: viewData.stats,
-                        variants: items,
-                        onSelectVariant: { [weak self] item in
-                            self?.updateColorway(to: item)
-                        }
-                    )
-                }
-            case .failure:
-                break
-            }
-        }
-    }
-
-    private func updateColorway(to item: ShoeCatalogItem) {
-        guard var shoe = currentViewData?.shoe else { return }
-        guard shoe.sku != item.sku else { return }
-        shoe = RegisteredShoe(
-            id: shoe.id,
-            catalogID: item.id,
-            nickname: shoe.nickname,
-            brandName: item.brandName,
-            modelName: item.modelName,
-            sku: item.sku,
-            colors: item.colors,
-            imageURL: item.imageURL,
-            createdAt: item.createdAt,
-            registeredAt: shoe.registeredAt,
-            targetDistanceMeters: shoe.targetDistanceMeters,
-            initialDistanceMeters: shoe.initialDistanceMeters
+    @objc private func editButtonTapped() {
+        let shoe = currentViewData?.shoe ?? initialShoe
+        let viewController = ShoeEditViewController(
+            shoe: shoe,
+            variantService: variantService,
+            store: store
         )
-        store.updateRegisteredShoe(shoe)
-    }
-
-    private func applyEditableFields(with shoe: RegisteredShoe) {
-        isApplyingViewData = true
-        nicknameField.text = shoe.nickname
-        selectedTargetDistanceMeters = shoe.targetDistanceMeters
-        updateTargetDistanceFieldText(for: shoe.targetDistanceMeters)
-        isApplyingViewData = false
-        updateSaveButtonState()
-    }
-
-    private func updateTargetDistanceFieldText(for distance: Double?) {
-        guard let distance else {
-            targetDistanceField.text = nil
-            targetDistanceField.textColor = AppColor.UI.textTertiary
-            return
-        }
-        targetDistanceField.text = "\(Int(distance / 1000.0)) km"
-        targetDistanceField.textColor = AppColor.UI.textPrimary
-    }
-
-    private func hasEditableChanges(for shoe: RegisteredShoe) -> Bool {
-        let trimmedNickname = nicknameField.text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let normalizedNickname = trimmedNickname.isEmpty ? nil : trimmedNickname
-        let trimmedCurrentNickname = shoe.nickname?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let currentNickname = trimmedCurrentNickname.isEmpty ? nil : trimmedCurrentNickname
-        return normalizedNickname != currentNickname || selectedTargetDistanceMeters != shoe.targetDistanceMeters
-    }
-
-    private func updateSaveButtonState() {
-        let isEnabled = currentViewData.map { hasEditableChanges(for: $0.shoe) } ?? false
-        saveEditsButton.isEnabled = isEnabled
-        saveEditsButton.alpha = isEnabled ? 1.0 : 0.6
-        applySaveButtonStyle(isEnabled: isEnabled)
-    }
-
-    private func applySaveButtonStyle(isEnabled: Bool) {
-        let accentColor = RunningLevelManager.shared.accentUIColor
-        saveEditsButton.backgroundColor = isEnabled ? accentColor : accentColor.withAlphaComponent(0.35)
-    }
-
-    private func configureToolbar(_ toolbar: UIToolbar, action: Selector) {
-        toolbar.sizeToFit()
-        toolbar.items = [
-            UIBarButtonItem(barButtonSystemItem: .flexibleSpace, target: nil, action: nil),
-            UIBarButtonItem(title: "완료", style: .done, target: self, action: action)
-        ]
-    }
-
-    @objc private func confirmTargetDistanceSelection() {
-        if selectedTargetDistanceMeters == nil,
-           let firstDistance = DistanceOption.targetDistances.first {
-            selectedTargetDistanceMeters = firstDistance
-            updateTargetDistanceFieldText(for: firstDistance)
-        }
-        targetDistanceField.resignFirstResponder()
-        updateSaveButtonState()
-    }
-
-    @objc private func saveEditsTapped() {
-        guard var shoe = currentViewData?.shoe else { return }
-        let trimmedNickname = nicknameField.text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        shoe = RegisteredShoe(
-            id: shoe.id,
-            catalogID: shoe.catalogID,
-            nickname: trimmedNickname.isEmpty ? nil : trimmedNickname,
-            brandName: shoe.brandName,
-            modelName: shoe.modelName,
-            sku: shoe.sku,
-            colors: shoe.colors,
-            imageURL: shoe.imageURL,
-            createdAt: shoe.createdAt,
-            registeredAt: shoe.registeredAt,
-            targetDistanceMeters: selectedTargetDistanceMeters ?? shoe.targetDistanceMeters,
-            initialDistanceMeters: shoe.initialDistanceMeters
-        )
-        store.updateRegisteredShoe(shoe)
-        view.endEditing(true)
+        navigationController?.pushViewController(viewController, animated: true)
     }
 
     private func renderSessions(_ sessions: [GearLinkedSessionItem]) {
-        self.sessions = sessions
         sessionsStackView.arrangedSubviews.forEach { view in
             sessionsStackView.removeArrangedSubview(view)
             view.removeFromSuperview()
@@ -361,8 +153,26 @@ final class ShoeDetailViewController: HTViewController {
         sessions.forEach { session in
             let rowView = GearSessionRowView()
             rowView.configure(with: session)
+            rowView.onTap = { [weak self] in
+                self?.presentRunDetail(for: session)
+            }
             sessionsStackView.addArrangedSubview(rowView)
         }
+    }
+
+    private func presentRunDetail(for session: GearLinkedSessionItem) {
+        guard let record = session.runningRecord else {
+            showTransientMessage("워크아웃 상세 데이터를 불러올 수 없습니다.")
+            return
+        }
+
+        let viewController: RunDetailTabViewController
+        if let intervalRecord = session.intervalRecord {
+            viewController = RunDetailTabViewController(record: record, intervalRecord: intervalRecord)
+        } else {
+            viewController = RunDetailTabViewController(record: record)
+        }
+        present(viewController, animated: true)
     }
 
     private func showTransientMessage(_ message: String) {
@@ -374,65 +184,15 @@ final class ShoeDetailViewController: HTViewController {
     }
 }
 
-extension ShoeDetailViewController: UITextFieldDelegate {
-    func textFieldShouldBeginEditing(_ textField: UITextField) -> Bool {
-        if textField === targetDistanceField {
-            let distance = selectedTargetDistanceMeters ?? DistanceOption.targetDistances.first
-            if let distance,
-               let index = DistanceOption.targetDistances.firstIndex(of: distance) {
-                targetDistancePicker.selectRow(index, inComponent: 0, animated: false)
-            }
-        }
-        return true
-    }
-
-    func textFieldDidChangeSelection(_ textField: UITextField) {
-        guard !isApplyingViewData else { return }
-        if textField === nicknameField {
-            updateSaveButtonState()
-        }
-    }
-
-    func textFieldShouldReturn(_ textField: UITextField) -> Bool {
-        textField.resignFirstResponder()
-        updateSaveButtonState()
-        return true
-    }
-}
-
-extension ShoeDetailViewController: UIPickerViewDataSource, UIPickerViewDelegate {
-    func numberOfComponents(in pickerView: UIPickerView) -> Int { 1 }
-
-    func pickerView(_ pickerView: UIPickerView, numberOfRowsInComponent component: Int) -> Int {
-        DistanceOption.targetDistances.count
-    }
-
-    func pickerView(_ pickerView: UIPickerView, titleForRow row: Int, forComponent component: Int) -> String? {
-        let distance = DistanceOption.targetDistances[row]
-        return "\(Int(distance / 1000.0)) km"
-    }
-
-    func pickerView(_ pickerView: UIPickerView, didSelectRow row: Int, inComponent component: Int) {
-        let distance = DistanceOption.targetDistances[row]
-        selectedTargetDistanceMeters = distance
-        updateTargetDistanceFieldText(for: distance)
-        updateSaveButtonState()
-    }
-}
-
 private final class GearDetailHeaderView: HTView {
+    private let distanceValueLabel = UILabel()
+    private let distanceUnitLabel = UILabel()
     private let shoeImageView = UIImageView()
-    private let variantsCollectionView = UICollectionView(frame: .zero, collectionViewLayout: UICollectionViewFlowLayout())
-    private let brandLabel = UILabel()
-    private let modelLabel = UILabel()
-    private let metaLabel = UILabel()
     private let progressLabel = UILabel()
     private let progressView = UIProgressView(progressViewStyle: .default)
+
     private var imageTask: URLSessionDataTask?
-    private var variants: [ShoeCatalogItem] = []
-    private var selectedSKU: String?
     private var currentImageURL: String?
-    private var onSelectVariant: ((ShoeCatalogItem) -> Void)?
     private let shoe: RegisteredShoe
 
     init(shoe: RegisteredShoe) {
@@ -443,41 +203,121 @@ private final class GearDetailHeaderView: HTView {
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
     override func configHierarchy() {
-        [shoeImageView, variantsCollectionView, brandLabel, modelLabel, metaLabel, progressLabel, progressView].forEach { addSubview($0) }
+        [distanceValueLabel, distanceUnitLabel, shoeImageView, progressLabel, progressView].forEach { addSubview($0) }
     }
 
     override func configLayout() {
+        distanceValueLabel.snp.makeConstraints { make in
+            make.top.equalToSuperview().offset(28)
+            make.centerX.equalToSuperview()
+        }
+        distanceUnitLabel.snp.makeConstraints { make in
+            make.top.equalTo(distanceValueLabel.snp.bottom).offset(-18)
+            make.centerX.equalToSuperview()
+        }
         shoeImageView.snp.makeConstraints { make in
-            make.top.leading.equalToSuperview().inset(20)
-            make.width.height.equalTo(116)
-        }
-        variantsCollectionView.snp.makeConstraints { make in
-            make.top.equalTo(shoeImageView.snp.bottom).offset(12)
-            make.leading.equalTo(shoeImageView)
-            make.width.equalTo(116)
-            make.height.equalTo(60)
-        }
-        brandLabel.snp.makeConstraints { make in
-            make.top.equalTo(shoeImageView)
-            make.leading.equalTo(shoeImageView.snp.trailing).offset(16)
-            make.trailing.equalToSuperview().inset(20)
-        }
-        modelLabel.snp.makeConstraints { make in
-            make.top.equalTo(brandLabel.snp.bottom).offset(6)
-            make.leading.trailing.equalTo(brandLabel)
-        }
-        metaLabel.snp.makeConstraints { make in
-            make.top.equalTo(modelLabel.snp.bottom).offset(10)
-            make.leading.trailing.equalTo(brandLabel)
+            make.top.equalTo(distanceUnitLabel.snp.top).offset(-52)
+            make.leading.trailing.equalToSuperview().inset(20)
+            make.height.equalTo(220)
         }
         progressLabel.snp.makeConstraints { make in
-            make.top.equalTo(variantsCollectionView.snp.bottom).offset(20)
-            make.leading.trailing.equalToSuperview().inset(20)
+            make.top.equalTo(shoeImageView.snp.bottom).offset(8)
+            make.leading.trailing.equalToSuperview().inset(24)
         }
         progressView.snp.makeConstraints { make in
-            make.top.equalTo(progressLabel.snp.bottom).offset(10)
-            make.leading.trailing.bottom.equalToSuperview().inset(20)
-            make.height.equalTo(10)
+            make.top.equalTo(progressLabel.snp.bottom).offset(12)
+            make.leading.trailing.equalToSuperview().inset(24)
+            make.bottom.equalToSuperview().inset(24)
+            make.height.equalTo(8)
+        }
+    }
+
+    override func configView() {
+        backgroundColor = AppColor.UI.cardBackground
+        layer.cornerRadius = 28
+        layer.borderWidth = 1
+        layer.borderColor = AppColor.UI.border.cgColor
+
+        distanceValueLabel.font = UIFont.systemFont(ofSize: 70, weight: .black)
+        distanceValueLabel.textColor = .black
+        distanceValueLabel.textAlignment = .center
+
+        distanceUnitLabel.font = UIFont.systemFont(ofSize: 70, weight: .black)
+        distanceUnitLabel.textColor = .black
+        distanceUnitLabel.text = "KM"
+        distanceUnitLabel.textAlignment = .center
+
+        shoeImageView.contentMode = .scaleAspectFit
+        shoeImageView.image = UIImage(systemName: "shoeprints.fill")
+        shoeImageView.tintColor = AppColor.UI.textSecondary
+
+        progressLabel.font = AppFont.UI.headlineSM
+        progressLabel.textColor = AppColor.UI.textPrimary
+        progressLabel.textAlignment = .center
+        progressLabel.numberOfLines = 0
+
+        progressView.trackTintColor = AppColor.UI.border
+        progressView.progressTintColor = RunningLevelManager.shared.accentUIColor
+        progressView.layer.cornerRadius = 4
+        progressView.clipsToBounds = true
+    }
+
+    func configure(with shoe: RegisteredShoe, stats: ShoeAggregateStats) {
+        distanceValueLabel.text = formattedDistanceText(for: stats.totalDistance)
+
+        if stats.overDistance > 0 {
+            progressLabel.text = "목표 \(AppFormatter.distance1f(shoe.targetDistanceMeters)) 초과 · +\(AppFormatter.distance1f(stats.overDistance))"
+        } else {
+            let remainingDistance = max(shoe.targetDistanceMeters - stats.totalDistance, 0)
+            progressLabel.text = "목표 달성까지 \(AppFormatter.distance1f(remainingDistance))"
+        }
+
+        progressView.progress = Float(stats.progress)
+
+        if currentImageURL != shoe.imageURL {
+            currentImageURL = shoe.imageURL
+            imageTask?.cancel()
+            imageTask = RemoteImageLoader.shared.loadImage(from: shoe.imageURL) { [weak self] image in
+                self?.shoeImageView.image = image ?? UIImage(systemName: "shoeprints.fill")
+                self?.shoeImageView.tintColor = AppColor.UI.textSecondary
+            }
+        }
+    }
+
+    private func formattedDistanceText(for distanceMeters: Double) -> String {
+        let distanceKilometers = distanceMeters / 1000.0
+        let rounded = (distanceKilometers * 10).rounded() / 10
+        if abs(rounded.rounded() - rounded) < 0.05 {
+            return "\(Int(rounded.rounded()))"
+        }
+        return String(format: "%.1f", rounded)
+    }
+}
+
+private final class GearStatsCardView: HTView {
+    private let titleLabel = UILabel()
+    private let subtitleLabel = UILabel()
+    private let metricsStackView = UIStackView()
+    private let runsMetricView = GearMetricView()
+    private let paceMetricView = GearMetricView()
+    private let durationMetricView = GearMetricView()
+
+    override func configHierarchy() {
+        [titleLabel, subtitleLabel, metricsStackView].forEach { addSubview($0) }
+        [runsMetricView, paceMetricView, durationMetricView].forEach { metricsStackView.addArrangedSubview($0) }
+    }
+
+    override func configLayout() {
+        titleLabel.snp.makeConstraints { make in
+            make.top.leading.trailing.equalToSuperview().inset(24)
+        }
+        subtitleLabel.snp.makeConstraints { make in
+            make.top.equalTo(titleLabel.snp.bottom).offset(10)
+            make.leading.trailing.equalToSuperview().inset(24)
+        }
+        metricsStackView.snp.makeConstraints { make in
+            make.top.equalTo(subtitleLabel.snp.bottom).offset(24)
+            make.leading.trailing.bottom.equalToSuperview().inset(24)
         }
     }
 
@@ -487,252 +327,70 @@ private final class GearDetailHeaderView: HTView {
         layer.borderWidth = 1
         layer.borderColor = AppColor.UI.border.cgColor
 
-        shoeImageView.contentMode = .scaleAspectFit
-        shoeImageView.backgroundColor = AppColor.UI.backgroundSecondary
-        shoeImageView.layer.cornerRadius = 18
-        shoeImageView.clipsToBounds = true
-        shoeImageView.image = UIImage(systemName: "shoeprints.fill")
-        shoeImageView.tintColor = AppColor.UI.textSecondary
+        titleLabel.font = AppFont.UI.headlineSM
+        titleLabel.textColor = AppColor.UI.textPrimary
+        titleLabel.numberOfLines = 2
 
-        if let layout = variantsCollectionView.collectionViewLayout as? UICollectionViewFlowLayout {
-            layout.scrollDirection = .horizontal
-            layout.minimumLineSpacing = 8
-            layout.minimumInteritemSpacing = 8
+        subtitleLabel.font = AppFont.UI.bodyMD
+        subtitleLabel.textColor = AppColor.UI.textSecondary
+        subtitleLabel.numberOfLines = 2
+
+        metricsStackView.axis = .horizontal
+        metricsStackView.distribution = .fillEqually
+        metricsStackView.spacing = 12
+    }
+
+    func configure(with shoe: RegisteredShoe, stats: ShoeAggregateStats, sessionsCount: Int) {
+        titleLabel.text = "\(shoe.brandName) \(shoe.modelName)"
+
+        var metaParts: [String] = []
+        if shoe.displayName != shoe.modelName {
+            metaParts.append("별칭: \(shoe.displayName)")
         }
-        variantsCollectionView.register(GearColorwayCell.self, forCellWithReuseIdentifier: GearColorwayCell.reuseID)
-        variantsCollectionView.backgroundColor = .clear
-        variantsCollectionView.showsHorizontalScrollIndicator = false
-        variantsCollectionView.dataSource = self
-        variantsCollectionView.delegate = self
-
-        brandLabel.font = AppFont.UI.labelLG
-        brandLabel.textColor = AppColor.UI.textSecondary
-
-        modelLabel.font = AppFont.UI.headlineSM
-        modelLabel.textColor = AppColor.UI.textPrimary
-        modelLabel.numberOfLines = 2
-
-        metaLabel.font = AppFont.UI.bodySM
-        metaLabel.textColor = AppColor.UI.textSecondary
-        metaLabel.numberOfLines = 2
-
-        progressLabel.font = AppFont.UI.bodyMD
-        progressLabel.textColor = AppColor.UI.textPrimary
-
-        progressView.trackTintColor = AppColor.UI.systemGray6
-        progressView.progressTintColor = AppColor.UI.primary
-        progressView.layer.cornerRadius = 5
-        progressView.clipsToBounds = true
-    }
-
-    func configure(
-        with shoe: RegisteredShoe,
-        stats: ShoeAggregateStats,
-        variants: [ShoeCatalogItem],
-        onSelectVariant: ((ShoeCatalogItem) -> Void)?
-    ) {
-        let previousSKU = selectedSKU
-        let didVariantsChange = self.variants != variants
-        self.variants = variants
-        self.selectedSKU = shoe.sku
-        self.onSelectVariant = onSelectVariant
-        brandLabel.text = shoe.brandName.uppercased()
-        modelLabel.text = shoe.displayName
-        let modelLine = shoe.displayName == shoe.modelName ? shoe.modelName : "모델: \(shoe.modelName)"
-        metaLabel.text = [modelLine, shoe.sku, shoe.colors.joined(separator: ", ")].filter { !$0.isEmpty }.joined(separator: "\n")
-        if stats.overDistance > 0 {
-            progressLabel.text = "\(AppFormatter.distance1f(stats.totalDistance)) / \(AppFormatter.distance1f(shoe.targetDistanceMeters)) · +\(AppFormatter.distance1f(stats.overDistance)) 초과"
-        } else {
-            progressLabel.text = "\(AppFormatter.distance1f(stats.totalDistance)) / \(AppFormatter.distance1f(shoe.targetDistanceMeters))"
+        if !shoe.colors.isEmpty {
+            metaParts.append(shoe.colors.joined(separator: ", "))
         }
-        progressView.progress = Float(stats.progress)
-        if currentImageURL != shoe.imageURL {
-            currentImageURL = shoe.imageURL
-            imageTask?.cancel()
-            imageTask = RemoteImageLoader.shared.loadImage(from: shoe.imageURL) { [weak self] image in
-                self?.shoeImageView.image = image ?? UIImage(systemName: "shoeprints.fill")
-                self?.shoeImageView.tintColor = AppColor.UI.textSecondary
-            }
-        }
+        subtitleLabel.text = metaParts.isEmpty ? shoe.sku : metaParts.joined(separator: "\n")
 
-        if didVariantsChange {
-            UIView.performWithoutAnimation {
-                variantsCollectionView.reloadData()
-                variantsCollectionView.layoutIfNeeded()
-            }
-            return
-        }
-
-        guard previousSKU != shoe.sku else { return }
-        if let previousSKU,
-           let previousIndex = variants.firstIndex(where: { $0.sku == previousSKU }) {
-            updateSelectionAppearance(at: IndexPath(item: previousIndex, section: 0), isSelected: false)
-        }
-        if let currentIndex = variants.firstIndex(where: { $0.sku == shoe.sku }) {
-            updateSelectionAppearance(at: IndexPath(item: currentIndex, section: 0), isSelected: true)
-        }
-    }
-
-    private func updateSelectionAppearance(at indexPath: IndexPath, isSelected: Bool) {
-        UIView.performWithoutAnimation {
-            if let cell = variantsCollectionView.cellForItem(at: indexPath) as? GearColorwayCell {
-                cell.setSelectedAppearance(isSelected)
-            }
-            variantsCollectionView.layoutIfNeeded()
-        }
-    }
-}
-
-extension GearDetailHeaderView: UICollectionViewDataSource, UICollectionViewDelegateFlowLayout {
-    func collectionView(_ collectionView: UICollectionView, numberOfItemsInSection section: Int) -> Int {
-        variants.count
-    }
-
-    func collectionView(_ collectionView: UICollectionView, cellForItemAt indexPath: IndexPath) -> UICollectionViewCell {
-        let cell = collectionView.dequeueReusableCell(
-            withReuseIdentifier: GearColorwayCell.reuseID,
-            for: indexPath
-        ) as! GearColorwayCell
-        let item = variants[indexPath.item]
-        cell.configure(with: item, isSelected: item.sku == selectedSKU)
-        return cell
-    }
-
-    func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
-        guard variants.indices.contains(indexPath.item) else { return }
-        onSelectVariant?(variants[indexPath.item])
-    }
-
-    func collectionView(
-        _ collectionView: UICollectionView,
-        layout collectionViewLayout: UICollectionViewLayout,
-        sizeForItemAt indexPath: IndexPath
-    ) -> CGSize {
-        CGSize(width: 52, height: 52)
-    }
-}
-
-private final class GearColorwayCell: HTCollectionViewCell {
-    static let reuseID = "GearColorwayCell"
-
-    private let imageView = UIImageView()
-    private var imageTask: URLSessionDataTask?
-
-    override func prepareForReuse() {
-        super.prepareForReuse()
-        imageTask?.cancel()
-        imageTask = nil
-        imageView.image = UIImage(systemName: "shoeprints.fill")
-    }
-
-    override func configHierarchy() {
-        contentView.addSubview(imageView)
-    }
-
-    override func configLayout() {
-        imageView.snp.makeConstraints { make in
-            make.edges.equalToSuperview()
-        }
-    }
-
-    override func configView() {
-        contentView.layer.cornerRadius = 12
-        contentView.layer.borderWidth = 1
-        contentView.layer.borderColor = AppColor.UI.border.cgColor
-        contentView.backgroundColor = AppColor.UI.cardBackground
-
-        imageView.contentMode = .scaleAspectFit
-        imageView.clipsToBounds = true
-        imageView.layer.cornerRadius = 12
-        imageView.backgroundColor = AppColor.UI.backgroundSecondary
-        imageView.image = UIImage(systemName: "shoeprints.fill")
-        imageView.tintColor = AppColor.UI.textSecondary
-    }
-
-    func configure(with item: ShoeCatalogItem, isSelected: Bool) {
-        setSelectedAppearance(isSelected)
-        imageTask = RemoteImageLoader.shared.loadImage(from: item.imageURL) { [weak self] image in
-            self?.imageView.image = image ?? UIImage(systemName: "shoeprints.fill")
-            self?.imageView.tintColor = AppColor.UI.textSecondary
-        }
-    }
-
-    func setSelectedAppearance(_ isSelected: Bool) {
-        contentView.layer.borderColor = isSelected ? RunningLevelManager.shared.accentUIColor.cgColor : AppColor.UI.border.cgColor
-        contentView.layer.borderWidth = isSelected ? 2 : 1
-    }
-}
-
-private final class GearStatsCardView: HTView {
-    private let distanceMetric = GearMetricView()
-    private let durationMetric = GearMetricView()
-    private let paceMetric = GearMetricView()
-
-    override func configHierarchy() {
-        [distanceMetric, durationMetric, paceMetric].forEach { addSubview($0) }
-    }
-
-    override func configLayout() {
-        distanceMetric.snp.makeConstraints { make in
-            make.top.leading.trailing.equalToSuperview()
-        }
-        durationMetric.snp.makeConstraints { make in
-            make.top.equalTo(distanceMetric.snp.bottom).offset(12)
-            make.leading.trailing.equalToSuperview()
-        }
-        paceMetric.snp.makeConstraints { make in
-            make.top.equalTo(durationMetric.snp.bottom).offset(12)
-            make.leading.trailing.bottom.equalToSuperview()
-        }
-    }
-
-    func configure(with stats: ShoeAggregateStats) {
-        distanceMetric.configure(title: "총 거리", value: AppFormatter.distance1f(stats.totalDistance))
-        durationMetric.configure(title: "총 시간", value: GearFormatters.duration(stats.totalDuration))
-        paceMetric.configure(title: "평균 페이스", value: GearFormatters.pace(stats.averagePace))
+        runsMetricView.configure(value: "\(sessionsCount)", title: "러닝")
+        paceMetricView.configure(value: GearFormatters.pace(stats.averagePace), title: "평균 페이스")
+        durationMetricView.configure(value: GearFormatters.duration(stats.totalDuration), title: "시간")
     }
 }
 
 private final class GearMetricView: HTView {
-    private let cardView = HTView()
-    private let titleLabel = UILabel()
     private let valueLabel = UILabel()
+    private let titleLabel = UILabel()
 
     override func configHierarchy() {
-        addSubview(cardView)
-        cardView.addSubview(titleLabel)
-        cardView.addSubview(valueLabel)
+        [valueLabel, titleLabel].forEach { addSubview($0) }
     }
 
     override func configLayout() {
-        cardView.snp.makeConstraints { make in
-            make.edges.equalToSuperview()
+        valueLabel.snp.makeConstraints { make in
+            make.top.leading.trailing.equalToSuperview()
         }
         titleLabel.snp.makeConstraints { make in
-            make.top.leading.bottom.equalToSuperview().inset(16)
-        }
-        valueLabel.snp.makeConstraints { make in
-            make.centerY.equalTo(titleLabel)
-            make.trailing.equalToSuperview().inset(16)
+            make.top.equalTo(valueLabel.snp.bottom).offset(6)
+            make.leading.trailing.bottom.equalToSuperview()
         }
     }
 
     override func configView() {
-        cardView.backgroundColor = AppColor.UI.cardBackground
-        cardView.layer.cornerRadius = 18
-        cardView.layer.borderWidth = 1
-        cardView.layer.borderColor = AppColor.UI.border.cgColor
+        valueLabel.font = AppFont.UI.metricLabel
+        valueLabel.textColor = AppColor.UI.textPrimary
+        valueLabel.textAlignment = .center
+        valueLabel.adjustsFontSizeToFitWidth = true
+        valueLabel.minimumScaleFactor = 0.7
 
         titleLabel.font = AppFont.UI.bodyMD
         titleLabel.textColor = AppColor.UI.textSecondary
-
-        valueLabel.font = AppFont.UI.metricLabel
-        valueLabel.textColor = AppColor.UI.textPrimary
+        titleLabel.textAlignment = .center
     }
 
-    func configure(title: String, value: String) {
-        titleLabel.text = title
+    func configure(value: String, title: String) {
         valueLabel.text = value
+        titleLabel.text = title
     }
 }
 
@@ -741,6 +399,7 @@ private final class GearSessionRowView: HTView {
     private let kindLabel = UILabel()
     private let dateLabel = UILabel()
     private let valueLabel = UILabel()
+    var onTap: (() -> Void)?
 
     override func configHierarchy() {
         addSubview(button)
@@ -771,7 +430,7 @@ private final class GearSessionRowView: HTView {
         button.layer.cornerRadius = 18
         button.layer.borderWidth = 1
         button.layer.borderColor = AppColor.UI.border.cgColor
-        button.isUserInteractionEnabled = false
+        button.addTarget(self, action: #selector(handleTap), for: .touchUpInside)
 
         kindLabel.font = AppFont.UI.titleSM
         kindLabel.textColor = AppColor.UI.textPrimary
@@ -789,5 +448,9 @@ private final class GearSessionRowView: HTView {
         kindLabel.text = session.title
         dateLabel.text = AppFormatter.recordDate.string(from: session.startedAt)
         valueLabel.text = "\(AppFormatter.distance1f(session.distance))\n\(GearFormatters.duration(session.duration))"
+    }
+
+    @objc private func handleTap() {
+        onTap?()
     }
 }

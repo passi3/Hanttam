@@ -11,6 +11,8 @@
 		4016F6042F73C83700BC0F12 /* RxSwift in Frameworks */ = {isa = PBXBuildFile; productRef = 4016F6032F73C83700BC0F12 /* RxSwift */; };
 		4016F6072F73C85100BC0F12 /* SnapKit in Frameworks */ = {isa = PBXBuildFile; productRef = 4016F6062F73C85100BC0F12 /* SnapKit */; };
 		4023B3312F88DB020033F529 /* Kingfisher in Frameworks */ = {isa = PBXBuildFile; productRef = 4023B3302F88DB020033F529 /* Kingfisher */; };
+		4023B66A2F8926530033F529 /* RealmSwift in Frameworks */ = {isa = PBXBuildFile; productRef = 4023B6692F8926530033F529 /* RealmSwift */; };
+		4023B6702F892AA70033F529 /* RealmSwift in Embed Frameworks */ = {isa = PBXBuildFile; productRef = 4023B6692F8926530033F529 /* RealmSwift */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
 		404058F72F86BECF0052D506 /* FirebaseAnalytics in Frameworks */ = {isa = PBXBuildFile; productRef = 404058F62F86BECF0052D506 /* FirebaseAnalytics */; };
 		404058F92F86BECF0052D506 /* FirebaseCrashlytics in Frameworks */ = {isa = PBXBuildFile; productRef = 404058F82F86BECF0052D506 /* FirebaseCrashlytics */; };
 		409833DD2F7D5DFD0029B9CC /* Hanttam Watch Watch App.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = 409833D22F7D5DFA0029B9CC /* Hanttam Watch Watch App.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
@@ -28,6 +30,17 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
+		4023B66C2F892A6B0033F529 /* Embed Frameworks */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 10;
+			files = (
+				4023B6702F892AA70033F529 /* RealmSwift in Embed Frameworks */,
+			);
+			name = "Embed Frameworks";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		404E86102F7FAC0100AC76ED /* Embed Foundation Extensions */ = {
 			isa = PBXCopyFilesBuildPhase;
 			buildActionMask = 2147483647;
@@ -118,6 +131,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				4023B66A2F8926530033F529 /* RealmSwift in Frameworks */,
 				40C68D912F8674900013CCC2 /* Supabase in Frameworks */,
 				4016F6072F73C85100BC0F12 /* SnapKit in Frameworks */,
 				4023B3312F88DB020033F529 /* Kingfisher in Frameworks */,
@@ -180,6 +194,7 @@
 				4060D5432EEAAB2D00329FC8 /* Resources */,
 				409833DC2F7D5DFD0029B9CC /* Embed Watch Content */,
 				404E86102F7FAC0100AC76ED /* Embed Foundation Extensions */,
+				4023B66C2F892A6B0033F529 /* Embed Frameworks */,
 			);
 			buildRules = (
 			);
@@ -198,6 +213,7 @@
 				404058F62F86BECF0052D506 /* FirebaseAnalytics */,
 				404058F82F86BECF0052D506 /* FirebaseCrashlytics */,
 				4023B3302F88DB020033F529 /* Kingfisher */,
+				4023B6692F8926530033F529 /* RealmSwift */,
 			);
 			productName = Hanttam;
 			productReference = 4060D5452EEAAB2D00329FC8 /* Hanttam.app */;
@@ -258,6 +274,7 @@
 				40C68D8F2F8674900013CCC2 /* XCRemoteSwiftPackageReference "supabase-swift" */,
 				404058F52F86BECF0052D506 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */,
 				4023B32F2F88DB020033F529 /* XCRemoteSwiftPackageReference "Kingfisher" */,
+				4023B6682F8926530033F529 /* XCRemoteSwiftPackageReference "realm-swift" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 4060D5462EEAAB2D00329FC8 /* Products */;
@@ -345,7 +362,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.1.0;
+				MARKETING_VERSION = 1.2.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.passi3.Hanttam;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -393,7 +410,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.1.0;
+				MARKETING_VERSION = 1.2.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.passi3.Hanttam;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -655,6 +672,14 @@
 				minimumVersion = 8.8.1;
 			};
 		};
+		4023B6682F8926530033F529 /* XCRemoteSwiftPackageReference "realm-swift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/realm/realm-swift";
+			requirement = {
+				branch = community;
+				kind = branch;
+			};
+		};
 		404058F52F86BECF0052D506 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/firebase/firebase-ios-sdk";
@@ -693,6 +718,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 4023B32F2F88DB020033F529 /* XCRemoteSwiftPackageReference "Kingfisher" */;
 			productName = Kingfisher;
+		};
+		4023B6692F8926530033F529 /* RealmSwift */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 4023B6682F8926530033F529 /* XCRemoteSwiftPackageReference "realm-swift" */;
+			productName = RealmSwift;
 		};
 		404058F62F86BECF0052D506 /* FirebaseAnalytics */ = {
 			isa = XCSwiftPackageProductDependency;
