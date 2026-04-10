@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import RealmSwift
 
 protocol GearLocalStoring: AnyObject {
     func fetchRegisteredShoes() -> [RegisteredShoe]
@@ -27,7 +28,7 @@ final class GearLocalStore: GearLocalStoring {
     private let fileManager: FileManager
     private let encoder: JSONEncoder
     private let decoder: JSONDecoder
-    private let queue = DispatchQueue(label: "com.hanttam.gear.local-store", qos: .userInitiated)
+    private let migrationQueue = DispatchQueue(label: "com.hanttam.gear.realm-migration", qos: .userInitiated)
 
     private init(fileManager: FileManager = .default) {
         self.fileManager = fileManager
@@ -35,54 +36,54 @@ final class GearLocalStore: GearLocalStoring {
         self.decoder = JSONDecoder()
         encoder.dateEncodingStrategy = .iso8601
         decoder.dateDecodingStrategy = .iso8601
+        migrateJSONIfNeeded()
     }
 
     func fetchRegisteredShoes() -> [RegisteredShoe] {
-        queue.sync {
-            load([RegisteredShoe].self, from: registeredShoesURL) ?? []
-        }
+        withRealm { realm in
+            realm.objects(RegisteredShoeObject.self)
+                .sorted(byKeyPath: "registeredAt", ascending: true)
+                .map(\.asDomainModel)
+        } ?? []
     }
 
     func saveRegisteredShoe(_ shoe: RegisteredShoe) {
-        queue.sync {
-            var shoes = load([RegisteredShoe].self, from: registeredShoesURL) ?? []
-            shoes.append(shoe)
-            save(shoes, to: registeredShoesURL)
+        write { realm in
+            realm.add(RegisteredShoeObject(shoe: shoe), update: .modified)
         }
         notifyChange()
     }
 
     func updateRegisteredShoe(_ shoe: RegisteredShoe) {
-        queue.sync {
-            var shoes = load([RegisteredShoe].self, from: registeredShoesURL) ?? []
-            guard let index = shoes.firstIndex(where: { $0.id == shoe.id }) else { return }
-            shoes[index] = shoe
-            save(shoes, to: registeredShoesURL)
+        write { realm in
+            realm.add(RegisteredShoeObject(shoe: shoe), update: .modified)
         }
         notifyChange()
     }
 
     func fetchSessionLinks() -> [ShoeSessionLink] {
-        queue.sync {
-            load([ShoeSessionLink].self, from: sessionLinksURL) ?? []
-        }
+        withRealm { realm in
+            realm.objects(ShoeSessionLinkObject.self)
+                .sorted(byKeyPath: "workoutStartDate", ascending: true)
+                .map(\.asDomainModel)
+        } ?? []
     }
 
     func upsertSessionLink(_ link: ShoeSessionLink) {
-        queue.sync {
-            var links = load([ShoeSessionLink].self, from: sessionLinksURL) ?? []
-            links.removeAll { $0.sessionKind == link.sessionKind && $0.sessionIdentifier == link.sessionIdentifier }
-            links.append(link)
-            save(links, to: sessionLinksURL)
+        write { realm in
+            realm.add(ShoeSessionLinkObject(link: link), update: .modified)
         }
         notifyChange()
     }
 
     func removeSessionLink(sessionIdentifier: String, kind: GearSessionKind) {
-        queue.sync {
-            var links = load([ShoeSessionLink].self, from: sessionLinksURL) ?? []
-            links.removeAll { $0.sessionKind == kind && $0.sessionIdentifier == sessionIdentifier }
-            save(links, to: sessionLinksURL)
+        write { realm in
+            let objects = realm.objects(ShoeSessionLinkObject.self)
+                .where {
+                    $0.sessionIdentifier == sessionIdentifier &&
+                    $0.sessionKindRaw == kind.rawValue
+                }
+            realm.delete(objects)
         }
         notifyChange()
     }
@@ -91,11 +92,71 @@ final class GearLocalStore: GearLocalStoring {
         for sessionIdentifier: String,
         kind: GearSessionKind
     ) -> RegisteredShoe? {
-        let links = fetchSessionLinks()
-        guard let link = links.first(where: { $0.sessionIdentifier == sessionIdentifier && $0.sessionKind == kind }) else {
+        withRealm { realm in
+            guard let link = realm.objects(ShoeSessionLinkObject.self)
+                .where({
+                    $0.sessionIdentifier == sessionIdentifier &&
+                    $0.sessionKindRaw == kind.rawValue
+                })
+                .first
+            else {
+                return nil
+            }
+            return realm.object(ofType: RegisteredShoeObject.self, forPrimaryKey: link.shoeIDString)?.asDomainModel
+        } ?? nil
+    }
+
+    private func migrateJSONIfNeeded() {
+        migrationQueue.sync {
+            guard let realm = makeRealm() else { return }
+            let hasRealmData =
+                !realm.objects(RegisteredShoeObject.self).isEmpty ||
+                !realm.objects(ShoeSessionLinkObject.self).isEmpty
+            let hasLegacyFiles =
+                fileManager.fileExists(atPath: registeredShoesURL.path) ||
+                fileManager.fileExists(atPath: sessionLinksURL.path)
+
+            guard !hasRealmData, hasLegacyFiles else { return }
+
+            let shoes = load([RegisteredShoe].self, from: registeredShoesURL) ?? []
+            let links = load([ShoeSessionLink].self, from: sessionLinksURL) ?? []
+
+            guard !shoes.isEmpty || !links.isEmpty else { return }
+
+            do {
+                try realm.write {
+                    shoes.forEach { realm.add(RegisteredShoeObject(shoe: $0), update: .modified) }
+                    links.forEach { realm.add(ShoeSessionLinkObject(link: $0), update: .modified) }
+                }
+            } catch {
+                assertionFailure("Failed to migrate gear JSON to Realm: \(error)")
+            }
+        }
+    }
+
+    private func withRealm<T>(_ block: (Realm) -> T) -> T? {
+        guard let realm = makeRealm() else { return nil }
+        return block(realm)
+    }
+
+    private func write(_ block: (Realm) -> Void) {
+        guard let realm = makeRealm() else { return }
+        do {
+            try realm.write {
+                block(realm)
+            }
+        } catch {
+            assertionFailure("Realm write failed: \(error)")
+        }
+    }
+
+    private func makeRealm() -> Realm? {
+        do {
+            return try Realm()
+        } catch {
+            assertionFailure("Failed to open Realm: \(error)")
             return nil
         }
-        return fetchRegisteredShoes().first(where: { $0.id == link.shoeID })
     }
 
     private var baseDirectoryURL: URL {
@@ -120,14 +181,89 @@ final class GearLocalStore: GearLocalStoring {
         return try? decoder.decode(type, from: data)
     }
 
-    private func save<T: Encodable>(_ value: T, to url: URL) {
-        guard let data = try? encoder.encode(value) else { return }
-        try? data.write(to: url, options: .atomic)
-    }
-
     private func notifyChange() {
         DispatchQueue.main.async {
             NotificationCenter.default.post(name: Self.didChangeNotification, object: nil)
         }
+    }
+}
+
+@objc(RegisteredShoeObject)
+final class RegisteredShoeObject: Object {
+    @Persisted(primaryKey: true) var id: String
+    @Persisted var catalogID: String = ""
+    @Persisted var nickname: String?
+    @Persisted var brandName: String = ""
+    @Persisted var modelName: String = ""
+    @Persisted var sku: String = ""
+    @Persisted var colors = List<String>()
+    @Persisted var imageURL: String?
+    @Persisted var createdAt: Date?
+    @Persisted var registeredAt: Date = Date()
+    @Persisted var targetDistanceMeters: Double = 0
+    @Persisted var initialDistanceMeters: Double = 0
+
+    convenience init(shoe: RegisteredShoe) {
+        self.init()
+        id = shoe.id.uuidString
+        catalogID = shoe.catalogID
+        nickname = shoe.nickname
+        brandName = shoe.brandName
+        modelName = shoe.modelName
+        sku = shoe.sku
+        colors.removeAll()
+        colors.append(objectsIn: shoe.colors)
+        imageURL = shoe.imageURL
+        createdAt = shoe.createdAt
+        registeredAt = shoe.registeredAt
+        targetDistanceMeters = shoe.targetDistanceMeters
+        initialDistanceMeters = shoe.initialDistanceMeters
+    }
+
+    var asDomainModel: RegisteredShoe {
+        RegisteredShoe(
+            id: UUID(uuidString: id) ?? UUID(),
+            catalogID: catalogID,
+            nickname: nickname,
+            brandName: brandName,
+            modelName: modelName,
+            sku: sku,
+            colors: Array(colors),
+            imageURL: imageURL,
+            createdAt: createdAt,
+            registeredAt: registeredAt,
+            targetDistanceMeters: targetDistanceMeters,
+            initialDistanceMeters: initialDistanceMeters
+        )
+    }
+}
+
+@objc(ShoeSessionLinkObject)
+final class ShoeSessionLinkObject: Object {
+    @Persisted(primaryKey: true) var id: String
+    @Persisted var shoeIDString: String = ""
+    @Persisted var sessionKindRaw: String = ""
+    @Persisted var sessionIdentifier: String = ""
+    @Persisted var workoutStartDate: Date = Date()
+    @Persisted var workoutEndDate: Date = Date()
+
+    convenience init(link: ShoeSessionLink) {
+        self.init()
+        id = link.id
+        shoeIDString = link.shoeID.uuidString
+        sessionKindRaw = link.sessionKind.rawValue
+        sessionIdentifier = link.sessionIdentifier
+        workoutStartDate = link.workoutStartDate
+        workoutEndDate = link.workoutEndDate
+    }
+
+    var asDomainModel: ShoeSessionLink {
+        ShoeSessionLink(
+            shoeID: UUID(uuidString: shoeIDString) ?? UUID(),
+            sessionKind: GearSessionKind(rawValue: sessionKindRaw) ?? .freeRun,
+            sessionIdentifier: sessionIdentifier,
+            workoutStartDate: workoutStartDate,
+            workoutEndDate: workoutEndDate
+        )
     }
 }

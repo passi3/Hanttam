@@ -19,6 +19,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         FirebaseApp.configure()
         FirebaseConfiguration.shared.setLoggerLevel(.warning)
         Analytics.setAnalyticsCollectionEnabled(true)
+        _ = GearLocalStore.shared
         _ = WatchBridge.shared
 
         return true
