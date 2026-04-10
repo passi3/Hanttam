@@ -111,7 +111,7 @@ final class GearListViewController: HTViewController {
 
         output.showSearch
             .emit(onNext: { [weak self] in
-                self?.navigationController?.pushViewController(ShoeSearchViewController(), animated: true)
+                self?.navigationController?.pushViewController(ShoeBrandSelectViewController(), animated: true)
             })
             .disposed(by: disposeBag)
 

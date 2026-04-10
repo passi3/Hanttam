@@ -2,7 +2,7 @@
 //  ShoeSearchViewController.swift
 //  Hanttam
 //
-//  Created by Codex on 4/8/26.
+//  Created by passi on 4/8/26.
 //
 
 import UIKit
@@ -13,6 +13,7 @@ import SnapKit
 final class ShoeSearchViewController: HTViewController {
     private let viewModel: ShoeSearchViewModel
     private let onRegistered: ((RegisteredShoe) -> Void)?
+    private let brand: BrandSummary?
     private let viewDidLoadSubject = PublishSubject<Void>()
     private let selectItemSubject = PublishSubject<Int>()
     private let disposeBag = DisposeBag()
@@ -22,13 +23,15 @@ final class ShoeSearchViewController: HTViewController {
     private let spinner = UIActivityIndicatorView(style: .medium)
     private let searchController = UISearchController(searchResultsController: nil)
 
-    private var results: [ShoeCatalogItem] = []
+    private var results: [ShoeSearchResult] = []
 
     init(
-        viewModel: ShoeSearchViewModel = ShoeSearchViewModel(),
+        brand: BrandSummary? = nil,
+        viewModel: ShoeSearchViewModel? = nil,
         onRegistered: ((RegisteredShoe) -> Void)? = nil
     ) {
-        self.viewModel = viewModel
+        self.brand = brand
+        self.viewModel = viewModel ?? ShoeSearchViewModel(brand: brand)
         self.onRegistered = onRegistered
         super.init(nibName: nil, bundle: nil)
     }
@@ -67,7 +70,7 @@ final class ShoeSearchViewController: HTViewController {
         definesPresentationContext = true
 
         searchController.obscuresBackgroundDuringPresentation = false
-        searchController.searchBar.placeholder = "모델명을 입력하세요"
+        searchController.searchBar.placeholder = "브랜드 또는 모델명을 입력하세요"
         searchController.searchBar.returnKeyType = .search
         navigationItem.searchController = searchController
 
@@ -112,7 +115,7 @@ final class ShoeSearchViewController: HTViewController {
         output.selectedItem
             .emit(onNext: { [weak self] item in
                 guard let self else { return }
-                let viewController = RegisterShoeViewController(item: item, onRegistered: self.onRegistered)
+                let viewController = RegisterShoeViewController(searchResult: item, onRegistered: self.onRegistered)
                 self.navigationController?.pushViewController(viewController, animated: true)
             })
             .disposed(by: disposeBag)
@@ -126,7 +129,7 @@ extension ShoeSearchViewController: UITableViewDataSource, UITableViewDelegate {
 
     func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         let cell = tableView.dequeueReusableCell(withIdentifier: GearCatalogCell.reuseID, for: indexPath) as! GearCatalogCell
-        cell.configure(with: results[indexPath.row])
+        cell.configure(with: results[indexPath.row], fallbackImageURL: brand?.logoURL)
         return cell
     }
 
@@ -192,11 +195,11 @@ private final class GearCatalogCell: HTTableViewCell {
         cardView.layer.borderWidth = 1
         cardView.layer.borderColor = AppColor.UI.border.cgColor
 
-        shoeImageView.contentMode = .scaleAspectFill
+        shoeImageView.contentMode = .scaleAspectFit
         shoeImageView.layer.cornerRadius = 12
         shoeImageView.clipsToBounds = true
         shoeImageView.backgroundColor = AppColor.UI.backgroundSecondary
-        shoeImageView.image = UIImage(systemName: "shoeprints.fill")
+        shoeImageView.image = UIImage(systemName: "shoe")
         shoeImageView.tintColor = AppColor.UI.textSecondary
 
         brandLabel.font = AppFont.UI.labelLG
@@ -210,15 +213,18 @@ private final class GearCatalogCell: HTTableViewCell {
         metaLabel.textColor = AppColor.UI.textSecondary
         metaLabel.numberOfLines = 2
 
-        accessoryType = .disclosureIndicator
+        accessoryType = .none
     }
 
-    func configure(with item: ShoeCatalogItem) {
+    func configure(with item: ShoeSearchResult, fallbackImageURL: String?) {
+        let representative = item.representativeItem
         brandLabel.text = item.brandName.uppercased()
         modelLabel.text = item.modelName
-        metaLabel.text = [item.sku, item.colors.joined(separator: ", ")].filter { !$0.isEmpty }.joined(separator: "\n")
-        imageTask = RemoteImageLoader.shared.loadImage(from: item.imageURL) { [weak self] image in
-            self?.shoeImageView.image = image ?? UIImage(systemName: "shoeprints.fill")
+        let summary = "\(max(item.variantCount, item.variants.count))개 옵션"
+        let sku = representative?.sku ?? ""
+        metaLabel.text = [sku, summary].filter { !$0.isEmpty }.joined(separator: "\n")
+        imageTask = RemoteImageLoader.shared.loadImage(from: representative?.imageURL ?? item.thumbnailURL ?? fallbackImageURL) { [weak self] image in
+            self?.shoeImageView.image = image ?? UIImage(systemName: "shoe")
             self?.shoeImageView.tintColor = AppColor.UI.textSecondary
         }
     }

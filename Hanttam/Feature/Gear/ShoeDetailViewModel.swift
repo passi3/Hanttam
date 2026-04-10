@@ -9,11 +9,6 @@ import Foundation
 import RxCocoa
 import RxSwift
 
-enum GearSessionNavigationTarget {
-    case freeRun(RunningRecord)
-    case interval(record: RunningRecord, intervalRecord: IntervalRecord)
-}
-
 final class ShoeDetailViewModel: HTReusableVMProtocol {
     struct ViewData: Hashable {
         let shoe: RegisteredShoe
@@ -23,21 +18,19 @@ final class ShoeDetailViewModel: HTReusableVMProtocol {
 
     struct Input {
         let viewDidLoad: Observable<Void>
-        let selectSession: Observable<Int>
     }
 
     struct Output {
         let viewData: Driver<ViewData>
         let isLoading: Driver<Bool>
         let showErrorMessage: Signal<String>
-        let showSessionDetail: Signal<GearSessionNavigationTarget>
     }
 
-    private let shoe: RegisteredShoe
+    private let shoeID: UUID
+    private let fallbackShoe: RegisteredShoe
     private let viewDataRelay: BehaviorRelay<ViewData>
     private let isLoadingRelay = BehaviorRelay<Bool>(value: false)
     private let errorRelay = PublishRelay<String>()
-    private let sessionDetailRelay = PublishRelay<GearSessionNavigationTarget>()
     private let disposeBag = DisposeBag()
 
     private let store: GearLocalStoring
@@ -48,7 +41,8 @@ final class ShoeDetailViewModel: HTReusableVMProtocol {
         store: GearLocalStoring = GearLocalStore.shared,
         healthStore: HealthKitStore = .shared
     ) {
-        self.shoe = shoe
+        self.shoeID = shoe.id
+        self.fallbackShoe = shoe
         self.store = store
         self.healthStore = healthStore
         self.viewDataRelay = BehaviorRelay(
@@ -75,37 +69,26 @@ final class ShoeDetailViewModel: HTReusableVMProtocol {
         })
         .disposed(by: disposeBag)
 
-        input.selectSession
-            .withLatestFrom(viewDataRelay) { index, data -> GearLinkedSessionItem? in
-                guard data.sessions.indices.contains(index) else { return nil }
-                return data.sessions[index]
-            }
-            .compactMap { $0 }
-            .subscribe(onNext: { [weak self] session in
-                self?.route(to: session)
-            })
-            .disposed(by: disposeBag)
-
         return Output(
             viewData: viewDataRelay.asDriver(),
             isLoading: isLoadingRelay.asDriver(),
-            showErrorMessage: errorRelay.asSignal(),
-            showSessionDetail: sessionDetailRelay.asSignal()
+            showErrorMessage: errorRelay.asSignal()
         )
     }
 
     private func loadData() {
+        let resolvedShoe = store.fetchRegisteredShoes().first(where: { $0.id == shoeID }) ?? fallbackShoe
         isLoadingRelay.accept(true)
         healthStore.requestAuthorization { [weak self] authorized in
             guard let self else { return }
             guard authorized else {
                 self.viewDataRelay.accept(
                     ViewData(
-                        shoe: self.shoe,
+                        shoe: resolvedShoe,
                         stats: ShoeAggregateStats(
-                            totalDistance: self.shoe.initialDistanceMeters,
+                            totalDistance: resolvedShoe.initialDistanceMeters,
                             totalDuration: 0,
-                            targetDistanceMeters: self.shoe.targetDistanceMeters,
+                            targetDistanceMeters: resolvedShoe.targetDistanceMeters,
                             paceDistanceMeters: 0
                         ),
                         sessions: []
@@ -135,40 +118,27 @@ final class ShoeDetailViewModel: HTReusableVMProtocol {
             group.notify(queue: .main) {
                 let links = self.store.fetchSessionLinks()
                 let sessions = GearSessionResolver.linkedSessions(
-                    for: self.shoe,
+                    for: resolvedShoe,
                     links: links,
                     runningRecords: runningRecords,
                     intervalRecords: intervalRecords
                 )
                 let sessionDistance = sessions.reduce(0) { $0 + $1.distance }
                 let totalDuration = sessions.reduce(0) { $0 + $1.duration }
-                let totalDistance = self.shoe.initialDistanceMeters + sessionDistance
+                let totalDistance = resolvedShoe.initialDistanceMeters + sessionDistance
                 self.viewDataRelay.accept(
                     ViewData(
-                        shoe: self.shoe,
+                        shoe: resolvedShoe,
                         stats: ShoeAggregateStats(
                             totalDistance: totalDistance,
                             totalDuration: totalDuration,
-                            targetDistanceMeters: self.shoe.targetDistanceMeters,
+                            targetDistanceMeters: resolvedShoe.targetDistanceMeters,
                             paceDistanceMeters: sessionDistance
                         ),
                         sessions: sessions
                     )
                 )
                 self.isLoadingRelay.accept(false)
-            }
-        }
-    }
-
-    private func route(to session: GearLinkedSessionItem) {
-        switch session.sessionKind {
-        case .freeRun:
-            if let record = session.runningRecord {
-                sessionDetailRelay.accept(.freeRun(record))
-            }
-        case .interval:
-            if let record = session.runningRecord, let intervalRecord = session.intervalRecord {
-                sessionDetailRelay.accept(.interval(record: record, intervalRecord: intervalRecord))
             }
         }
     }

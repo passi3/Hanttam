@@ -13,7 +13,7 @@ import SnapKit
 final class RegisterShoeViewController: HTViewController {
     private enum DistanceOption {
         static let targetDistances: [Double] = stride(from: 100_000.0, through: 1_500_000.0, by: 100_000.0).map { $0 }
-        static let previousDistanceAlertMessage = "이전 달린 거리는 0km 이상, 목표 거리 이하로 입력해주세요."
+        static let previousDistanceAlertMessage = "현재 거리는 0km 이상, 목표 거리 이하로 입력해주세요."
         static let targetDistanceRequiredMessage = "먼저 목표 거리를 선택해주세요."
     }
 
@@ -26,25 +26,53 @@ final class RegisterShoeViewController: HTViewController {
     private let scrollView = UIScrollView()
     private let contentView = UIView()
     private let shoeImageView = UIImageView()
+    private let variantsCollectionView = UICollectionView(frame: .zero, collectionViewLayout: UICollectionViewFlowLayout())
+    private let infoStack = UIStackView()
     private let brandLabel = UILabel()
     private let modelLabel = UILabel()
     private let metaLabel = UILabel()
+    private let formStack = UIStackView()
     private let nicknameTitleLabel = UILabel()
     private let nicknameField = UITextField()
     private let distanceTitleLabel = UILabel()
-    private let targetDistanceButton = UIButton(type: .system)
+    private let targetDistanceField = UITextField()
     private let previousDistanceTitleLabel = UILabel()
     private let previousDistanceField = UITextField()
     private let saveButton = UIButton(type: .system)
+    private let targetDistancePicker = UIPickerView()
+    private let targetDistanceToolbar = UIToolbar()
     private let previousDistanceToolbar = UIToolbar()
+    private let selectedCatalogItemSubject: BehaviorSubject<ShoeCatalogItem?>
     private var imageTask: URLSessionDataTask?
     private var selectedTargetDistanceMeters: Double?
     private var canRegister = false
+    private let searchResult: ShoeSearchResult?
 
-    init(item: ShoeCatalogItem, onRegistered: ((RegisteredShoe) -> Void)? = nil) {
-        self.viewModel = RegisterShoeViewModel(item: item)
+    private var variantItems: [ShoeCatalogItem] {
+        searchResult?.catalogItems ?? []
+    }
+
+    init(
+        mode: RegisterShoeViewModel.Mode,
+        searchResult: ShoeSearchResult? = nil,
+        onRegistered: ((RegisteredShoe) -> Void)? = nil
+    ) {
+        self.viewModel = RegisterShoeViewModel(mode: mode)
         self.onRegistered = onRegistered
+        self.searchResult = searchResult
+        self.selectedCatalogItemSubject = BehaviorSubject<ShoeCatalogItem?>(value: mode.catalogItem)
         super.init(nibName: nil, bundle: nil)
+    }
+
+    convenience init(item: ShoeCatalogItem, onRegistered: ((RegisteredShoe) -> Void)? = nil) {
+        self.init(mode: .catalog(item), searchResult: nil, onRegistered: onRegistered)
+    }
+
+    convenience init(searchResult: ShoeSearchResult, onRegistered: ((RegisteredShoe) -> Void)? = nil) {
+        guard let item = searchResult.representativeItem else {
+            fatalError("Search result requires at least one variant")
+        }
+        self.init(mode: .catalog(item), searchResult: searchResult, onRegistered: onRegistered)
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
@@ -57,19 +85,22 @@ final class RegisterShoeViewController: HTViewController {
     override func configHierarchy() {
         view.addSubview(scrollView)
         scrollView.addSubview(contentView)
+        contentView.addSubview(shoeImageView)
+        contentView.addSubview(variantsCollectionView)
+        contentView.addSubview(formStack)
+
+        [brandLabel, modelLabel, metaLabel].forEach { infoStack.addArrangedSubview($0) }
+
         [
-            shoeImageView,
-            brandLabel,
-            modelLabel,
-            metaLabel,
+            infoStack,
             nicknameTitleLabel,
             nicknameField,
             distanceTitleLabel,
-            targetDistanceButton,
+            targetDistanceField,
             previousDistanceTitleLabel,
             previousDistanceField,
             saveButton
-        ].forEach { contentView.addSubview($0) }
+        ].forEach { formStack.addArrangedSubview($0) }
     }
 
     override func configLayout() {
@@ -82,53 +113,30 @@ final class RegisterShoeViewController: HTViewController {
         }
         shoeImageView.snp.makeConstraints { make in
             make.top.equalToSuperview().offset(24)
-            make.centerX.equalToSuperview()
-            make.width.height.equalTo(180)
-        }
-        brandLabel.snp.makeConstraints { make in
-            make.top.equalTo(shoeImageView.snp.bottom).offset(20)
             make.leading.trailing.equalToSuperview().inset(24)
+            make.height.equalTo(180)
         }
-        modelLabel.snp.makeConstraints { make in
-            make.top.equalTo(brandLabel.snp.bottom).offset(6)
-            make.leading.trailing.equalTo(brandLabel)
+        variantsCollectionView.snp.makeConstraints { make in
+            make.top.equalTo(shoeImageView.snp.bottom).offset(12)
+            make.leading.trailing.equalTo(shoeImageView)
+            make.height.equalTo(68)
         }
-        metaLabel.snp.makeConstraints { make in
-            make.top.equalTo(modelLabel.snp.bottom).offset(10)
-            make.leading.trailing.equalTo(brandLabel)
-        }
-        nicknameTitleLabel.snp.makeConstraints { make in
-            make.top.equalTo(metaLabel.snp.bottom).offset(32)
-            make.leading.trailing.equalTo(brandLabel)
+        formStack.snp.makeConstraints { make in
+            make.top.equalTo(variantsCollectionView.snp.bottom).offset(24)
+            make.leading.trailing.equalToSuperview().inset(24)
+            make.bottom.equalToSuperview().inset(32)
         }
         nicknameField.snp.makeConstraints { make in
-            make.top.equalTo(nicknameTitleLabel.snp.bottom).offset(12)
-            make.leading.trailing.equalTo(brandLabel)
             make.height.equalTo(52)
         }
-        distanceTitleLabel.snp.makeConstraints { make in
-            make.top.equalTo(nicknameField.snp.bottom).offset(24)
-            make.leading.trailing.equalTo(brandLabel)
-        }
-        targetDistanceButton.snp.makeConstraints { make in
-            make.top.equalTo(distanceTitleLabel.snp.bottom).offset(12)
-            make.leading.trailing.equalTo(brandLabel)
+        targetDistanceField.snp.makeConstraints { make in
             make.height.equalTo(52)
-        }
-        previousDistanceTitleLabel.snp.makeConstraints { make in
-            make.top.equalTo(targetDistanceButton.snp.bottom).offset(24)
-            make.leading.trailing.equalTo(brandLabel)
         }
         previousDistanceField.snp.makeConstraints { make in
-            make.top.equalTo(previousDistanceTitleLabel.snp.bottom).offset(12)
-            make.leading.trailing.equalTo(brandLabel)
             make.height.equalTo(52)
         }
         saveButton.snp.makeConstraints { make in
-            make.top.equalTo(previousDistanceField.snp.bottom).offset(28)
-            make.leading.trailing.equalTo(brandLabel)
             make.height.equalTo(54)
-            make.bottom.equalToSuperview().inset(32)
         }
     }
 
@@ -141,7 +149,33 @@ final class RegisterShoeViewController: HTViewController {
         shoeImageView.clipsToBounds = true
         shoeImageView.backgroundColor = AppColor.UI.backgroundSecondary
         shoeImageView.tintColor = AppColor.UI.textSecondary
-        shoeImageView.image = UIImage(systemName: "shoeprints.fill")
+        shoeImageView.image = UIImage(systemName: "shoe")
+
+        if let layout = variantsCollectionView.collectionViewLayout as? UICollectionViewFlowLayout {
+            layout.scrollDirection = .horizontal
+            layout.minimumLineSpacing = 8
+            layout.minimumInteritemSpacing = 8
+        }
+        variantsCollectionView.register(VariantThumbnailCell.self, forCellWithReuseIdentifier: VariantThumbnailCell.reuseID)
+        variantsCollectionView.backgroundColor = .clear
+        variantsCollectionView.showsHorizontalScrollIndicator = false
+        variantsCollectionView.alwaysBounceHorizontal = true
+        variantsCollectionView.dataSource = self
+        variantsCollectionView.delegate = self
+
+        formStack.axis = .vertical
+        formStack.alignment = .fill
+        formStack.distribution = .fill
+        formStack.spacing = 12
+        formStack.setCustomSpacing(24, after: infoStack)
+        formStack.setCustomSpacing(24, after: nicknameField)
+        formStack.setCustomSpacing(24, after: targetDistanceField)
+        formStack.setCustomSpacing(28, after: previousDistanceField)
+
+        infoStack.axis = .vertical
+        infoStack.alignment = .fill
+        infoStack.distribution = .fill
+        infoStack.spacing = 6
 
         brandLabel.font = AppFont.UI.labelLG
         brandLabel.textColor = AppColor.UI.textSecondary
@@ -167,7 +201,7 @@ final class RegisterShoeViewController: HTViewController {
 
         previousDistanceTitleLabel.font = AppFont.UI.titleMD
         previousDistanceTitleLabel.textColor = AppColor.UI.textPrimary
-        previousDistanceTitleLabel.text = "이전 달린 거리(km)"
+        previousDistanceTitleLabel.text = "현재 거리(km)"
 
         nicknameField.borderStyle = .none
         nicknameField.layer.cornerRadius = 14
@@ -184,29 +218,25 @@ final class RegisterShoeViewController: HTViewController {
         nicknameField.returnKeyType = .done
         nicknameField.delegate = self
 
-        targetDistanceButton.layer.cornerRadius = 14
-        targetDistanceButton.layer.borderWidth = 1
-        targetDistanceButton.layer.borderColor = AppColor.UI.border.cgColor
-        targetDistanceButton.backgroundColor = AppColor.UI.cardBackground
-        targetDistanceButton.contentHorizontalAlignment = .fill
-        var targetButtonConfiguration = UIButton.Configuration.plain()
-        targetButtonConfiguration.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16)
-        targetButtonConfiguration.image = UIImage(systemName: "chevron.up.chevron.down")
-        targetButtonConfiguration.imagePlacement = .trailing
-        targetButtonConfiguration.imagePadding = 8
-        targetButtonConfiguration.baseForegroundColor = AppColor.UI.textSecondary
-        targetButtonConfiguration.titleAlignment = .leading
-        targetButtonConfiguration.attributedTitle = AttributedString(
-            "목표 거리를 선택하세요",
-            attributes: AttributeContainer([
-                .font: AppFont.UI.titleMD,
-                .foregroundColor: AppColor.UI.textTertiary
-            ])
+        targetDistanceField.borderStyle = .none
+        targetDistanceField.layer.cornerRadius = 14
+        targetDistanceField.layer.borderWidth = 1
+        targetDistanceField.layer.borderColor = AppColor.UI.border.cgColor
+        targetDistanceField.backgroundColor = AppColor.UI.cardBackground
+        targetDistanceField.font = AppFont.UI.titleMD
+        targetDistanceField.tintColor = .clear
+        targetDistanceField.attributedPlaceholder = NSAttributedString(
+            string: "목표 거리를 선택하세요",
+            attributes: [.foregroundColor: AppColor.UI.textTertiary]
         )
-        targetDistanceButton.configuration = targetButtonConfiguration
-        targetDistanceButton.showsMenuAsPrimaryAction = true
-        targetDistanceButton.changesSelectionAsPrimaryAction = false
-        targetDistanceButton.menu = makeTargetDistanceMenu()
+        targetDistanceField.setLeftPadding(16)
+        targetDistanceField.setRightPadding(40)
+        targetDistanceField.inputView = targetDistancePicker
+        targetDistanceField.inputAccessoryView = targetDistanceToolbar
+        targetDistanceField.delegate = self
+
+        targetDistancePicker.dataSource = self
+        targetDistancePicker.delegate = self
 
         previousDistanceField.borderStyle = .none
         previousDistanceField.layer.cornerRadius = 14
@@ -217,7 +247,7 @@ final class RegisterShoeViewController: HTViewController {
         previousDistanceField.keyboardType = .decimalPad
         previousDistanceField.returnKeyType = .done
         previousDistanceField.attributedPlaceholder = NSAttributedString(
-            string: "이전 달린 거리를 입력하세요",
+            string: "현재 거리를 입력하세요",
             attributes: [.foregroundColor: AppColor.UI.textTertiary]
         )
         previousDistanceField.setLeftPadding(16)
@@ -230,6 +260,7 @@ final class RegisterShoeViewController: HTViewController {
         saveButton.titleLabel?.font = AppFont.UI.buttonMD
         saveButton.layer.cornerRadius = 16
         saveButton.addTarget(self, action: #selector(saveTapped), for: .touchUpInside)
+        configureToolbar(targetDistanceToolbar, action: #selector(confirmTargetDistanceSelection))
         configureToolbar(previousDistanceToolbar, action: #selector(confirmPreviousDistanceEntry))
         applySaveButtonStyle(isEnabled: false)
     }
@@ -237,6 +268,7 @@ final class RegisterShoeViewController: HTViewController {
     private func bind() {
         let output = viewModel.transform(
             input: .init(
+                selectedCatalogItem: selectedCatalogItemSubject.asObservable(),
                 nicknameText: nicknameField.rx.text.orEmpty.asObservable(),
                 selectedTargetDistance: targetDistanceSubject.asObservable(),
                 previousDistanceText: previousDistanceField.rx.text.orEmpty.asObservable(),
@@ -246,19 +278,42 @@ final class RegisterShoeViewController: HTViewController {
 
         output.item
             .drive(onNext: { [weak self] item in
-                self?.brandLabel.text = item.brandName.uppercased()
-                self?.modelLabel.text = item.modelName
-                self?.metaLabel.text = [item.sku, item.colors.joined(separator: ", ")].filter { !$0.isEmpty }.joined(separator: "\n")
-                self?.imageTask = RemoteImageLoader.shared.loadImage(from: item.imageURL) { image in
-                    self?.shoeImageView.image = image ?? UIImage(systemName: "shoeprints.fill")
-                    self?.shoeImageView.tintColor = AppColor.UI.textSecondary
+                guard let self else { return }
+                if let item {
+                    self.updateCatalogDisplay(with: item)
+                } else {
+                    self.brandLabel.text = nil
+                    self.modelLabel.text = nil
+                    self.metaLabel.text = nil
+                    self.imageTask?.cancel()
+                    self.shoeImageView.image = UIImage(systemName: "shoe")
+                    self.shoeImageView.tintColor = AppColor.UI.textSecondary
+                }
+                self.variantsCollectionView.reloadData()
+            })
+            .disposed(by: disposeBag)
+
+        output.isManual
+            .drive(onNext: { [weak self] isManual in
+                guard let self else { return }
+                // In manual mode the catalog info group collapses and nickname becomes required.
+                self.infoStack.isHidden = isManual
+                if isManual {
+                    self.nicknameField.attributedPlaceholder = NSAttributedString(
+                        string: "운동화 이름 또는 별칭을 입력하세요",
+                        attributes: [.foregroundColor: AppColor.UI.textTertiary]
+                    )
+                    self.formStack.setCustomSpacing(0, after: self.infoStack)
+                    self.variantsCollectionView.isHidden = true
+                } else {
+                    self.variantsCollectionView.isHidden = self.variantItems.isEmpty
                 }
             })
             .disposed(by: disposeBag)
 
         output.targetDistanceText
             .drive(onNext: { [weak self] text in
-                self?.updateTargetDistanceButtonTitle(text)
+                self?.updateTargetDistanceFieldText(text)
             })
             .disposed(by: disposeBag)
 
@@ -296,6 +351,14 @@ final class RegisterShoeViewController: HTViewController {
 
     @objc private func saveTapped() {
         saveTapSubject.onNext(())
+    }
+
+    @objc private func confirmTargetDistanceSelection() {
+        if selectedTargetDistanceMeters == nil,
+           let firstDistance = DistanceOption.targetDistances.first {
+            selectTargetDistance(firstDistance)
+        }
+        targetDistanceField.resignFirstResponder()
     }
 
     @objc private func confirmPreviousDistanceEntry() {
@@ -339,42 +402,32 @@ final class RegisterShoeViewController: HTViewController {
         present(alert, animated: true)
     }
 
-    private func makeTargetDistanceMenu() -> UIMenu {
-        let actions = DistanceOption.targetDistances.map { distance in
-            let kilometers = Int(distance / 1000.0)
-            let isSelected = selectedTargetDistanceMeters == distance
-            return UIAction(
-                title: "\(kilometers) km",
-                state: isSelected ? .on : .off
-            ) { [weak self] _ in
-                self?.selectedTargetDistanceMeters = distance
-                self?.targetDistanceSubject.onNext(distance)
-                self?.targetDistanceButton.menu = self?.makeTargetDistanceMenu()
-            }
+    private func updateCatalogDisplay(with item: ShoeCatalogItem) {
+        brandLabel.text = item.brandName.uppercased()
+        modelLabel.text = item.modelName
+        metaLabel.text = [item.sku, item.colors.joined(separator: ", ")]
+            .filter { !$0.isEmpty }
+            .joined(separator: "\n")
+        imageTask?.cancel()
+        imageTask = RemoteImageLoader.shared.loadImage(from: item.imageURL) { [weak self] image in
+            self?.shoeImageView.image = image ?? UIImage(systemName: "shoe")
+            self?.shoeImageView.tintColor = AppColor.UI.textSecondary
         }
-        return UIMenu(title: "", children: actions)
     }
 
-    private func updateTargetDistanceButtonTitle(_ text: String?) {
-        var configuration = targetDistanceButton.configuration ?? UIButton.Configuration.plain()
+    private func selectTargetDistance(_ distance: Double) {
+        selectedTargetDistanceMeters = distance
+        targetDistanceSubject.onNext(distance)
+    }
+
+    private func updateTargetDistanceFieldText(_ text: String?) {
         if let text, !text.isEmpty {
-            configuration.attributedTitle = AttributedString(
-                text,
-                attributes: AttributeContainer([
-                    .font: AppFont.UI.titleMD,
-                    .foregroundColor: AppColor.UI.textPrimary
-                ])
-            )
+            targetDistanceField.text = text
+            targetDistanceField.textColor = AppColor.UI.textPrimary
         } else {
-            configuration.attributedTitle = AttributedString(
-                "목표 거리를 선택하세요",
-                attributes: AttributeContainer([
-                    .font: AppFont.UI.titleMD,
-                    .foregroundColor: AppColor.UI.textTertiary
-                ])
-            )
+            targetDistanceField.text = nil
+            targetDistanceField.textColor = AppColor.UI.textTertiary
         }
-        targetDistanceButton.configuration = configuration
     }
 
     private func applySaveButtonStyle(isEnabled: Bool) {
@@ -391,6 +444,17 @@ final class RegisterShoeViewController: HTViewController {
 }
 
 extension RegisterShoeViewController: UITextFieldDelegate {
+    func textFieldShouldBeginEditing(_ textField: UITextField) -> Bool {
+        if textField === targetDistanceField {
+            let distance = selectedTargetDistanceMeters ?? DistanceOption.targetDistances.first
+            if let distance,
+               let index = DistanceOption.targetDistances.firstIndex(of: distance) {
+                targetDistancePicker.selectRow(index, inComponent: 0, animated: false)
+            }
+        }
+        return true
+    }
+
     func textFieldShouldReturn(_ textField: UITextField) -> Bool {
         if textField === nicknameField {
             textField.resignFirstResponder()
@@ -401,16 +465,98 @@ extension RegisterShoeViewController: UITextFieldDelegate {
     }
 }
 
-private extension UITextField {
-    func setLeftPadding(_ value: CGFloat) {
-        let paddingView = UIView(frame: CGRect(x: 0, y: 0, width: value, height: 1))
-        leftView = paddingView
-        leftViewMode = .always
+extension RegisterShoeViewController: UICollectionViewDataSource, UICollectionViewDelegateFlowLayout {
+    func collectionView(_ collectionView: UICollectionView, numberOfItemsInSection section: Int) -> Int {
+        variantItems.count
     }
 
-    func setRightPadding(_ value: CGFloat) {
-        let paddingView = UIView(frame: CGRect(x: 0, y: 0, width: value, height: 1))
-        rightView = paddingView
-        rightViewMode = .always
+    func collectionView(_ collectionView: UICollectionView, cellForItemAt indexPath: IndexPath) -> UICollectionViewCell {
+        let cell = collectionView.dequeueReusableCell(
+            withReuseIdentifier: VariantThumbnailCell.reuseID,
+            for: indexPath
+        ) as! VariantThumbnailCell
+        let item = variantItems[indexPath.item]
+        let selectedItem = try? selectedCatalogItemSubject.value()
+        cell.configure(with: item, isSelected: selectedItem?.sku == item.sku)
+        return cell
+    }
+
+    func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
+        guard variantItems.indices.contains(indexPath.item) else { return }
+        selectedCatalogItemSubject.onNext(variantItems[indexPath.item])
+    }
+
+    func collectionView(
+        _ collectionView: UICollectionView,
+        layout collectionViewLayout: UICollectionViewLayout,
+        sizeForItemAt indexPath: IndexPath
+    ) -> CGSize {
+        CGSize(width: 68, height: 68)
+    }
+}
+
+extension RegisterShoeViewController: UIPickerViewDataSource, UIPickerViewDelegate {
+    func numberOfComponents(in pickerView: UIPickerView) -> Int { 1 }
+
+    func pickerView(_ pickerView: UIPickerView, numberOfRowsInComponent component: Int) -> Int {
+        DistanceOption.targetDistances.count
+    }
+
+    func pickerView(_ pickerView: UIPickerView, titleForRow row: Int, forComponent component: Int) -> String? {
+        let distance = DistanceOption.targetDistances[row]
+        return "\(Int(distance / 1000.0)) km"
+    }
+
+    func pickerView(_ pickerView: UIPickerView, didSelectRow row: Int, inComponent component: Int) {
+        selectTargetDistance(DistanceOption.targetDistances[row])
+    }
+}
+
+private final class VariantThumbnailCell: HTCollectionViewCell {
+    static let reuseID = "VariantThumbnailCell"
+
+    private let imageView = UIImageView()
+    private var imageTask: URLSessionDataTask?
+
+    override func prepareForReuse() {
+        super.prepareForReuse()
+        imageTask?.cancel()
+        imageTask = nil
+        imageView.image = UIImage(systemName: "shoe")
+    }
+
+    override func configHierarchy() {
+        contentView.addSubview(imageView)
+    }
+
+    override func configLayout() {
+        imageView.snp.makeConstraints { make in
+            make.edges.equalToSuperview()
+        }
+    }
+
+    override func configView() {
+        contentView.backgroundColor = AppColor.UI.cardBackground
+        contentView.layer.cornerRadius = 14
+        contentView.layer.borderWidth = 1
+        contentView.layer.borderColor = AppColor.UI.border.cgColor
+
+        imageView.contentMode = .scaleAspectFit
+        imageView.clipsToBounds = true
+        imageView.layer.cornerRadius = 14
+        imageView.backgroundColor = AppColor.UI.backgroundSecondary
+        imageView.tintColor = AppColor.UI.textSecondary
+        imageView.image = UIImage(systemName: "shoe")
+    }
+
+    func configure(with item: ShoeCatalogItem, isSelected: Bool) {
+        contentView.layer.borderColor = isSelected
+            ? RunningLevelManager.shared.accentUIColor.cgColor
+            : AppColor.UI.border.cgColor
+        contentView.layer.borderWidth = isSelected ? 2 : 1
+        imageTask = RemoteImageLoader.shared.loadImage(from: item.imageURL) { [weak self] image in
+            self?.imageView.image = image ?? UIImage(systemName: "shoe")
+            self?.imageView.tintColor = AppColor.UI.textSecondary
+        }
     }
 }

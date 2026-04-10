@@ -85,7 +85,6 @@ final class WatchBridge: NSObject, ObservableObject {
         guard WCSession.isSupported() else { return }
         WCSession.default.delegate = self
         WCSession.default.activate()
-        updateReachability()
     }
 
     private func updateReachability() {
@@ -93,14 +92,22 @@ final class WatchBridge: NSObject, ObservableObject {
         let session = WCSession.default
         // startWatchApp은 isReachable이 불필요하며 isPaired + isAppInstalled이면 워치 기동 가능
         let connected = session.isPaired && session.isWatchAppInstalled
+        let isActivated = session.activationState == .activated
         if isWatchConnected != connected { isWatchConnected = connected }
         watchConnectionInfo = WatchConnectionInfo(
             isPaired: session.isPaired,
             isAppInstalled: session.isWatchAppInstalled,
-            isReachable: session.isReachable
+            isReachable: isActivated ? session.isReachable : false
         )
 #else
-        let connected = WCSession.default.isReachable
+        let session = WCSession.default
+        guard session.activationState == .activated else {
+            if isWatchConnected {
+                isWatchConnected = false
+            }
+            return
+        }
+        let connected = session.isReachable
         if isWatchConnected != connected { isWatchConnected = connected }
 #endif
     }
@@ -343,11 +350,7 @@ extension WatchBridge: WCSessionDelegate {
 #endif
 
 #if os(watchOS)
-        if !session.receivedApplicationContext.isEmpty {
-            applyContext(session.receivedApplicationContext)
-        } else {
-            requestLevelFromPhone(session)
-        }
+        requestLevelFromPhone(session)
 #endif
     }
 
