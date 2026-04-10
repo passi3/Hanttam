@@ -7,87 +7,84 @@
 
 import UIKit
 import SnapKit
-
-enum ShoeBrand: String, CaseIterable {
-    case adidas = "Adidas"
-    case asics = "ASICS"
-    case brooks = "Brooks"
-    case hoka = "HOKA"
-    case newBalance = "New Balance"
-    case nike = "NIKE"
-    case on = "On"
-    case puma = "PUMA"
-    case salomon = "Salomon"
-    case saucony = "Saucony"
-    case liNing = "LI-NING"
-
-    var displayName: String { rawValue }
-
-    /// Keyword used to query `brand_name` in Supabase.
-    var searchKeyword: String { rawValue }
-}
+import Kingfisher
 
 final class ShoeBrandSelectViewController: HTViewController {
     private let onRegistered: ((RegisteredShoe) -> Void)?
+    private let service: BrandServicing
 
-    private let scrollView = UIScrollView()
-    private let contentStack = UIStackView()
-    private let gridStack = UIStackView()
-    private let separator = UIView()
+    private let collectionView = UICollectionView(frame: .zero, collectionViewLayout: UICollectionViewFlowLayout())
+    private let statusLabel = UILabel()
+    private let spinner = UIActivityIndicatorView(style: .medium)
     private let manualRegisterButton = UIButton(type: .system)
+    private let searchController = UISearchController(searchResultsController: nil)
 
-    private let brands = ShoeBrand.allCases
-    private let columnCount = 3
-    private let tileHeight: CGFloat = 84
-    private let tileSpacing: CGFloat = 12
+    private var brands: [BrandSummary] = []
+    private var filteredBrands: [BrandSummary] = []
+    private let itemSpacing: CGFloat = 12
 
-    init(onRegistered: ((RegisteredShoe) -> Void)? = nil) {
+    init(
+        onRegistered: ((RegisteredShoe) -> Void)? = nil,
+        service: BrandServicing = SupabaseShoeSearchService()
+    ) {
         self.onRegistered = onRegistered
+        self.service = service
         super.init(nibName: nil, bundle: nil)
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        fetchBrands()
+    }
+
     override func configHierarchy() {
-        view.addSubview(scrollView)
-        scrollView.addSubview(contentStack)
-        contentStack.addArrangedSubview(gridStack)
-        contentStack.addArrangedSubview(separator)
-        contentStack.addArrangedSubview(manualRegisterButton)
+        view.addSubview(collectionView)
+        view.addSubview(statusLabel)
+        view.addSubview(spinner)
+        view.addSubview(manualRegisterButton)
     }
 
     override func configLayout() {
-        scrollView.snp.makeConstraints { make in
+        collectionView.snp.makeConstraints { make in
             make.edges.equalTo(view.safeAreaLayoutGuide)
         }
-        contentStack.snp.makeConstraints { make in
-            make.edges.equalToSuperview().inset(UIEdgeInsets(top: 20, left: 20, bottom: 24, right: 20))
-            make.width.equalTo(scrollView.snp.width).offset(-40)
+        statusLabel.snp.makeConstraints { make in
+            make.center.equalToSuperview()
+            make.leading.trailing.equalToSuperview().inset(28)
         }
-        separator.snp.makeConstraints { make in
-            make.height.equalTo(1)
+        spinner.snp.makeConstraints { make in
+            make.centerX.equalToSuperview()
+            make.bottom.equalTo(statusLabel.snp.top).offset(-12)
         }
         manualRegisterButton.snp.makeConstraints { make in
+            make.leading.trailing.equalToSuperview().inset(20)
+            make.bottom.equalTo(view.safeAreaLayoutGuide).inset(16)
             make.height.equalTo(54)
         }
     }
 
     override func configView() {
-        title = "장비"
+        title = "브랜드 선택"
         view.backgroundColor = AppColor.UI.backgroundGrouped
+        definesPresentationContext = true
 
-        scrollView.alwaysBounceVertical = true
+        searchController.obscuresBackgroundDuringPresentation = false
+        searchController.searchBar.placeholder = "브랜드 검색"
+        searchController.searchResultsUpdater = self
+        navigationItem.searchController = searchController
 
-        contentStack.axis = .vertical
-        contentStack.spacing = 20
-        contentStack.alignment = .fill
-
-        gridStack.axis = .vertical
-        gridStack.spacing = tileSpacing
-        gridStack.alignment = .fill
-        gridStack.distribution = .fill
-
-        separator.backgroundColor = AppColor.UI.border
+        if let layout = collectionView.collectionViewLayout as? UICollectionViewFlowLayout {
+            layout.minimumLineSpacing = itemSpacing
+            layout.minimumInteritemSpacing = itemSpacing
+            layout.sectionInset = UIEdgeInsets(top: 20, left: 20, bottom: 94, right: 20)
+        }
+        collectionView.register(BrandCell.self, forCellWithReuseIdentifier: BrandCell.reuseID)
+        collectionView.backgroundColor = .clear
+        collectionView.alwaysBounceVertical = true
+        collectionView.dataSource = self
+        collectionView.delegate = self
 
         manualRegisterButton.setTitle("직접 등록", for: .normal)
         manualRegisterButton.titleLabel?.font = AppFont.UI.buttonMD
@@ -98,66 +95,54 @@ final class ShoeBrandSelectViewController: HTViewController {
         manualRegisterButton.layer.borderColor = AppColor.UI.border.cgColor
         manualRegisterButton.addTarget(self, action: #selector(manualRegisterTapped), for: .touchUpInside)
 
-        buildBrandGrid()
+        statusLabel.font = AppFont.UI.bodyLG
+        statusLabel.textColor = AppColor.UI.textSecondary
+        statusLabel.textAlignment = .center
+        statusLabel.numberOfLines = 0
+        statusLabel.text = "브랜드를 불러오는 중입니다."
     }
 
-    private func buildBrandGrid() {
-        var chunks: [[(Int, ShoeBrand)]] = []
-        for (index, brand) in brands.enumerated() {
-            if let last = chunks.last, last.count < columnCount {
-                chunks[chunks.count - 1].append((index, brand))
-            } else {
-                chunks.append([(index, brand)])
+    private func fetchBrands() {
+        spinner.startAnimating()
+        service.fetchBrands { [weak self] result in
+            guard let self else { return }
+            self.spinner.stopAnimating()
+            switch result {
+            case .success(let brands):
+                self.brands = brands
+                self.applyFilter(query: self.searchController.searchBar.text ?? "")
+            case .failure(let error):
+                self.brands = []
+                self.filteredBrands = []
+                self.collectionView.reloadData()
+                self.statusLabel.text = error.localizedDescription
+                self.statusLabel.isHidden = false
             }
-        }
-
-        for row in chunks {
-            let rowStack = UIStackView()
-            rowStack.axis = .horizontal
-            rowStack.spacing = tileSpacing
-            rowStack.alignment = .fill
-            rowStack.distribution = .fillEqually
-
-            for (index, brand) in row {
-                let button = makeBrandButton(title: brand.displayName, tag: index)
-                rowStack.addArrangedSubview(button)
-            }
-
-            // Pad the last row with invisible spacers so items stay in a grid.
-            if row.count < columnCount {
-                for _ in 0..<(columnCount - row.count) {
-                    let spacer = UIView()
-                    spacer.isUserInteractionEnabled = false
-                    rowStack.addArrangedSubview(spacer)
-                }
-            }
-
-            rowStack.snp.makeConstraints { make in
-                make.height.equalTo(tileHeight)
-            }
-            gridStack.addArrangedSubview(rowStack)
         }
     }
 
-    private func makeBrandButton(title: String, tag: Int) -> UIButton {
-        let button = UIButton(type: .system)
-        button.tag = tag
-        button.setTitle(title, for: .normal)
-        button.titleLabel?.font = AppFont.UI.titleMD
-        button.titleLabel?.numberOfLines = 2
-        button.titleLabel?.textAlignment = .center
-        button.setTitleColor(AppColor.UI.textPrimary, for: .normal)
-        button.backgroundColor = AppColor.UI.cardBackground
-        button.layer.cornerRadius = 16
-        button.layer.borderWidth = 1
-        button.layer.borderColor = AppColor.UI.border.cgColor
-        button.addTarget(self, action: #selector(brandTapped(_:)), for: .touchUpInside)
-        return button
+    private func applyFilter(query: String) {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty {
+            filteredBrands = brands
+        } else {
+            filteredBrands = brands.filter { $0.name.localizedCaseInsensitiveContains(trimmed) }
+        }
+        collectionView.reloadData()
+        if brands.isEmpty {
+            statusLabel.text = "등록 가능한 브랜드가 없습니다."
+            statusLabel.isHidden = false
+        } else if filteredBrands.isEmpty {
+            statusLabel.text = "검색 결과가 없습니다."
+            statusLabel.isHidden = false
+        } else {
+            statusLabel.isHidden = true
+        }
     }
 
-    @objc private func brandTapped(_ sender: UIButton) {
-        guard brands.indices.contains(sender.tag) else { return }
-        let brand = brands[sender.tag]
+    private func selectBrand(at indexPath: IndexPath) {
+        guard filteredBrands.indices.contains(indexPath.item) else { return }
+        let brand = filteredBrands[indexPath.item]
         let viewController = ShoeSearchViewController(
             brand: brand,
             onRegistered: onRegistered
@@ -171,5 +156,104 @@ final class ShoeBrandSelectViewController: HTViewController {
             onRegistered: onRegistered
         )
         navigationController?.pushViewController(viewController, animated: true)
+    }
+}
+
+extension ShoeBrandSelectViewController: UICollectionViewDataSource, UICollectionViewDelegateFlowLayout {
+    func collectionView(_ collectionView: UICollectionView, numberOfItemsInSection section: Int) -> Int {
+        filteredBrands.count
+    }
+
+    func collectionView(_ collectionView: UICollectionView, cellForItemAt indexPath: IndexPath) -> UICollectionViewCell {
+        let cell = collectionView.dequeueReusableCell(
+            withReuseIdentifier: BrandCell.reuseID,
+            for: indexPath
+        ) as! BrandCell
+        cell.configure(with: filteredBrands[indexPath.item])
+        return cell
+    }
+
+    func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
+        selectBrand(at: indexPath)
+    }
+
+    func collectionView(
+        _ collectionView: UICollectionView,
+        layout collectionViewLayout: UICollectionViewLayout,
+        sizeForItemAt indexPath: IndexPath
+    ) -> CGSize {
+        let horizontalInset: CGFloat = 20 * 2
+        let totalSpacing = itemSpacing * 2
+        let width = floor((collectionView.bounds.width - horizontalInset - totalSpacing) / 3)
+        return CGSize(width: width, height: 92)
+    }
+}
+
+extension ShoeBrandSelectViewController: UISearchResultsUpdating {
+    func updateSearchResults(for searchController: UISearchController) {
+        applyFilter(query: searchController.searchBar.text ?? "")
+    }
+}
+
+private final class BrandCell: HTCollectionViewCell {
+    static let reuseID = "BrandCell"
+
+    private let cardView = UIView()
+    private let imageView = UIImageView()
+    private let nameLabel = UILabel()
+
+    override func configHierarchy() {
+        contentView.addSubview(cardView)
+        cardView.addSubview(imageView)
+        cardView.addSubview(nameLabel)
+    }
+
+    override func configLayout() {
+        cardView.snp.makeConstraints { make in
+            make.edges.equalToSuperview()
+        }
+        imageView.snp.makeConstraints { make in
+            make.top.leading.trailing.equalToSuperview().inset(12)
+            make.height.equalTo(44)
+        }
+        nameLabel.snp.makeConstraints { make in
+            make.top.equalTo(imageView.snp.bottom).offset(10)
+            make.leading.trailing.equalToSuperview().inset(8)
+            make.bottom.lessThanOrEqualToSuperview().inset(12)
+        }
+    }
+
+    override func configView() {
+        backgroundColor = .clear
+        cardView.backgroundColor = AppColor.UI.cardBackground
+        cardView.layer.cornerRadius = 16
+        cardView.layer.borderWidth = 1
+        cardView.layer.borderColor = AppColor.UI.border.cgColor
+
+        imageView.contentMode = .scaleAspectFit
+        imageView.tintColor = AppColor.UI.textSecondary
+        imageView.image = UIImage(systemName: "shoeprints.fill")
+
+        nameLabel.font = AppFont.UI.labelLG
+        nameLabel.textColor = AppColor.UI.textPrimary
+        nameLabel.textAlignment = .center
+        nameLabel.numberOfLines = 1
+    }
+
+    override func prepareForReuse() {
+        super.prepareForReuse()
+        imageView.kf.cancelDownloadTask()
+        imageView.image = UIImage(systemName: "shoeprints.fill")
+    }
+
+    func configure(with brand: BrandSummary) {
+        nameLabel.text = brand.name
+        let placeholder = UIImage(systemName: "shoeprints.fill")
+        if let logoURL = brand.logoURL,
+           let url = URL(string: logoURL) {
+            imageView.kf.setImage(with: url, placeholder: placeholder)
+        } else {
+            imageView.image = placeholder
+        }
     }
 }

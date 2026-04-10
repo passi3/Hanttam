@@ -22,6 +22,22 @@ enum GearSessionKind: String, Codable, Hashable {
     }
 }
 
+struct BrandSummary: Decodable, Hashable {
+    let id: UUID
+    let name: String
+    let slug: String
+    let logoURL: String?
+    let sortOrder: Int
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case name
+        case slug
+        case logoURL = "logo_url"
+        case sortOrder = "sort_order"
+    }
+}
+
 struct ShoeCatalogItem: Decodable, Hashable {
     let id: String
     let modelName: String
@@ -39,6 +55,24 @@ struct ShoeCatalogItem: Decodable, Hashable {
         case imageURL = "image_url"
         case createdAt = "created_at"
         case brandName = "brand_name"
+    }
+
+    init(
+        id: String,
+        modelName: String,
+        sku: String,
+        colors: [String],
+        imageURL: String?,
+        createdAt: Date?,
+        brandName: String
+    ) {
+        self.id = id
+        self.modelName = modelName
+        self.sku = sku
+        self.colors = colors
+        self.imageURL = imageURL
+        self.createdAt = createdAt
+        self.brandName = brandName
     }
 
     init(from decoder: Decoder) throws {
@@ -82,6 +116,67 @@ struct ShoeCatalogItem: Decodable, Hashable {
             .split(separator: separator)
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
+    }
+}
+
+struct ShoeCatalogVariant: Decodable, Hashable {
+    let sku: String
+    let colors: [String]
+    let imageURL: String?
+    let sortOrder: Int
+
+    enum CodingKeys: String, CodingKey {
+        case sku
+        case colors
+        case imageURL = "image_url"
+        case sortOrder = "sort_order"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        sku = try container.decode(String.self, forKey: .sku)
+        let rawColors = try container.decodeIfPresent(String.self, forKey: .colors) ?? ""
+        colors = ShoeCatalogItem.parseColors(rawColors)
+        imageURL = try container.decodeIfPresent(String.self, forKey: .imageURL)
+        sortOrder = try container.decodeIfPresent(Int.self, forKey: .sortOrder) ?? 0
+    }
+}
+
+struct ShoeSearchResult: Decodable, Hashable {
+    let brandID: UUID?
+    let brandName: String
+    let modelName: String
+    let thumbnailURL: String?
+    let variants: [ShoeCatalogVariant]
+    let variantCount: Int
+
+    enum CodingKeys: String, CodingKey {
+        case brandID = "brand_id"
+        case brandName = "brand_name"
+        case modelName = "model_name"
+        case thumbnailURL = "thumbnail_url"
+        case variants
+        case variantCount = "variant_count"
+    }
+
+    var catalogItems: [ShoeCatalogItem] {
+        variants.map(makeCatalogItem(from:))
+    }
+
+    var representativeItem: ShoeCatalogItem? {
+        variants.first.map(makeCatalogItem(from:))
+    }
+
+    private func makeCatalogItem(from variant: ShoeCatalogVariant) -> ShoeCatalogItem {
+        ShoeCatalogItem(
+            id: variant.sku,
+            modelName: modelName,
+            sku: variant.sku,
+            colors: variant.colors,
+            imageURL: variant.imageURL ?? thumbnailURL,
+            createdAt: nil,
+            brandName: brandName
+        )
     }
 }
 

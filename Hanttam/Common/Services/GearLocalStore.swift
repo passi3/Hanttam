@@ -2,7 +2,7 @@
 //  GearLocalStore.swift
 //  Hanttam
 //
-//  Created by Codex on 4/8/26.
+//  Created by passi on 4/8/26.
 //
 
 import Foundation
@@ -10,6 +10,7 @@ import Foundation
 protocol GearLocalStoring: AnyObject {
     func fetchRegisteredShoes() -> [RegisteredShoe]
     func saveRegisteredShoe(_ shoe: RegisteredShoe)
+    func updateRegisteredShoe(_ shoe: RegisteredShoe)
     func fetchSessionLinks() -> [ShoeSessionLink]
     func upsertSessionLink(_ link: ShoeSessionLink)
     func removeSessionLink(sessionIdentifier: String, kind: GearSessionKind)
@@ -46,6 +47,16 @@ final class GearLocalStore: GearLocalStoring {
         queue.sync {
             var shoes = load([RegisteredShoe].self, from: registeredShoesURL) ?? []
             shoes.append(shoe)
+            save(shoes, to: registeredShoesURL)
+        }
+        notifyChange()
+    }
+
+    func updateRegisteredShoe(_ shoe: RegisteredShoe) {
+        queue.sync {
+            var shoes = load([RegisteredShoe].self, from: registeredShoesURL) ?? []
+            guard let index = shoes.firstIndex(where: { $0.id == shoe.id }) else { return }
+            shoes[index] = shoe
             save(shoes, to: registeredShoesURL)
         }
         notifyChange()

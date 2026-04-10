@@ -2,7 +2,7 @@
 //  ShoeSearchViewModel.swift
 //  Hanttam
 //
-//  Created by Codex on 4/8/26.
+//  Created by passi on 4/8/26.
 //
 
 import Foundation
@@ -17,23 +17,23 @@ final class ShoeSearchViewModel: HTReusableVMProtocol {
     }
 
     struct Output {
-        let results: Driver<[ShoeCatalogItem]>
+        let results: Driver<[ShoeSearchResult]>
         let isLoading: Driver<Bool>
         let statusText: Driver<String?>
-        let selectedItem: Signal<ShoeCatalogItem>
+        let selectedItem: Signal<ShoeSearchResult>
     }
 
-    private let resultsRelay = BehaviorRelay<[ShoeCatalogItem]>(value: [])
+    private let resultsRelay = BehaviorRelay<[ShoeSearchResult]>(value: [])
     private let isLoadingRelay = BehaviorRelay<Bool>(value: false)
     private let statusTextRelay = BehaviorRelay<String?>(value: "운동화를 선택하거나 모델명을 검색하세요.")
-    private let selectedItemRelay = PublishRelay<ShoeCatalogItem>()
+    private let selectedItemRelay = PublishRelay<ShoeSearchResult>()
     private let disposeBag = DisposeBag()
 
     private let service: ShoeSearchServicing
     private let initialLimit = 20
-    private let brand: ShoeBrand?
+    private let brand: BrandSummary?
 
-    init(brand: ShoeBrand? = nil, service: ShoeSearchServicing = SupabaseShoeSearchService()) {
+    init(brand: BrandSummary? = nil, service: ShoeSearchServicing = SupabaseShoeSearchService()) {
         self.brand = brand
         self.service = service
     }
@@ -53,7 +53,7 @@ final class ShoeSearchViewModel: HTReusableVMProtocol {
             .disposed(by: disposeBag)
 
         input.selectItem
-            .withLatestFrom(resultsRelay) { index, items -> ShoeCatalogItem? in
+            .withLatestFrom(resultsRelay) { index, items -> ShoeSearchResult? in
                 guard items.indices.contains(index) else { return nil }
                 return items[index]
             }
@@ -71,7 +71,7 @@ final class ShoeSearchViewModel: HTReusableVMProtocol {
 
     private func loadInitialCatalog() {
         isLoadingRelay.accept(true)
-        service.fetchInitialShoes(limit: initialLimit, brand: brand?.searchKeyword) { [weak self] result in
+        service.fetchInitialShoes(limit: initialLimit, brand: brand?.name) { [weak self] result in
             guard let self else { return }
             self.isLoadingRelay.accept(false)
             switch result {
@@ -87,7 +87,7 @@ final class ShoeSearchViewModel: HTReusableVMProtocol {
 
     private func search(keyword: String) {
         isLoadingRelay.accept(true)
-        service.searchShoes(keyword: keyword, brand: brand?.searchKeyword) { [weak self] result in
+        service.searchShoes(keyword: keyword, brand: brand?.name) { [weak self] result in
             guard let self else { return }
             self.isLoadingRelay.accept(false)
             switch result {

@@ -26,6 +26,7 @@ final class RegisterShoeViewController: HTViewController {
     private let scrollView = UIScrollView()
     private let contentView = UIView()
     private let shoeImageView = UIImageView()
+    private let variantsCollectionView = UICollectionView(frame: .zero, collectionViewLayout: UICollectionViewFlowLayout())
     private let infoStack = UIStackView()
     private let brandLabel = UILabel()
     private let modelLabel = UILabel()
@@ -41,18 +42,37 @@ final class RegisterShoeViewController: HTViewController {
     private let targetDistancePicker = UIPickerView()
     private let targetDistanceToolbar = UIToolbar()
     private let previousDistanceToolbar = UIToolbar()
+    private let selectedCatalogItemSubject: BehaviorSubject<ShoeCatalogItem?>
     private var imageTask: URLSessionDataTask?
     private var selectedTargetDistanceMeters: Double?
     private var canRegister = false
+    private let searchResult: ShoeSearchResult?
 
-    init(mode: RegisterShoeViewModel.Mode, onRegistered: ((RegisteredShoe) -> Void)? = nil) {
+    private var variantItems: [ShoeCatalogItem] {
+        searchResult?.catalogItems ?? []
+    }
+
+    init(
+        mode: RegisterShoeViewModel.Mode,
+        searchResult: ShoeSearchResult? = nil,
+        onRegistered: ((RegisteredShoe) -> Void)? = nil
+    ) {
         self.viewModel = RegisterShoeViewModel(mode: mode)
         self.onRegistered = onRegistered
+        self.searchResult = searchResult
+        self.selectedCatalogItemSubject = BehaviorSubject<ShoeCatalogItem?>(value: mode.catalogItem)
         super.init(nibName: nil, bundle: nil)
     }
 
     convenience init(item: ShoeCatalogItem, onRegistered: ((RegisteredShoe) -> Void)? = nil) {
-        self.init(mode: .catalog(item), onRegistered: onRegistered)
+        self.init(mode: .catalog(item), searchResult: nil, onRegistered: onRegistered)
+    }
+
+    convenience init(searchResult: ShoeSearchResult, onRegistered: ((RegisteredShoe) -> Void)? = nil) {
+        guard let item = searchResult.representativeItem else {
+            fatalError("Search result requires at least one variant")
+        }
+        self.init(mode: .catalog(item), searchResult: searchResult, onRegistered: onRegistered)
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
@@ -66,6 +86,7 @@ final class RegisterShoeViewController: HTViewController {
         view.addSubview(scrollView)
         scrollView.addSubview(contentView)
         contentView.addSubview(shoeImageView)
+        contentView.addSubview(variantsCollectionView)
         contentView.addSubview(formStack)
 
         [brandLabel, modelLabel, metaLabel].forEach { infoStack.addArrangedSubview($0) }
@@ -92,11 +113,16 @@ final class RegisterShoeViewController: HTViewController {
         }
         shoeImageView.snp.makeConstraints { make in
             make.top.equalToSuperview().offset(24)
-            make.centerX.equalToSuperview()
-            make.width.height.equalTo(180)
+            make.leading.trailing.equalToSuperview().inset(24)
+            make.height.equalTo(180)
+        }
+        variantsCollectionView.snp.makeConstraints { make in
+            make.top.equalTo(shoeImageView.snp.bottom).offset(12)
+            make.leading.trailing.equalTo(shoeImageView)
+            make.height.equalTo(68)
         }
         formStack.snp.makeConstraints { make in
-            make.top.equalTo(shoeImageView.snp.bottom).offset(24)
+            make.top.equalTo(variantsCollectionView.snp.bottom).offset(24)
             make.leading.trailing.equalToSuperview().inset(24)
             make.bottom.equalToSuperview().inset(32)
         }
@@ -124,6 +150,18 @@ final class RegisterShoeViewController: HTViewController {
         shoeImageView.backgroundColor = AppColor.UI.backgroundSecondary
         shoeImageView.tintColor = AppColor.UI.textSecondary
         shoeImageView.image = UIImage(systemName: "shoe")
+
+        if let layout = variantsCollectionView.collectionViewLayout as? UICollectionViewFlowLayout {
+            layout.scrollDirection = .horizontal
+            layout.minimumLineSpacing = 8
+            layout.minimumInteritemSpacing = 8
+        }
+        variantsCollectionView.register(VariantThumbnailCell.self, forCellWithReuseIdentifier: VariantThumbnailCell.reuseID)
+        variantsCollectionView.backgroundColor = .clear
+        variantsCollectionView.showsHorizontalScrollIndicator = false
+        variantsCollectionView.alwaysBounceHorizontal = true
+        variantsCollectionView.dataSource = self
+        variantsCollectionView.delegate = self
 
         formStack.axis = .vertical
         formStack.alignment = .fill
@@ -230,6 +268,7 @@ final class RegisterShoeViewController: HTViewController {
     private func bind() {
         let output = viewModel.transform(
             input: .init(
+                selectedCatalogItem: selectedCatalogItemSubject.asObservable(),
                 nicknameText: nicknameField.rx.text.orEmpty.asObservable(),
                 selectedTargetDistance: targetDistanceSubject.asObservable(),
                 previousDistanceText: previousDistanceField.rx.text.orEmpty.asObservable(),
@@ -241,22 +280,16 @@ final class RegisterShoeViewController: HTViewController {
             .drive(onNext: { [weak self] item in
                 guard let self else { return }
                 if let item {
-                    self.brandLabel.text = item.brandName.uppercased()
-                    self.modelLabel.text = item.modelName
-                    self.metaLabel.text = [item.sku, item.colors.joined(separator: ", ")]
-                        .filter { !$0.isEmpty }
-                        .joined(separator: "\n")
-                    self.imageTask = RemoteImageLoader.shared.loadImage(from: item.imageURL) { [weak self] image in
-                        self?.shoeImageView.image = image ?? UIImage(systemName: "shoe")
-                        self?.shoeImageView.tintColor = AppColor.UI.textSecondary
-                    }
+                    self.updateCatalogDisplay(with: item)
                 } else {
                     self.brandLabel.text = nil
                     self.modelLabel.text = nil
                     self.metaLabel.text = nil
+                    self.imageTask?.cancel()
                     self.shoeImageView.image = UIImage(systemName: "shoe")
                     self.shoeImageView.tintColor = AppColor.UI.textSecondary
                 }
+                self.variantsCollectionView.reloadData()
             })
             .disposed(by: disposeBag)
 
@@ -271,6 +304,9 @@ final class RegisterShoeViewController: HTViewController {
                         attributes: [.foregroundColor: AppColor.UI.textTertiary]
                     )
                     self.formStack.setCustomSpacing(0, after: self.infoStack)
+                    self.variantsCollectionView.isHidden = true
+                } else {
+                    self.variantsCollectionView.isHidden = self.variantItems.isEmpty
                 }
             })
             .disposed(by: disposeBag)
@@ -366,6 +402,19 @@ final class RegisterShoeViewController: HTViewController {
         present(alert, animated: true)
     }
 
+    private func updateCatalogDisplay(with item: ShoeCatalogItem) {
+        brandLabel.text = item.brandName.uppercased()
+        modelLabel.text = item.modelName
+        metaLabel.text = [item.sku, item.colors.joined(separator: ", ")]
+            .filter { !$0.isEmpty }
+            .joined(separator: "\n")
+        imageTask?.cancel()
+        imageTask = RemoteImageLoader.shared.loadImage(from: item.imageURL) { [weak self] image in
+            self?.shoeImageView.image = image ?? UIImage(systemName: "shoe")
+            self?.shoeImageView.tintColor = AppColor.UI.textSecondary
+        }
+    }
+
     private func selectTargetDistance(_ distance: Double) {
         selectedTargetDistanceMeters = distance
         targetDistanceSubject.onNext(distance)
@@ -416,6 +465,36 @@ extension RegisterShoeViewController: UITextFieldDelegate {
     }
 }
 
+extension RegisterShoeViewController: UICollectionViewDataSource, UICollectionViewDelegateFlowLayout {
+    func collectionView(_ collectionView: UICollectionView, numberOfItemsInSection section: Int) -> Int {
+        variantItems.count
+    }
+
+    func collectionView(_ collectionView: UICollectionView, cellForItemAt indexPath: IndexPath) -> UICollectionViewCell {
+        let cell = collectionView.dequeueReusableCell(
+            withReuseIdentifier: VariantThumbnailCell.reuseID,
+            for: indexPath
+        ) as! VariantThumbnailCell
+        let item = variantItems[indexPath.item]
+        let selectedItem = try? selectedCatalogItemSubject.value()
+        cell.configure(with: item, isSelected: selectedItem?.sku == item.sku)
+        return cell
+    }
+
+    func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
+        guard variantItems.indices.contains(indexPath.item) else { return }
+        selectedCatalogItemSubject.onNext(variantItems[indexPath.item])
+    }
+
+    func collectionView(
+        _ collectionView: UICollectionView,
+        layout collectionViewLayout: UICollectionViewLayout,
+        sizeForItemAt indexPath: IndexPath
+    ) -> CGSize {
+        CGSize(width: 68, height: 68)
+    }
+}
+
 extension RegisterShoeViewController: UIPickerViewDataSource, UIPickerViewDelegate {
     func numberOfComponents(in pickerView: UIPickerView) -> Int { 1 }
 
@@ -433,16 +512,51 @@ extension RegisterShoeViewController: UIPickerViewDataSource, UIPickerViewDelega
     }
 }
 
-private extension UITextField {
-    func setLeftPadding(_ value: CGFloat) {
-        let paddingView = UIView(frame: CGRect(x: 0, y: 0, width: value, height: 1))
-        leftView = paddingView
-        leftViewMode = .always
+private final class VariantThumbnailCell: HTCollectionViewCell {
+    static let reuseID = "VariantThumbnailCell"
+
+    private let imageView = UIImageView()
+    private var imageTask: URLSessionDataTask?
+
+    override func prepareForReuse() {
+        super.prepareForReuse()
+        imageTask?.cancel()
+        imageTask = nil
+        imageView.image = UIImage(systemName: "shoe")
     }
 
-    func setRightPadding(_ value: CGFloat) {
-        let paddingView = UIView(frame: CGRect(x: 0, y: 0, width: value, height: 1))
-        rightView = paddingView
-        rightViewMode = .always
+    override func configHierarchy() {
+        contentView.addSubview(imageView)
+    }
+
+    override func configLayout() {
+        imageView.snp.makeConstraints { make in
+            make.edges.equalToSuperview()
+        }
+    }
+
+    override func configView() {
+        contentView.backgroundColor = AppColor.UI.cardBackground
+        contentView.layer.cornerRadius = 14
+        contentView.layer.borderWidth = 1
+        contentView.layer.borderColor = AppColor.UI.border.cgColor
+
+        imageView.contentMode = .scaleAspectFit
+        imageView.clipsToBounds = true
+        imageView.layer.cornerRadius = 14
+        imageView.backgroundColor = AppColor.UI.backgroundSecondary
+        imageView.tintColor = AppColor.UI.textSecondary
+        imageView.image = UIImage(systemName: "shoe")
+    }
+
+    func configure(with item: ShoeCatalogItem, isSelected: Bool) {
+        contentView.layer.borderColor = isSelected
+            ? RunningLevelManager.shared.accentUIColor.cgColor
+            : AppColor.UI.border.cgColor
+        contentView.layer.borderWidth = isSelected ? 2 : 1
+        imageTask = RemoteImageLoader.shared.loadImage(from: item.imageURL) { [weak self] image in
+            self?.imageView.image = image ?? UIImage(systemName: "shoe")
+            self?.imageView.tintColor = AppColor.UI.textSecondary
+        }
     }
 }

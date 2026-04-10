@@ -26,6 +26,7 @@ final class RegisterShoeViewModel: HTReusableVMProtocol {
     }
 
     struct Input {
+        let selectedCatalogItem: Observable<ShoeCatalogItem?>
         let nicknameText: Observable<String>
         let selectedTargetDistance: Observable<Double?>
         let previousDistanceText: Observable<String>
@@ -45,6 +46,7 @@ final class RegisterShoeViewModel: HTReusableVMProtocol {
     let mode: Mode
 
     private let isSavingRelay = BehaviorRelay<Bool>(value: false)
+    private let selectedCatalogItemRelay: BehaviorRelay<ShoeCatalogItem?>
     private let nicknameRelay = BehaviorRelay<String>(value: "")
     private let targetDistanceRelay = BehaviorRelay<Double?>(value: nil)
     private let previousDistanceRelay = BehaviorRelay<String>(value: "")
@@ -56,6 +58,7 @@ final class RegisterShoeViewModel: HTReusableVMProtocol {
 
     init(mode: Mode, store: GearLocalStoring = GearLocalStore.shared) {
         self.mode = mode
+        self.selectedCatalogItemRelay = BehaviorRelay<ShoeCatalogItem?>(value: mode.catalogItem)
         self.store = store
     }
 
@@ -64,6 +67,10 @@ final class RegisterShoeViewModel: HTReusableVMProtocol {
     }
 
     func transform(input: Input) -> Output {
+        input.selectedCatalogItem
+            .bind(to: selectedCatalogItemRelay)
+            .disposed(by: disposeBag)
+
         input.nicknameText
             .bind(to: nicknameRelay)
             .disposed(by: disposeBag)
@@ -78,17 +85,23 @@ final class RegisterShoeViewModel: HTReusableVMProtocol {
 
         input.saveTap
             .withLatestFrom(Observable.combineLatest(
+                selectedCatalogItemRelay.asObservable(),
                 nicknameRelay.asObservable(),
                 targetDistanceRelay.asObservable(),
                 previousDistanceRelay.asObservable()
             ))
-            .subscribe(onNext: { [weak self] nickname, targetDistance, previousDistance in
-                self?.save(nicknameText: nickname, targetDistanceMeters: targetDistance, previousDistanceText: previousDistance)
+            .subscribe(onNext: { [weak self] selectedItem, nickname, targetDistance, previousDistance in
+                self?.save(
+                    selectedCatalogItem: selectedItem,
+                    nicknameText: nickname,
+                    targetDistanceMeters: targetDistance,
+                    previousDistanceText: previousDistance
+                )
             })
             .disposed(by: disposeBag)
 
         return Output(
-            item: Driver.just(mode.catalogItem),
+            item: selectedCatalogItemRelay.asDriver(),
             isManual: Driver.just(mode.isManual),
             isSaving: isSavingRelay.asDriver(),
             targetDistanceText: targetDistanceRelay
@@ -123,7 +136,12 @@ final class RegisterShoeViewModel: HTReusableVMProtocol {
         return previousDistanceMeters >= 0 && previousDistanceMeters <= targetDistanceMeters
     }
 
-    private func save(nicknameText: String, targetDistanceMeters: Double?, previousDistanceText: String) {
+    private func save(
+        selectedCatalogItem: ShoeCatalogItem?,
+        nicknameText: String,
+        targetDistanceMeters: Double?,
+        previousDistanceText: String
+    ) {
         guard let targetDistanceMeters, targetDistanceMeters > 0 else {
             errorRelay.accept("목표 거리를 선택해주세요.")
             return
@@ -147,7 +165,12 @@ final class RegisterShoeViewModel: HTReusableVMProtocol {
         let resolvedNickname = trimmedNickname.isEmpty ? nil : trimmedNickname
         let shoe: RegisteredShoe
         switch mode {
-        case .catalog(let item):
+        case .catalog:
+            guard let item = selectedCatalogItem else {
+                isSavingRelay.accept(false)
+                errorRelay.accept("운동화 정보를 불러오지 못했습니다.")
+                return
+            }
             shoe = RegisteredShoe(
                 item: item,
                 nickname: resolvedNickname,
