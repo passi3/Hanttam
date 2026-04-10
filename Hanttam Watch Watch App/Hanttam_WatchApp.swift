@@ -184,9 +184,6 @@ final class WatchBridge: NSObject, ObservableObject {
 extension WatchBridge: WCSessionDelegate {
     func session(_ session: WCSession, activationDidCompleteWith activationState: WCSessionActivationState, error: Error?) {
         guard activationState == .activated else { return }
-        if !session.receivedApplicationContext.isEmpty {
-            applyPendingStartContext(session.receivedApplicationContext)
-        }
     }
 
     func session(_ session: WCSession, didReceiveMessage message: [String: Any]) {

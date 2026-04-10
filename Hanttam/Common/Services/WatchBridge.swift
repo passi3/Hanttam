@@ -85,7 +85,6 @@ final class WatchBridge: NSObject, ObservableObject {
         guard WCSession.isSupported() else { return }
         WCSession.default.delegate = self
         WCSession.default.activate()
-        updateReachability()
     }
 
     private func updateReachability() {
@@ -351,11 +350,7 @@ extension WatchBridge: WCSessionDelegate {
 #endif
 
 #if os(watchOS)
-        if !session.receivedApplicationContext.isEmpty {
-            applyContext(session.receivedApplicationContext)
-        } else {
-            requestLevelFromPhone(session)
-        }
+        requestLevelFromPhone(session)
 #endif
     }
 
