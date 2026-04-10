@@ -564,17 +564,20 @@ private final class GearDetailHeaderView: HTView {
         }
 
         guard previousSKU != shoe.sku else { return }
-        var indexPathsToReload: [IndexPath] = []
         if let previousSKU,
            let previousIndex = variants.firstIndex(where: { $0.sku == previousSKU }) {
-            indexPathsToReload.append(IndexPath(item: previousIndex, section: 0))
+            updateSelectionAppearance(at: IndexPath(item: previousIndex, section: 0), isSelected: false)
         }
         if let currentIndex = variants.firstIndex(where: { $0.sku == shoe.sku }) {
-            indexPathsToReload.append(IndexPath(item: currentIndex, section: 0))
+            updateSelectionAppearance(at: IndexPath(item: currentIndex, section: 0), isSelected: true)
         }
-        guard !indexPathsToReload.isEmpty else { return }
+    }
+
+    private func updateSelectionAppearance(at indexPath: IndexPath, isSelected: Bool) {
         UIView.performWithoutAnimation {
-            variantsCollectionView.reloadItems(at: indexPathsToReload)
+            if let cell = variantsCollectionView.cellForItem(at: indexPath) as? GearColorwayCell {
+                cell.setSelectedAppearance(isSelected)
+            }
             variantsCollectionView.layoutIfNeeded()
         }
     }
@@ -647,12 +650,16 @@ private final class GearColorwayCell: HTCollectionViewCell {
     }
 
     func configure(with item: ShoeCatalogItem, isSelected: Bool) {
-        contentView.layer.borderColor = isSelected ? RunningLevelManager.shared.accentUIColor.cgColor : AppColor.UI.border.cgColor
-        contentView.layer.borderWidth = isSelected ? 2 : 1
+        setSelectedAppearance(isSelected)
         imageTask = RemoteImageLoader.shared.loadImage(from: item.imageURL) { [weak self] image in
             self?.imageView.image = image ?? UIImage(systemName: "shoeprints.fill")
             self?.imageView.tintColor = AppColor.UI.textSecondary
         }
+    }
+
+    func setSelectedAppearance(_ isSelected: Bool) {
+        contentView.layer.borderColor = isSelected ? RunningLevelManager.shared.accentUIColor.cgColor : AppColor.UI.border.cgColor
+        contentView.layer.borderWidth = isSelected ? 2 : 1
     }
 }
 
