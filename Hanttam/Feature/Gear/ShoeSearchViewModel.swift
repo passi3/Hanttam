@@ -31,8 +31,10 @@ final class ShoeSearchViewModel: HTReusableVMProtocol {
 
     private let service: ShoeSearchServicing
     private let initialLimit = 20
+    private let brand: ShoeBrand?
 
-    init(service: ShoeSearchServicing = SupabaseShoeSearchService()) {
+    init(brand: ShoeBrand? = nil, service: ShoeSearchServicing = SupabaseShoeSearchService()) {
+        self.brand = brand
         self.service = service
     }
 
@@ -69,7 +71,7 @@ final class ShoeSearchViewModel: HTReusableVMProtocol {
 
     private func loadInitialCatalog() {
         isLoadingRelay.accept(true)
-        service.fetchInitialShoes(limit: initialLimit) { [weak self] result in
+        service.fetchInitialShoes(limit: initialLimit, brand: brand?.searchKeyword) { [weak self] result in
             guard let self else { return }
             self.isLoadingRelay.accept(false)
             switch result {
@@ -85,7 +87,7 @@ final class ShoeSearchViewModel: HTReusableVMProtocol {
 
     private func search(keyword: String) {
         isLoadingRelay.accept(true)
-        service.searchShoes(keyword: keyword) { [weak self] result in
+        service.searchShoes(keyword: keyword, brand: brand?.searchKeyword) { [weak self] result in
             guard let self else { return }
             self.isLoadingRelay.accept(false)
             switch result {

@@ -13,6 +13,7 @@ import SnapKit
 final class ShoeSearchViewController: HTViewController {
     private let viewModel: ShoeSearchViewModel
     private let onRegistered: ((RegisteredShoe) -> Void)?
+    private let brand: ShoeBrand?
     private let viewDidLoadSubject = PublishSubject<Void>()
     private let selectItemSubject = PublishSubject<Int>()
     private let disposeBag = DisposeBag()
@@ -25,10 +26,12 @@ final class ShoeSearchViewController: HTViewController {
     private var results: [ShoeCatalogItem] = []
 
     init(
-        viewModel: ShoeSearchViewModel = ShoeSearchViewModel(),
+        brand: ShoeBrand? = nil,
+        viewModel: ShoeSearchViewModel? = nil,
         onRegistered: ((RegisteredShoe) -> Void)? = nil
     ) {
-        self.viewModel = viewModel
+        self.brand = brand
+        self.viewModel = viewModel ?? ShoeSearchViewModel(brand: brand)
         self.onRegistered = onRegistered
         super.init(nibName: nil, bundle: nil)
     }

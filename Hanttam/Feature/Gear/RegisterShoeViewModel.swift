@@ -10,6 +10,21 @@ import RxCocoa
 import RxSwift
 
 final class RegisterShoeViewModel: HTReusableVMProtocol {
+    enum Mode {
+        case catalog(ShoeCatalogItem)
+        case manual
+
+        var catalogItem: ShoeCatalogItem? {
+            if case .catalog(let item) = self { return item }
+            return nil
+        }
+
+        var isManual: Bool {
+            if case .manual = self { return true }
+            return false
+        }
+    }
+
     struct Input {
         let nicknameText: Observable<String>
         let selectedTargetDistance: Observable<Double?>
@@ -18,7 +33,8 @@ final class RegisterShoeViewModel: HTReusableVMProtocol {
     }
 
     struct Output {
-        let item: Driver<ShoeCatalogItem>
+        let item: Driver<ShoeCatalogItem?>
+        let isManual: Driver<Bool>
         let isSaving: Driver<Bool>
         let targetDistanceText: Driver<String?>
         let isRegisterEnabled: Driver<Bool>
@@ -26,7 +42,7 @@ final class RegisterShoeViewModel: HTReusableVMProtocol {
         let registeredShoe: Signal<RegisteredShoe>
     }
 
-    let item: ShoeCatalogItem
+    let mode: Mode
 
     private let isSavingRelay = BehaviorRelay<Bool>(value: false)
     private let nicknameRelay = BehaviorRelay<String>(value: "")
@@ -38,9 +54,13 @@ final class RegisterShoeViewModel: HTReusableVMProtocol {
 
     private let store: GearLocalStoring
 
-    init(item: ShoeCatalogItem, store: GearLocalStoring = GearLocalStore.shared) {
-        self.item = item
+    init(mode: Mode, store: GearLocalStoring = GearLocalStore.shared) {
+        self.mode = mode
         self.store = store
+    }
+
+    convenience init(item: ShoeCatalogItem, store: GearLocalStoring = GearLocalStore.shared) {
+        self.init(mode: .catalog(item), store: store)
     }
 
     func transform(input: Input) -> Output {
@@ -68,15 +88,24 @@ final class RegisterShoeViewModel: HTReusableVMProtocol {
             .disposed(by: disposeBag)
 
         return Output(
-            item: Driver.just(item),
+            item: Driver.just(mode.catalogItem),
+            isManual: Driver.just(mode.isManual),
             isSaving: isSavingRelay.asDriver(),
             targetDistanceText: targetDistanceRelay
                 .map(Self.formatDistance(meters:))
                 .asDriver(onErrorJustReturn: nil),
             isRegisterEnabled: Observable
-                .combineLatest(targetDistanceRelay.asObservable(), previousDistanceRelay.asObservable())
-                .map { [weak self] targetDistance, previousDistanceText in
+                .combineLatest(
+                    nicknameRelay.asObservable(),
+                    targetDistanceRelay.asObservable(),
+                    previousDistanceRelay.asObservable()
+                )
+                .map { [weak self] nickname, targetDistance, previousDistanceText in
                     guard let self, let targetDistance else { return false }
+                    if self.mode.isManual {
+                        let trimmedNickname = nickname.trimmingCharacters(in: .whitespacesAndNewlines)
+                        if trimmedNickname.isEmpty { return false }
+                    }
                     let trimmedPreviousDistance = previousDistanceText.trimmingCharacters(in: .whitespacesAndNewlines)
                     guard !trimmedPreviousDistance.isEmpty else { return true }
                     return self.validatePreviousDistance(trimmedPreviousDistance, targetDistanceMeters: targetDistance)
@@ -109,18 +138,41 @@ final class RegisterShoeViewModel: HTReusableVMProtocol {
                   value <= targetDistanceMeters {
             previousDistanceMeters = value
         } else {
-            errorRelay.accept("이전 달린 거리는 0km 이상, 목표 거리 이하로 입력해주세요.")
+            errorRelay.accept("현재 거리는 0km 이상, 목표 거리 이하로 입력해주세요.")
             return
         }
 
         isSavingRelay.accept(true)
         let trimmedNickname = nicknameText.trimmingCharacters(in: .whitespacesAndNewlines)
-        let shoe = RegisteredShoe(
-            item: item,
-            nickname: trimmedNickname.isEmpty ? nil : trimmedNickname,
-            targetDistanceMeters: targetDistanceMeters,
-            initialDistanceMeters: previousDistanceMeters
-        )
+        let resolvedNickname = trimmedNickname.isEmpty ? nil : trimmedNickname
+        let shoe: RegisteredShoe
+        switch mode {
+        case .catalog(let item):
+            shoe = RegisteredShoe(
+                item: item,
+                nickname: resolvedNickname,
+                targetDistanceMeters: targetDistanceMeters,
+                initialDistanceMeters: previousDistanceMeters
+            )
+        case .manual:
+            guard let nickname = resolvedNickname else {
+                isSavingRelay.accept(false)
+                errorRelay.accept("별칭을 입력해주세요.")
+                return
+            }
+            shoe = RegisteredShoe(
+                catalogID: "manual-\(UUID().uuidString)",
+                nickname: nickname,
+                brandName: "",
+                modelName: nickname,
+                sku: "",
+                colors: [],
+                imageURL: nil,
+                createdAt: Date(),
+                targetDistanceMeters: targetDistanceMeters,
+                initialDistanceMeters: previousDistanceMeters
+            )
+        }
         store.saveRegisteredShoe(shoe)
         isSavingRelay.accept(false)
         registeredRelay.accept(shoe)
