@@ -216,7 +216,7 @@ private final class GearDetailHeaderView: HTView {
             make.centerX.equalToSuperview()
         }
         shoeImageView.snp.makeConstraints { make in
-            make.top.equalTo(distanceUnitLabel.snp.top).offset(16)
+            make.top.equalTo(distanceUnitLabel.snp.top).offset(-52)
             make.leading.trailing.equalToSuperview().inset(20)
             make.height.equalTo(220)
         }
