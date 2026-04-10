@@ -2,7 +2,7 @@
 //  WatchWorkoutSummaryView.swift
 //  Hanttam Watch Watch App
 //
-//  Created by Codex on 4/5/26.
+//  Created by passi on 4/5/26.
 //
 
 import SwiftUI

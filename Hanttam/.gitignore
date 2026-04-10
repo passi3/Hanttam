@@ -1,1 +1,16 @@
 config/
+
+# Xcode
+DerivedData/
+build/
+xcuserdata/
+*.xcuserstate
+
+# SwiftPM
+.build/
+
+# macOS
+.DS_Store
+
+# Logs
+*.log
