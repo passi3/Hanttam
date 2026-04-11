@@ -38,6 +38,7 @@ final class GearLocalStore: GearLocalStoring {
         encoder.dateEncodingStrategy = .iso8601
         decoder.dateDecodingStrategy = .iso8601
         migrateJSONIfNeeded()
+        print(">>>>>>>>>>>>>>", Realm.Configuration.defaultConfiguration.fileURL!)
     }
 
     func fetchRegisteredShoes() -> [RegisteredShoe] {

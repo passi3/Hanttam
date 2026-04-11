@@ -26,7 +26,12 @@ final class ShoeEditViewController: HTViewController {
     private let nicknameField = UITextField()
     private let targetDistanceTitleLabel = UILabel()
     private let targetDistanceField = UITextField()
-    private let saveButton = UIButton(type: .system)
+    private lazy var saveBarButtonItem = UIBarButtonItem(
+        title: "저장",
+        style: .done,
+        target: self,
+        action: #selector(saveButtonTapped)
+    )
     private let targetDistancePicker = UIPickerView()
     private let targetDistanceToolbar = UIToolbar()
 
@@ -58,7 +63,7 @@ final class ShoeEditViewController: HTViewController {
         view.addSubview(scrollView)
         scrollView.addSubview(contentView)
         contentView.addSubview(stackView)
-        [nicknameTitleLabel, nicknameField, targetDistanceTitleLabel, targetDistanceField, saveButton].forEach {
+        [nicknameTitleLabel, nicknameField, targetDistanceTitleLabel, targetDistanceField].forEach {
             formCardView.addSubview($0)
         }
         [previewView, formCardView].forEach { stackView.addArrangedSubview($0) }
@@ -91,11 +96,7 @@ final class ShoeEditViewController: HTViewController {
         targetDistanceField.snp.makeConstraints { make in
             make.top.equalTo(targetDistanceTitleLabel.snp.bottom).offset(10)
             make.leading.trailing.equalToSuperview().inset(20)
-            make.height.equalTo(52)
-        }
-        saveButton.snp.makeConstraints { make in
-            make.top.equalTo(targetDistanceField.snp.bottom).offset(20)
-            make.leading.trailing.bottom.equalToSuperview().inset(20)
+            make.bottom.equalToSuperview().inset(20)
             make.height.equalTo(52)
         }
     }
@@ -103,6 +104,7 @@ final class ShoeEditViewController: HTViewController {
     override func configView() {
         title = "운동화 수정"
         view.backgroundColor = AppColor.UI.backgroundGrouped
+        navigationItem.rightBarButtonItem = saveBarButtonItem
 
         stackView.axis = .vertical
         stackView.spacing = 18
@@ -156,13 +158,7 @@ final class ShoeEditViewController: HTViewController {
         targetDistancePicker.delegate = self
         configureToolbar(targetDistanceToolbar)
 
-        saveButton.setTitle("저장", for: .normal)
-        saveButton.setTitleColor(.white, for: .normal)
-        saveButton.titleLabel?.font = AppFont.UI.buttonMD
-        saveButton.layer.cornerRadius = 16
-        saveButton.addTarget(self, action: #selector(saveButtonTapped), for: .touchUpInside)
-
-        applySaveButtonStyle(isEnabled: false)
+        updateSaveButtonState()
     }
 
     private func fetchVariantsIfNeeded() {
@@ -268,14 +264,8 @@ final class ShoeEditViewController: HTViewController {
 
     private func updateSaveButtonState() {
         let isEnabled = hasChanges()
-        saveButton.isEnabled = isEnabled
-        saveButton.alpha = isEnabled ? 1.0 : 0.6
-        applySaveButtonStyle(isEnabled: isEnabled)
-    }
-
-    private func applySaveButtonStyle(isEnabled: Bool) {
-        let accentColor = RunningLevelManager.shared.accentUIColor
-        saveButton.backgroundColor = isEnabled ? accentColor : accentColor.withAlphaComponent(0.35)
+        saveBarButtonItem.isEnabled = isEnabled
+        saveBarButtonItem.tintColor = isEnabled ? RunningLevelManager.shared.accentUIColor : AppColor.UI.textTertiary
     }
 
     private func configureToolbar(_ toolbar: UIToolbar) {
@@ -425,6 +415,8 @@ private final class ShoeEditPreviewView: HTView {
         variants: [ShoeCatalogItem],
         onSelectVariant: ((ShoeCatalogItem) -> Void)?
     ) {
+        let previousSKU = currentShoe?.sku
+        let didVariantsChange = self.variants != variants
         currentShoe = shoe
         self.variants = variants
         self.onSelectVariant = onSelectVariant
@@ -435,7 +427,20 @@ private final class ShoeEditPreviewView: HTView {
         let collectionHeight: CGFloat = variants.isEmpty ? 0 : 60
         collectionHeightConstraint?.update(offset: collectionHeight)
         variantsCollectionView.isHidden = variants.isEmpty
-        variantsCollectionView.reloadData()
+        if didVariantsChange {
+            UIView.performWithoutAnimation {
+                variantsCollectionView.reloadData()
+                variantsCollectionView.layoutIfNeeded()
+            }
+        } else if previousSKU != shoe.sku {
+            if let previousSKU,
+               let previousIndex = variants.firstIndex(where: { $0.sku == previousSKU }) {
+                updateSelectionAppearance(at: IndexPath(item: previousIndex, section: 0), isSelected: false)
+            }
+            if let currentIndex = variants.firstIndex(where: { $0.sku == shoe.sku }) {
+                updateSelectionAppearance(at: IndexPath(item: currentIndex, section: 0), isSelected: true)
+            }
+        }
 
         if currentImageURL != shoe.imageURL {
             currentImageURL = shoe.imageURL
@@ -444,6 +449,15 @@ private final class ShoeEditPreviewView: HTView {
                 self?.shoeImageView.image = image ?? UIImage(systemName: "shoeprints.fill")
                 self?.shoeImageView.tintColor = AppColor.UI.textSecondary
             }
+        }
+    }
+
+    private func updateSelectionAppearance(at indexPath: IndexPath, isSelected: Bool) {
+        UIView.performWithoutAnimation {
+            if let cell = variantsCollectionView.cellForItem(at: indexPath) as? ShoeEditColorwayCell {
+                cell.setSelectedAppearance(isSelected)
+            }
+            variantsCollectionView.layoutIfNeeded()
         }
     }
 }
@@ -522,7 +536,7 @@ private final class ShoeEditColorwayCell: HTCollectionViewCell {
         }
     }
 
-    private func setSelectedAppearance(_ isSelected: Bool) {
+    func setSelectedAppearance(_ isSelected: Bool) {
         contentView.layer.borderColor = isSelected ? RunningLevelManager.shared.accentUIColor.cgColor : AppColor.UI.border.cgColor
         contentView.layer.borderWidth = isSelected ? 2 : 1
     }
