@@ -838,7 +838,7 @@ final class HealthKitStore: NSObject {
 
                 let totalDist = laps.filter { $0.type == .run }.reduce(0) { $0 + $1.distance }
                 return IntervalRecord(
-                    id: UUID(),
+                    id: w.uuid,
                     date: w.startDate,
                     settings: settings,
                     laps: laps,

@@ -76,13 +76,22 @@ final class ShoeDetailViewController: HTViewController {
         title = initialShoe.displayName
         view.backgroundColor = AppColor.UI.backgroundGrouped
 
-        navigationItem.rightBarButtonItem = UIBarButtonItem(
+        let editButton = UIBarButtonItem(
             title: "수정",
             style: .plain,
             target: self,
             action: #selector(editButtonTapped)
         )
-        navigationItem.rightBarButtonItem?.tintColor = AppColor.UI.textPrimary
+        editButton.tintColor = AppColor.UI.textPrimary
+
+        let deleteButton = UIBarButtonItem(
+            image: UIImage(systemName: "trash"),
+            style: .plain,
+            target: self,
+            action: #selector(deleteButtonTapped)
+        )
+        deleteButton.tintColor = AppColor.UI.red
+        navigationItem.rightBarButtonItems = [deleteButton, editButton]
 
         stackView.axis = .vertical
         stackView.spacing = 18
@@ -139,6 +148,26 @@ final class ShoeDetailViewController: HTViewController {
             store: store
         )
         navigationController?.pushViewController(viewController, animated: true)
+    }
+
+    @objc private func deleteButtonTapped() {
+        let shoe = currentViewData?.shoe ?? initialShoe
+        let sessionsCount = currentViewData?.sessions.count ?? 0
+        let message: String
+        if sessionsCount > 0 {
+            message = "이 운동화를 삭제하면 연결된 워크아웃 \(sessionsCount)개의 장비 연결도 해제됩니다. 워크아웃 기록은 삭제되지 않습니다."
+        } else {
+            message = "이 운동화를 삭제하시겠습니까?"
+        }
+
+        let alert = UIAlertController(title: "운동화 삭제", message: message, preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "취소", style: .cancel))
+        alert.addAction(UIAlertAction(title: "삭제", style: .destructive) { [weak self] _ in
+            guard let self else { return }
+            store.deleteRegisteredShoe(id: shoe.id)
+            navigationController?.popViewController(animated: true)
+        })
+        present(alert, animated: true)
     }
 
     private func renderSessions(_ sessions: [GearLinkedSessionItem]) {

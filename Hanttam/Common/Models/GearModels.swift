@@ -392,7 +392,11 @@ enum GearSessionResolver {
                     intervalRecord: nil
                 )
             case .interval:
-                guard let intervalRecord = intervalLookup[link.sessionIdentifier] else { return nil }
+                guard let intervalRecord = intervalLookup[link.sessionIdentifier]
+                    ?? findMatchingIntervalRecord(for: link, in: intervalRecords)
+                else {
+                    return nil
+                }
                 return GearLinkedSessionItem(
                     id: link.id,
                     sessionKind: .interval,
@@ -406,6 +410,18 @@ enum GearSessionResolver {
             }
         }
         .sorted { $0.startedAt > $1.startedAt }
+    }
+
+    private static func findMatchingIntervalRecord(
+        for link: ShoeSessionLink,
+        in intervalRecords: [IntervalRecord]
+    ) -> IntervalRecord? {
+        let tolerance: TimeInterval = 2
+        return intervalRecords.first { record in
+            let recordEndDate = record.workout?.endDate ?? record.date.addingTimeInterval(record.totalDuration)
+            return abs(record.date.timeIntervalSince(link.workoutStartDate)) <= tolerance &&
+                abs(recordEndDate.timeIntervalSince(link.workoutEndDate)) <= tolerance
+        }
     }
 }
 

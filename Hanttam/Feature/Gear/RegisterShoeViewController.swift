@@ -38,12 +38,19 @@ final class RegisterShoeViewController: HTViewController {
     private let targetDistanceField = UITextField()
     private let previousDistanceTitleLabel = UILabel()
     private let previousDistanceField = UITextField()
-    private let saveButton = UIButton(type: .system)
+    private lazy var saveBarButtonItem = UIBarButtonItem(
+        title: "등록",
+        style: .done,
+        target: self,
+        action: #selector(saveTapped)
+    )
     private let targetDistancePicker = UIPickerView()
     private let targetDistanceToolbar = UIToolbar()
     private let previousDistanceToolbar = UIToolbar()
     private let selectedCatalogItemSubject: BehaviorSubject<ShoeCatalogItem?>
     private var imageTask: URLSessionDataTask?
+    private var currentImageURL: String?
+    private var selectedCatalogItem: ShoeCatalogItem?
     private var selectedTargetDistanceMeters: Double?
     private var canRegister = false
     private let searchResult: ShoeSearchResult?
@@ -60,6 +67,7 @@ final class RegisterShoeViewController: HTViewController {
         self.viewModel = RegisterShoeViewModel(mode: mode)
         self.onRegistered = onRegistered
         self.searchResult = searchResult
+        self.selectedCatalogItem = mode.catalogItem
         self.selectedCatalogItemSubject = BehaviorSubject<ShoeCatalogItem?>(value: mode.catalogItem)
         super.init(nibName: nil, bundle: nil)
     }
@@ -98,8 +106,7 @@ final class RegisterShoeViewController: HTViewController {
             distanceTitleLabel,
             targetDistanceField,
             previousDistanceTitleLabel,
-            previousDistanceField,
-            saveButton
+            previousDistanceField
         ].forEach { formStack.addArrangedSubview($0) }
     }
 
@@ -135,14 +142,12 @@ final class RegisterShoeViewController: HTViewController {
         previousDistanceField.snp.makeConstraints { make in
             make.height.equalTo(52)
         }
-        saveButton.snp.makeConstraints { make in
-            make.height.equalTo(54)
-        }
     }
 
     override func configView() {
         title = "운동화 등록"
         view.backgroundColor = AppColor.UI.backgroundGrouped
+        navigationItem.rightBarButtonItem = saveBarButtonItem
 
         shoeImageView.contentMode = .scaleAspectFit
         shoeImageView.layer.cornerRadius = 22
@@ -255,14 +260,9 @@ final class RegisterShoeViewController: HTViewController {
         previousDistanceField.inputAccessoryView = previousDistanceToolbar
         previousDistanceField.delegate = self
 
-        saveButton.setTitle("운동화 등록", for: .normal)
-        saveButton.setTitleColor(.white, for: .normal)
-        saveButton.titleLabel?.font = AppFont.UI.buttonMD
-        saveButton.layer.cornerRadius = 16
-        saveButton.addTarget(self, action: #selector(saveTapped), for: .touchUpInside)
         configureToolbar(targetDistanceToolbar, action: #selector(confirmTargetDistanceSelection))
         configureToolbar(previousDistanceToolbar, action: #selector(confirmPreviousDistanceEntry))
-        applySaveButtonStyle(isEnabled: false)
+        updateSaveButtonState(isSaving: false)
     }
 
     private func bind() {
@@ -279,6 +279,8 @@ final class RegisterShoeViewController: HTViewController {
         output.item
             .drive(onNext: { [weak self] item in
                 guard let self else { return }
+                let previousItem = self.selectedCatalogItem
+                self.selectedCatalogItem = item
                 if let item {
                     self.updateCatalogDisplay(with: item)
                 } else {
@@ -289,7 +291,7 @@ final class RegisterShoeViewController: HTViewController {
                     self.shoeImageView.image = UIImage(systemName: "shoe")
                     self.shoeImageView.tintColor = AppColor.UI.textSecondary
                 }
-                self.variantsCollectionView.reloadData()
+                self.updateVariantSelection(from: previousItem, to: item)
             })
             .disposed(by: disposeBag)
 
@@ -408,10 +410,33 @@ final class RegisterShoeViewController: HTViewController {
         metaLabel.text = [item.sku, item.colors.joined(separator: ", ")]
             .filter { !$0.isEmpty }
             .joined(separator: "\n")
+        guard currentImageURL != item.imageURL else { return }
+        currentImageURL = item.imageURL
         imageTask?.cancel()
         imageTask = RemoteImageLoader.shared.loadImage(from: item.imageURL) { [weak self] image in
             self?.shoeImageView.image = image ?? UIImage(systemName: "shoe")
             self?.shoeImageView.tintColor = AppColor.UI.textSecondary
+        }
+    }
+
+    private func updateVariantSelection(from previousItem: ShoeCatalogItem?, to currentItem: ShoeCatalogItem?) {
+        guard previousItem?.sku != currentItem?.sku else { return }
+        if let previousItem,
+           let previousIndex = variantItems.firstIndex(where: { $0.sku == previousItem.sku }) {
+            setVariantCellSelected(false, at: IndexPath(item: previousIndex, section: 0))
+        }
+        if let currentItem,
+           let currentIndex = variantItems.firstIndex(where: { $0.sku == currentItem.sku }) {
+            setVariantCellSelected(true, at: IndexPath(item: currentIndex, section: 0))
+        }
+    }
+
+    private func setVariantCellSelected(_ isSelected: Bool, at indexPath: IndexPath) {
+        UIView.performWithoutAnimation {
+            if let cell = variantsCollectionView.cellForItem(at: indexPath) as? VariantThumbnailCell {
+                cell.setSelectedAppearance(isSelected)
+            }
+            variantsCollectionView.layoutIfNeeded()
         }
     }
 
@@ -430,16 +455,11 @@ final class RegisterShoeViewController: HTViewController {
         }
     }
 
-    private func applySaveButtonStyle(isEnabled: Bool) {
-        let accentColor = RunningLevelManager.shared.accentUIColor
-        saveButton.backgroundColor = isEnabled ? accentColor : accentColor.withAlphaComponent(0.35)
-    }
-
     private func updateSaveButtonState(isSaving: Bool) {
         let isEnabled = canRegister && !isSaving
-        saveButton.isEnabled = isEnabled
-        saveButton.alpha = isEnabled ? 1.0 : 0.6
-        applySaveButtonStyle(isEnabled: isEnabled)
+        saveBarButtonItem.isEnabled = isEnabled
+        saveBarButtonItem.title = isSaving ? "저장 중" : "등록"
+        saveBarButtonItem.tintColor = isEnabled ? RunningLevelManager.shared.accentUIColor : AppColor.UI.textTertiary
     }
 }
 
@@ -476,14 +496,15 @@ extension RegisterShoeViewController: UICollectionViewDataSource, UICollectionVi
             for: indexPath
         ) as! VariantThumbnailCell
         let item = variantItems[indexPath.item]
-        let selectedItem = try? selectedCatalogItemSubject.value()
-        cell.configure(with: item, isSelected: selectedItem?.sku == item.sku)
+        cell.configure(with: item, isSelected: selectedCatalogItem?.sku == item.sku)
         return cell
     }
 
     func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
         guard variantItems.indices.contains(indexPath.item) else { return }
-        selectedCatalogItemSubject.onNext(variantItems[indexPath.item])
+        let item = variantItems[indexPath.item]
+        guard selectedCatalogItem?.sku != item.sku else { return }
+        selectedCatalogItemSubject.onNext(item)
     }
 
     func collectionView(
@@ -550,13 +571,17 @@ private final class VariantThumbnailCell: HTCollectionViewCell {
     }
 
     func configure(with item: ShoeCatalogItem, isSelected: Bool) {
-        contentView.layer.borderColor = isSelected
-            ? RunningLevelManager.shared.accentUIColor.cgColor
-            : AppColor.UI.border.cgColor
-        contentView.layer.borderWidth = isSelected ? 2 : 1
+        setSelectedAppearance(isSelected)
         imageTask = RemoteImageLoader.shared.loadImage(from: item.imageURL) { [weak self] image in
             self?.imageView.image = image ?? UIImage(systemName: "shoe")
             self?.imageView.tintColor = AppColor.UI.textSecondary
         }
+    }
+
+    func setSelectedAppearance(_ isSelected: Bool) {
+        contentView.layer.borderColor = isSelected
+            ? RunningLevelManager.shared.accentUIColor.cgColor
+            : AppColor.UI.border.cgColor
+        contentView.layer.borderWidth = isSelected ? 2 : 1
     }
 }
