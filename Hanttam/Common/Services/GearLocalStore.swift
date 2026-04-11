@@ -12,6 +12,7 @@ protocol GearLocalStoring: AnyObject {
     func fetchRegisteredShoes() -> [RegisteredShoe]
     func saveRegisteredShoe(_ shoe: RegisteredShoe)
     func updateRegisteredShoe(_ shoe: RegisteredShoe)
+    func deleteRegisteredShoe(id: UUID)
     func fetchSessionLinks() -> [ShoeSessionLink]
     func upsertSessionLink(_ link: ShoeSessionLink)
     func removeSessionLink(sessionIdentifier: String, kind: GearSessionKind)
@@ -57,6 +58,20 @@ final class GearLocalStore: GearLocalStoring {
     func updateRegisteredShoe(_ shoe: RegisteredShoe) {
         write { realm in
             realm.add(RegisteredShoeObject(shoe: shoe), update: .modified)
+        }
+        notifyChange()
+    }
+
+    func deleteRegisteredShoe(id: UUID) {
+        let shoeIDString = id.uuidString
+        write { realm in
+            if let shoeObject = realm.object(ofType: RegisteredShoeObject.self, forPrimaryKey: shoeIDString) {
+                realm.delete(shoeObject)
+            }
+
+            let linkedSessions = realm.objects(ShoeSessionLinkObject.self)
+                .where { $0.shoeIDString == shoeIDString }
+            realm.delete(linkedSessions)
         }
         notifyChange()
     }
