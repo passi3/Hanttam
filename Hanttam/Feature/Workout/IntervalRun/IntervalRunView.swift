@@ -529,7 +529,7 @@ class IntervalRunViewController: UIViewController, CLLocationManagerDelegate, MK
         startRunningLap()
     }
 
-    private func enterWatchPreparingState(countdownValue: Int? = nil) {
+    private func enterWatchPreparingState(countdownValue: Int? = nil, startsLocalTimer: Bool = true) {
         phase = .preparing
         if let countdownValue {
             countdown = countdownValue
@@ -540,12 +540,29 @@ class IntervalRunViewController: UIViewController, CLLocationManagerDelegate, MK
         buttonContainer.isHidden = true
         pausedOverlay.isHidden = true
         restOverlay.isHidden = true
+
+        // 폰 쪽 폴백 카운트다운: 현재 워치는 skipCountdown=true로 동작하여 "preparing" 스냅샷을
+        // 보내지 않으므로, 폰이 자체적으로 카운트다운을 돌려 UI가 "3"에 멈추지 않도록 한다.
+        guard startsLocalTimer, watchCountdownTimer == nil else { return }
+        watchCountdownTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] t in
+            guard let self else { t.invalidate(); return }
+            self.countdown -= 1
+            if self.countdown > 0 {
+                self.animateCountdown(self.countdown)
+            } else {
+                t.invalidate()
+                self.watchCountdownTimer = nil
+                self.countdownFinished()
+            }
+        }
     }
 
     private func updateWatchPreparingCountdown(endsAt: Date?, countdownValue: Int?) {
         watchCountdownEndsAt = endsAt
-        enterWatchPreparingState(countdownValue: countdownValue)
         watchCountdownTimer?.invalidate()
+        watchCountdownTimer = nil
+        // endsAt가 있으면 워치가 제공한 타이머를 쓰고, 없으면 로컬 폴백 타이머를 돌린다.
+        enterWatchPreparingState(countdownValue: countdownValue, startsLocalTimer: endsAt == nil)
 
         guard let endsAt else { return }
         watchCountdownTimer = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { [weak self] timer in
@@ -555,7 +572,21 @@ class IntervalRunViewController: UIViewController, CLLocationManagerDelegate, MK
             if remaining <= 0 {
                 timer.invalidate()
                 self.watchCountdownTimer = nil
+                self.countdownFinished()
             }
+        }
+    }
+
+    private func exitPreparingStateIfNeeded() {
+        watchCountdownTimer?.invalidate()
+        watchCountdownTimer = nil
+        guard !countdownContainer.isHidden else { return }
+        UIView.animate(withDuration: 0.3) {
+            self.countdownContainer.alpha = 0
+            self.statsPanel.alpha = 1
+        } completion: { _ in
+            self.countdownContainer.isHidden = true
+            self.buttonContainer.isHidden = false
         }
     }
 
@@ -969,16 +1000,14 @@ class IntervalRunViewController: UIViewController, CLLocationManagerDelegate, MK
             updateWatchPreparingCountdown(endsAt: endsAt, countdownValue: snapshot.countdownValue)
             return
         case "paused":
-            watchCountdownTimer?.invalidate()
-            watchCountdownTimer = nil
+            exitPreparingStateIfNeeded()
             if case .paused = phase {} else {
                 phase = .paused(prior: .runningLap)
                 pausedOverlay.isHidden = false
                 showPausedButtons()
             }
         case "running":
-            watchCountdownTimer?.invalidate()
-            watchCountdownTimer = nil
+            exitPreparingStateIfNeeded()
             if snapshot.intervalPhase == "resting" {
                 if case .resting = phase {} else {
                     phase = .resting
@@ -996,8 +1025,7 @@ class IntervalRunViewController: UIViewController, CLLocationManagerDelegate, MK
                 }
             }
         case "finished":
-            watchCountdownTimer?.invalidate()
-            watchCountdownTimer = nil
+            exitPreparingStateIfNeeded()
             if case .finished = phase {} else {
                 finishWorkout(showResult: false)
                 finishAndShowResult()
