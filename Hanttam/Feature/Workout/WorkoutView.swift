@@ -63,8 +63,15 @@ struct WorkoutView: View {
     var body: some View {
         ZStack(alignment: .top) {
             Map(position: $position, interactionModes: []) {
-                Marker("", coordinate: displayCoordinate)
-                    .tint(AppColor.workoutRoute)
+                Annotation("", coordinate: displayCoordinate){
+                    Circle()
+                        .fill(RunningLevelManager.shared.accentColor)
+                        .frame(width: 14, height: 14)
+                        .overlay(
+                            Circle()
+                                .stroke(Color.white, lineWidth: 3)
+                        )
+                }
             }
             .mapStyle(.standard(
                 elevation: .flat,

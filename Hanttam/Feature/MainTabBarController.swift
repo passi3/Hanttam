@@ -34,7 +34,10 @@ final class MainTabBarController: UITabBarController {
     
     private func setupTabs() {
         let dashboardNav = UINavigationController(rootViewController: DashboardViewController())
-        let iconImg = tabBarIcon(named: "hanttamRing", size: CGSize(width: 40, height: 40))
+        let iconImg = HanttamBrandLogoView
+            .image(size: CGSize(width: 40, height: 40))
+            .withRenderingMode(.alwaysTemplate)
+
         dashboardNav.tabBarItem = UITabBarItem(
             title: "한땀",
             image: iconImg,
@@ -63,19 +66,6 @@ final class MainTabBarController: UITabBarController {
         )
         
         viewControllers = [dashboardNav, workoutVC, recordsNav, gearNav]
-    }
-
-    private func tabBarIcon(named name: String, size: CGSize) -> UIImage? {
-        guard let image = UIImage(named: name) else { return nil }
-        let format = UIGraphicsImageRendererFormat.default()
-        format.scale = UIScreen.main.scale
-        let renderer = UIGraphicsImageRenderer(size: size, format: format)
-
-        let resized = renderer.image { _ in
-            image.draw(in: CGRect(origin: .zero, size: size))
-        }
-
-        return resized.withRenderingMode(.alwaysTemplate)
     }
     
     private func updateAppearance() {

@@ -22,21 +22,21 @@ struct WatchButtonScreen: View {
                 Text("자유 목표")
                     .font(.system(size: 16, weight: .bold))
 
-                HanttamCirclesView(size: 130, icon: "play", iconColor: levelManager.accentColor)
-                .scaleEffect(isPressed ? 0.93 : 1.0)
-                .contentShape(Circle())
-                .gesture(
-                    DragGesture(minimumDistance: 0)
-                        .onChanged { _ in
-                            withAnimation(.easeIn(duration: 0.08)) { isPressed = true }
-                        }
-                        .onEnded { v in
-                            withAnimation(.spring(duration: 0.3)) { isPressed = false }
-                            if abs(v.translation.width) < 10 && abs(v.translation.height) < 10 {
-                                startFreeRun()
+                WatchHanttamBrandLogoRing(size: 130, icon: "play", iconColor: levelManager.accentColor)
+                    .scaleEffect(isPressed ? 0.93 : 1.0)
+                    .contentShape(Circle())
+                    .gesture(
+                        DragGesture(minimumDistance: 0)
+                            .onChanged { _ in
+                                withAnimation(.easeIn(duration: 0.08)) { isPressed = true }
                             }
-                        }
-                )
+                            .onEnded { v in
+                                withAnimation(.spring(duration: 0.3)) { isPressed = false }
+                                if abs(v.translation.width) < 10 && abs(v.translation.height) < 10 {
+                                    startFreeRun()
+                                }
+                            }
+                    )
 
                 Text("FREE RUN")
                     .font(.system(size: 8, weight: .semibold))
