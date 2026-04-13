@@ -388,10 +388,10 @@ final class FreeRunViewController: HTViewController, MKMapViewDelegate {
     // MARK: - Map
     private func applyRouteUpdate(_ update: FreeRunViewModel.RouteUpdate) {
         if update.isFirstUpdate {
-            let region = MKCoordinateRegion(center: update.coordinate, latitudinalMeters: 300, longitudinalMeters: 300)
+            let region = MKCoordinateRegion(center: update.coordinate, latitudinalMeters: 500, longitudinalMeters: 500)
             mapView.setRegion(region, animated: false)
         } else {
-            let camera = MKMapCamera(lookingAtCenter: update.coordinate, fromDistance: 300, pitch: 0, heading: 0)
+            let camera = MKMapCamera(lookingAtCenter: update.coordinate, fromDistance: 500, pitch: 0, heading: 0)
             mapView.setCamera(camera, animated: true)
         }
 
@@ -507,7 +507,7 @@ final class FreeRunViewController: HTViewController, MKMapViewDelegate {
         if let polyline = overlay as? MKPolyline {
             let renderer = MKPolylineRenderer(polyline: polyline)
             renderer.strokeColor = UIColor(AppColor.workoutRoute)
-            renderer.lineWidth   = 6
+            renderer.lineWidth   = 20
             return renderer
         }
         return MKOverlayRenderer(overlay: overlay)
@@ -522,7 +522,7 @@ final class FreeRunViewController: HTViewController, MKMapViewDelegate {
         } else {
             view?.annotation = annotation
         }
-        view?.markerTintColor = UIColor(AppColor.workoutRoute)
+        view?.markerTintColor = RunningLevelManager.shared.accentUIColor
         view?.glyphText       = ""
         return view
     }
