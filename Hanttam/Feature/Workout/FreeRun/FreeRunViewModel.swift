@@ -23,27 +23,21 @@ final class FreeRunViewModel: NSObject {
 
     // MARK: - Output
     struct Output {
-        let phase          : Driver<WorkoutPhase>
-        let durationText   : Driver<String>
-        let distanceText   : Driver<String>
-        let avgPaceText    : Driver<String>
-        let segmentPaceText: Driver<String>
-        let avgHRText      : Driver<String>
-        let segmentHRText  : Driver<String>
-        let routeUpdate    : Driver<RouteUpdate>
+        let phase           : Driver<WorkoutPhase>
+        let durationText    : Driver<String>
+        let distanceText    : Driver<String>
+        let avgPaceText     : Driver<String>
+        let segmentPaceText : Driver<String>
+        let avgHRText       : Driver<String>
+        let segmentHRText   : Driver<String>
+        let routeUpdate     : Driver<WorkoutRouteUpdate>
         let sourceBadgeState: Driver<SourceBadgeState>
-        let countdownText  : Driver<String>
-        let showResult     : Driver<WorkoutResultDataModel>
-        let showAlert      : Driver<AlertInfo>
+        let countdownText   : Driver<String>
+        let showResult      : Driver<WorkoutResultDataModel>
+        let showAlert       : Driver<AlertInfo>
     }
 
     // MARK: - Supporting types
-    struct RouteUpdate {
-        let coordinate    : CLLocationCoordinate2D
-        let allCoordinates: [CLLocationCoordinate2D]
-        let isFirstUpdate : Bool
-    }
-
     enum SourceBadgeState {
         case hidden
         case connected
@@ -95,7 +89,7 @@ final class FreeRunViewModel: NSObject {
     private let segmentPaceRelay     = BehaviorRelay<String>(value: "--'--\"")
     private let avgHRRelay           = BehaviorRelay<String>(value: "--")
     private let segmentHRRelay       = BehaviorRelay<String>(value: "--")
-    private let routeUpdateRelay     = PublishRelay<RouteUpdate>()
+    private let routeUpdateRelay     = PublishRelay<WorkoutRouteUpdate>()
     private let sourceBadgeRelay     = BehaviorRelay<SourceBadgeState>(value: .hidden)
     private let countdownRelay       = BehaviorRelay<String>(value: "1")
     private let showResultRelay      = PublishRelay<WorkoutResultDataModel>()
@@ -605,7 +599,7 @@ final class FreeRunViewModel: NSObject {
     }
 
     private func emitRouteUpdate(coordinate: CLLocationCoordinate2D) {
-        routeUpdateRelay.accept(RouteUpdate(
+        routeUpdateRelay.accept(WorkoutRouteUpdate(
             coordinate: coordinate,
             allCoordinates: routeCoordinates,
             isFirstUpdate: isFirstMapUpdate

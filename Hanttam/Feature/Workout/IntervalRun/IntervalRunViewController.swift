@@ -16,10 +16,11 @@ internal import HealthKit
 
 // MARK: - ViewController
 
-class IntervalRunViewController: UIViewController, MKMapViewDelegate {
+class IntervalRunViewController: UIViewController {
 
     // MARK: - ViewModel
-    private let viewModel: IntervalRunViewModel
+    private let viewModel  : IntervalRunViewModel
+    private let mapDelegate = WorkoutMapDelegate()
     private let disposeBag = DisposeBag()
 
     // MARK: - Init
@@ -229,26 +230,8 @@ class IntervalRunViewController: UIViewController, MKMapViewDelegate {
     }
 
     // MARK: - Map
-    private func applyRouteUpdate(_ update: IntervalRunViewModel.RouteUpdate) {
-        if update.isFirstUpdate {
-            let region = MKCoordinateRegion(center: update.coordinate, latitudinalMeters: 500, longitudinalMeters: 500)
-            mapView.setRegion(region, animated: false)
-        } else {
-            let camera = MKMapCamera(lookingAtCenter: update.coordinate, fromDistance: 500, pitch: 0, heading: 0)
-            mapView.setCamera(camera, animated: true)
-        }
-
-        mapView.removeOverlays(mapView.overlays)
-        if update.allCoordinates.count >= 2 {
-            var coords = update.allCoordinates
-            let polyline = MKPolyline(coordinates: &coords, count: coords.count)
-            mapView.addOverlay(polyline)
-        }
-
-        mapView.removeAnnotations(mapView.annotations)
-        let annotation = MKPointAnnotation()
-        annotation.coordinate = update.coordinate
-        mapView.addAnnotation(annotation)
+    private func applyRouteUpdate(_ update: WorkoutRouteUpdate) {
+        mapDelegate.apply(update, to: mapView)
     }
 
     // MARK: - Source Badge
@@ -292,7 +275,7 @@ class IntervalRunViewController: UIViewController, MKMapViewDelegate {
         view.backgroundColor = AppColor.UI.backgroundGrouped
 
         // MapView
-        mapView.delegate                 = self
+        mapView.delegate                 = mapDelegate
         mapView.isUserInteractionEnabled = false
         let config                       = MKStandardMapConfiguration()
         config.emphasisStyle             = .muted
@@ -554,30 +537,6 @@ class IntervalRunViewController: UIViewController, MKMapViewDelegate {
         return divider
     }
 
-    // MARK: - MKMapViewDelegate
-    func mapView(_ mapView: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {
-        if let polyline = overlay as? MKPolyline {
-            let renderer = MKPolylineRenderer(polyline: polyline)
-            renderer.strokeColor = AppColor.UI.workoutRoute
-            renderer.lineWidth   = 20
-            return renderer
-        }
-        return MKOverlayRenderer(overlay: overlay)
-    }
-
-    func mapView(_ mapView: MKMapView, viewFor annotation: MKAnnotation) -> MKAnnotationView? {
-        if annotation is MKUserLocation { return nil }
-        let id = "currentLocation"
-        var view = mapView.dequeueReusableAnnotationView(withIdentifier: id) as? MKMarkerAnnotationView
-        if view == nil {
-            view = MKMarkerAnnotationView(annotation: annotation, reuseIdentifier: id)
-        } else {
-            view?.annotation = annotation
-        }
-        view?.markerTintColor = RunningLevelManager.shared.accentUIColor
-        view?.glyphText       = ""
-        return view
-    }
 }
 
 // MARK: - SwiftUI Wrapper
