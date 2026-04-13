@@ -20,7 +20,10 @@ struct IntervalScreen: View {
     @ObservedObject private var levelManager = RunningLevelManager.shared
 
     private let setsPerRotation = 10
-    private let ringSize: CGFloat = 280
+    private let ringSize: CGFloat = 350
+    private var playIconSize: CGFloat { ringSize * 0.12 }
+    private var playIconOffsetY: CGFloat { -ringSize * 0.16 }
+    private var playTapSize: CGFloat { ringSize * 0.36 }
 
     private var degPerSegment: Double { 360.0 / Double(setsPerRotation) }
     private var progressDeg: Double { accumulatedAngle.truncatingRemainder(dividingBy: 360) }
@@ -40,6 +43,10 @@ struct IntervalScreen: View {
             VStack(spacing: 0) {
                 headerSection
                 ringSection
+                    .frame(width: ringSize, height: ringSize)
+                    .overlay(
+                        Circle().stroke(levelManager.accentColor.opacity(0.8), lineWidth: 1)
+                    )
             }
             .offset(y: 40)
 
@@ -91,23 +98,21 @@ struct IntervalScreen: View {
         let currWhite = min(Double(completedLaps) / 10.0, 1.0)
         let prevColor = levelManager.accentColor.mix(with: .white, by: prevWhite)
         let currColor = levelManager.accentColor.mix(with: .white, by: currWhite)
-        let holeOffY: CGFloat = -25 * ringSize / 200
 
         return ZStack {
             // 1. 바닥 트랙 (항상 play 아이콘 표시)
-            HanttamCirclesView(
-                size: ringSize,
-                color: baseColor.opacity(0.4),
-                icon: "play.fill"
-            )
+            HanttamBrandLogo(color: baseColor.opacity(0.4))
+                .frame(width: ringSize, height: ringSize)
 
             // 2. 완료된 랩 — 꽉 찬 링 (이전 랩 색상)
             if completedLaps > 0 {
-                HanttamCirclesView(size: ringSize, color: prevColor)
+                HanttamBrandLogo(color: prevColor)
+                    .frame(width: ringSize, height: ringSize)
             }
 
             // 3. 현재 진행 중인 랩 (현재 랩 색상 + angular mask)
-            HanttamCirclesView(size: ringSize, color: currColor)
+            HanttamBrandLogo(color: currColor)
+                .frame(width: ringSize, height: ringSize)
                 .mask {
                     if progressFraction >= 1.0 {
                         Rectangle()
@@ -125,11 +130,16 @@ struct IntervalScreen: View {
                     }
                 }
 
+            Image(systemName: "play.fill")
+                .font(.system(size: playIconSize, weight: .medium))
+                .foregroundStyle(levelManager.accentColor)
+                .offset(y: playIconOffsetY)
+
             // 4. 센터: play 버튼 (세트 설정 시 탭으로 시작)
             if totalSets > 0 {
                 Color.clear
-                    .frame(width: 130 * ringSize / 200, height: 130 * ringSize / 200)
-                    .offset(y: holeOffY / 2)
+                    .frame(width: playTapSize, height: playTapSize)
+                    .offset(y: playIconOffsetY)
                     .contentShape(Circle())
                     .onTapGesture {
                         startIntervalWorkout()

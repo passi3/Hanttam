@@ -12,7 +12,9 @@ struct FreeRunScreen: View {
     let startAction: () -> Void
     @ObservedObject private var levelManager = RunningLevelManager.shared
     
-    private let ringSize: CGFloat = 280
+    private let ringSize: CGFloat = 350
+    private var playIconSize: CGFloat { ringSize * 0.12 }
+    private var playIconOffsetY: CGFloat { -ringSize * 0.16 }
     
     var body: some View {
         ZStack {
@@ -49,11 +51,17 @@ struct FreeRunScreen: View {
         Button {
             startAction()
         } label: {
-            HanttamCirclesView(
-                topCircleOffsetY: -25,
-                size: ringSize,
-                icon: "play.fill"
-            )
+            ZStack {
+                HanttamBrandLogo()
+                    .frame(width: ringSize, height: ringSize)
+
+                Image(systemName: "play.fill")
+                    .font(.system(size: playIconSize, weight: .medium))
+                    .foregroundStyle(levelManager.accentColor)
+                    .offset(y: playIconOffsetY)
+            }
+            .frame(width: ringSize, height: ringSize)
+            .contentShape(Circle())
         }
         .buttonStyle(ScaleButtonStyle())
     }

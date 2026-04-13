@@ -99,6 +99,7 @@ final class IntervalRunViewModel: NSObject {
     private var allLocations    : [CLLocation]               = []
     private var lapLocations    : [CLLocation]               = []
     private var routeCoordinates: [CLLocationCoordinate2D]   = []
+    private var routeHeartRates : [Double?]                  = []
 
     // Recording
     private var laps        : [IntervalLap] = []
@@ -777,6 +778,7 @@ final class IntervalRunViewModel: NSObject {
             let coord = CLLocationCoordinate2D(latitude: lat, longitude: lng)
             if routeCoordinates.last.map({ $0.latitude == coord.latitude && $0.longitude == coord.longitude }) != true {
                 routeCoordinates.append(coord)
+                routeHeartRates.append(snapshot.heartRate)
             }
             emitRouteUpdate(coordinate: coord)
         }
@@ -784,9 +786,10 @@ final class IntervalRunViewModel: NSObject {
 
     private func emitRouteUpdate(coordinate: CLLocationCoordinate2D) {
         routeUpdateRelay.accept(WorkoutRouteUpdate(
-            coordinate: coordinate,
+            coordinate    : coordinate,
             allCoordinates: routeCoordinates,
-            isFirstUpdate: isFirstMapUpdate
+            allHeartRates : routeHeartRates,
+            isFirstUpdate : isFirstMapUpdate
         ))
         isFirstMapUpdate = false
     }
@@ -840,6 +843,7 @@ extension IntervalRunViewModel: CLLocationManagerDelegate {
         guard let loc = locations.last else { return }
         allLocations.append(loc)
         routeCoordinates.append(loc.coordinate)
+        routeHeartRates.append(HealthKitStore.shared.currentPhoneWorkoutMetrics.heartRate)
 
         if let prev = lapLocations.last {
             lapDistance_ += loc.distance(from: prev)

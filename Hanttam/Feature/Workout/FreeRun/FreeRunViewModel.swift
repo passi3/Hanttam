@@ -57,6 +57,7 @@ final class FreeRunViewModel: NSObject {
     private let locationManager = CLLocationManager()
     private var allLocations    : [CLLocation] = []
     private var routeCoordinates: [CLLocationCoordinate2D] = []
+    private var routeHeartRates : [Double?] = []
 
     private var elapsed              : TimeInterval = 0
     private var timer                : Timer?
@@ -566,6 +567,7 @@ final class FreeRunViewModel: NSObject {
             let coord = CLLocationCoordinate2D(latitude: lat, longitude: lng)
             if routeCoordinates.last.map({ $0.latitude == coord.latitude && $0.longitude == coord.longitude }) != true {
                 routeCoordinates.append(coord)
+                routeHeartRates.append(snapshot.heartRate)
             }
         }
 
@@ -600,9 +602,10 @@ final class FreeRunViewModel: NSObject {
 
     private func emitRouteUpdate(coordinate: CLLocationCoordinate2D) {
         routeUpdateRelay.accept(WorkoutRouteUpdate(
-            coordinate: coordinate,
+            coordinate    : coordinate,
             allCoordinates: routeCoordinates,
-            isFirstUpdate: isFirstMapUpdate
+            allHeartRates : routeHeartRates,
+            isFirstUpdate : isFirstMapUpdate
         ))
         isFirstMapUpdate = false
     }
@@ -653,6 +656,7 @@ extension FreeRunViewModel: CLLocationManagerDelegate {
         guard let loc = locations.last else { return }
         allLocations.append(loc)
         routeCoordinates.append(loc.coordinate)
+        routeHeartRates.append(HealthKitStore.shared.currentPhoneWorkoutMetrics.heartRate)
 
         advanceSegmentBoundaryIfNeeded(totalDistance: calculateTotalDistance(), at: loc.timestamp)
 

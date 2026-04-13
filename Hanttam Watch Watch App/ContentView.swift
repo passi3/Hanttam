@@ -153,7 +153,7 @@ struct WatchDialPage: View {
 
                 ZStack {
                     // 바닥 트랙 (세트 0일 때 crown 아이콘 포함)
-                    HanttamCirclesView(
+                    WatchHanttamBrandLogoRing(
                         size: 130,
                         color: Color(red: 151/255, green: 42/255, blue: 0).opacity(0.4),
                         icon: totalSets == 0 ? "crown" : "play",
@@ -162,7 +162,7 @@ struct WatchDialPage: View {
 
                     // 진행 링
                     let progress = crownValue.truncatingRemainder(dividingBy: 1.0)
-                    HanttamCirclesView(size: 130, color: levelManager.accentColor)
+                    WatchHanttamBrandLogo(size: 130, color: levelManager.accentColor)
                         .mask {
                             if progress >= 1.0 || progress <= 0 {
                                 Rectangle()
