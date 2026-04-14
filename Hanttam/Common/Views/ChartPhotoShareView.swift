@@ -11,6 +11,13 @@ import Combine
 import Photos
 import AVFoundation
 
+private extension View {
+    @ViewBuilder
+    func colorInvertIf(_ condition: Bool) -> some View {
+        if condition { colorInvert() } else { self }
+    }
+}
+
 // MARK: - Overlay Text Color Environment
 
 struct OverlayTextColorKey: EnvironmentKey {
@@ -96,6 +103,7 @@ struct ChartPhotoShareView<ChartContent: View>: View {
     private enum PhotoFilter: String, CaseIterable {
         case original = "원본"
         case mono     = "모노톤"
+        case invert   = "반전"
     }
 
     // Camera
@@ -502,6 +510,7 @@ struct ChartPhotoShareView<ChartContent: View>: View {
                 .resizable().scaledToFill()
                 .frame(width: cardWidth, height: cardHeight).clipped()
                 .saturation(bgFilter == .mono ? 0 : 1)
+                .colorInvertIf(bgFilter == .invert)
 
             if !backSubjectLayers.isEmpty {
                 subjectLayersView(backSubjectLayers, cardWidth: cardWidth, cardHeight: cardHeight)
@@ -660,6 +669,7 @@ struct ChartPhotoShareView<ChartContent: View>: View {
                 .resizable().scaledToFill()
                 .frame(width: cardW, height: cardH).clipped()
                 .saturation(bgFilter == .mono ? 0 : 1)
+                .colorInvertIf(bgFilter == .invert)
 
             ForEach(backSubjectLayers) { layer in
                 if let subject = subject(for: layer.id) {
@@ -720,6 +730,7 @@ struct ChartPhotoShareView<ChartContent: View>: View {
                 .frame(width: cardWidth, height: cardHeight)
                 .clipped()
                 .saturation(subjectFilter == .mono ? 0 : 1)
+                .colorInvertIf(subjectFilter == .invert)
                 .overlay {
                     subjectGlowOverlay(
                         image: subject.image,
@@ -747,6 +758,7 @@ struct ChartPhotoShareView<ChartContent: View>: View {
                 .frame(width: cardWidth, height: cardHeight)
                 .clipped()
                 .saturation(subjectFilter == .mono ? 0 : 1)
+                .colorInvertIf(subjectFilter == .invert)
 
             if showsScan {
                 subjectGlowOverlay(
