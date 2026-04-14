@@ -7,20 +7,23 @@
 
 import UIKit
 import SnapKit
-import Kingfisher
+import RxSwift
+import RxCocoa
 
 final class ShoeBrandSelectViewController: HTViewController {
-    private let onRegistered: ((RegisteredShoe) -> Void)?
-    private let service: BrandServicing
 
-    private let collectionView = UICollectionView(frame: .zero, collectionViewLayout: UICollectionViewFlowLayout())
-    private let statusLabel = UILabel()
-    private let spinner = UIActivityIndicatorView(style: .medium)
+    private let viewModel     : ShoeBrandSelectViewModel
+    private let onRegistered  : ((RegisteredShoe) -> Void)?
+    private let disposeBag    = DisposeBag()
+
+    private let collectionView       = UICollectionView(frame: .zero, collectionViewLayout: UICollectionViewFlowLayout())
+    private let statusLabel          = UILabel()
+    private let spinner              = UIActivityIndicatorView(style: .medium)
     private let manualRegisterButton = UIButton(type: .system)
-    private let searchController = UISearchController(searchResultsController: nil)
+    private let searchController     = UISearchController(searchResultsController: nil)
 
-    private var brands: [BrandSummary] = []
-    private var filteredBrands: [BrandSummary] = []
+    private let viewDidLoadSubject = PublishSubject<Void>()
+    private let selectItemSubject  = PublishSubject<Int>()
     private let itemSpacing: CGFloat = 12
 
     init(
@@ -28,15 +31,15 @@ final class ShoeBrandSelectViewController: HTViewController {
         service: BrandServicing = SupabaseShoeSearchService()
     ) {
         self.onRegistered = onRegistered
-        self.service = service
+        self.viewModel = ShoeBrandSelectViewModel(service: service)
         super.init(nibName: nil, bundle: nil)
     }
 
-    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+    required init?(coder: NSCoder) { fatalError() }
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        fetchBrands()
+        viewDidLoadSubject.onNext(())
     }
 
     override func configHierarchy() {
@@ -72,7 +75,6 @@ final class ShoeBrandSelectViewController: HTViewController {
 
         searchController.obscuresBackgroundDuringPresentation = false
         searchController.searchBar.placeholder = "브랜드 검색"
-        searchController.searchResultsUpdater = self
         navigationItem.searchController = searchController
 
         if let layout = collectionView.collectionViewLayout as? UICollectionViewFlowLayout {
@@ -83,8 +85,6 @@ final class ShoeBrandSelectViewController: HTViewController {
         collectionView.register(BrandCell.self, forCellWithReuseIdentifier: BrandCell.reuseID)
         collectionView.backgroundColor = .clear
         collectionView.alwaysBounceVertical = true
-        collectionView.dataSource = self
-        collectionView.delegate = self
 
         manualRegisterButton.setTitle("직접 등록", for: .normal)
         manualRegisterButton.titleLabel?.font = AppFont.UI.buttonMD
@@ -93,167 +93,76 @@ final class ShoeBrandSelectViewController: HTViewController {
         manualRegisterButton.layer.cornerRadius = 16
         manualRegisterButton.layer.borderWidth = 1
         manualRegisterButton.layer.borderColor = AppColor.UI.border.cgColor
-        manualRegisterButton.addTarget(self, action: #selector(manualRegisterTapped), for: .touchUpInside)
 
         statusLabel.font = AppFont.UI.bodyLG
         statusLabel.textColor = AppColor.UI.textSecondary
         statusLabel.textAlignment = .center
         statusLabel.numberOfLines = 0
-        statusLabel.text = "브랜드를 불러오는 중입니다."
     }
 
-    private func fetchBrands() {
-        spinner.startAnimating()
-        service.fetchBrands { [weak self] result in
-            guard let self else { return }
-            self.spinner.stopAnimating()
-            switch result {
-            case .success(let brands):
-                self.brands = brands
-                self.applyFilter(query: self.searchController.searchBar.text ?? "")
-            case .failure(let error):
-                self.brands = []
-                self.filteredBrands = []
-                self.collectionView.reloadData()
-                self.statusLabel.text = error.localizedDescription
-                self.statusLabel.isHidden = false
+    override func setupBindings() {
+        let searchText = searchController.searchBar.rx.text
+            .orEmpty
+            .distinctUntilChanged()
+            .asObservable()
+
+        let input = ShoeBrandSelectViewModel.Input(
+            viewDidLoad: viewDidLoadSubject.asObservable(),
+            searchText : searchText,
+            selectItem : selectItemSubject.asObservable()
+        )
+        let output = viewModel.transform(input: input)
+
+        output.filteredBrands
+            .drive(collectionView.rx.items(cellIdentifier: BrandCell.reuseID, cellType: BrandCell.self)) { _, brand, cell in
+                cell.configure(with: brand)
             }
-        }
-    }
+            .disposed(by: disposeBag)
 
-    private func applyFilter(query: String) {
-        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.isEmpty {
-            filteredBrands = brands
-        } else {
-            filteredBrands = brands.filter { $0.name.localizedCaseInsensitiveContains(trimmed) }
-        }
-        collectionView.reloadData()
-        if brands.isEmpty {
-            statusLabel.text = "등록 가능한 브랜드가 없습니다."
-            statusLabel.isHidden = false
-        } else if filteredBrands.isEmpty {
-            statusLabel.text = "검색 결과가 없습니다."
-            statusLabel.isHidden = false
-        } else {
-            statusLabel.isHidden = true
-        }
-    }
+        output.isLoading
+            .drive(spinner.rx.isAnimating)
+            .disposed(by: disposeBag)
 
-    private func selectBrand(at indexPath: IndexPath) {
-        guard filteredBrands.indices.contains(indexPath.item) else { return }
-        let brand = filteredBrands[indexPath.item]
-        let viewController = ShoeSearchViewController(
-            brand: brand,
-            onRegistered: onRegistered
-        )
-        navigationController?.pushViewController(viewController, animated: true)
-    }
+        output.statusText
+            .drive(onNext: { [weak self] text in
+                self?.statusLabel.text = text
+                self?.statusLabel.isHidden = text == nil
+            })
+            .disposed(by: disposeBag)
 
-    @objc private func manualRegisterTapped() {
-        let viewController = RegisterShoeViewController(
-            mode: .manual,
-            onRegistered: onRegistered
-        )
-        navigationController?.pushViewController(viewController, animated: true)
+        output.selectedBrand
+            .emit(onNext: { [weak self] brand in
+                guard let self else { return }
+                let vc = ShoeSearchViewController(brand: brand, onRegistered: self.onRegistered)
+                self.navigationController?.pushViewController(vc, animated: true)
+            })
+            .disposed(by: disposeBag)
+
+        collectionView.rx.itemSelected
+            .subscribe(onNext: { [weak self] indexPath in
+                self?.selectItemSubject.onNext(indexPath.item)
+            })
+            .disposed(by: disposeBag)
+
+        collectionView.rx.setDelegate(self)
+            .disposed(by: disposeBag)
+
+        manualRegisterButton.rx.tap
+            .subscribe(onNext: { [weak self] in
+                let vc = RegisterShoeViewController(mode: .manual, onRegistered: self?.onRegistered)
+                self?.navigationController?.pushViewController(vc, animated: true)
+            })
+            .disposed(by: disposeBag)
     }
 }
 
-extension ShoeBrandSelectViewController: UICollectionViewDataSource, UICollectionViewDelegateFlowLayout {
-    func collectionView(_ collectionView: UICollectionView, numberOfItemsInSection section: Int) -> Int {
-        filteredBrands.count
-    }
-
-    func collectionView(_ collectionView: UICollectionView, cellForItemAt indexPath: IndexPath) -> UICollectionViewCell {
-        let cell = collectionView.dequeueReusableCell(
-            withReuseIdentifier: BrandCell.reuseID,
-            for: indexPath
-        ) as! BrandCell
-        cell.configure(with: filteredBrands[indexPath.item])
-        return cell
-    }
-
-    func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
-        selectBrand(at: indexPath)
-    }
-
+extension ShoeBrandSelectViewController: UICollectionViewDelegateFlowLayout {
     func collectionView(
         _ collectionView: UICollectionView,
         layout collectionViewLayout: UICollectionViewLayout,
         sizeForItemAt indexPath: IndexPath
     ) -> CGSize {
-        let horizontalInset: CGFloat = 20 * 2
-        let totalSpacing = itemSpacing * 2
-        let width = floor((collectionView.bounds.width - horizontalInset - totalSpacing) / 3)
+        let width = floor((collectionView.bounds.width - 40 - itemSpacing * 2) / 3)
         return CGSize(width: width, height: 92)
-    }
-}
-
-extension ShoeBrandSelectViewController: UISearchResultsUpdating {
-    func updateSearchResults(for searchController: UISearchController) {
-        applyFilter(query: searchController.searchBar.text ?? "")
-    }
-}
-
-private final class BrandCell: HTCollectionViewCell {
-    static let reuseID = "BrandCell"
-
-    private let cardView = UIView()
-    private let imageView = UIImageView()
-    private let nameLabel = UILabel()
-
-    override func configHierarchy() {
-        contentView.addSubview(cardView)
-        cardView.addSubview(imageView)
-        cardView.addSubview(nameLabel)
-    }
-
-    override func configLayout() {
-        cardView.snp.makeConstraints { make in
-            make.edges.equalToSuperview()
-        }
-        imageView.snp.makeConstraints { make in
-            make.top.leading.trailing.equalToSuperview().inset(12)
-            make.height.equalTo(44)
-        }
-        nameLabel.snp.makeConstraints { make in
-            make.top.equalTo(imageView.snp.bottom).offset(10)
-            make.leading.trailing.equalToSuperview().inset(8)
-            make.bottom.lessThanOrEqualToSuperview().inset(12)
-        }
-    }
-
-    override func configView() {
-        backgroundColor = .clear
-        cardView.backgroundColor = AppColor.UI.cardBackground
-        cardView.layer.cornerRadius = 16
-        cardView.layer.borderWidth = 1
-        cardView.layer.borderColor = AppColor.UI.border.cgColor
-
-        imageView.contentMode = .scaleAspectFit
-        imageView.tintColor = AppColor.UI.textSecondary
-        imageView.image = UIImage(systemName: "shoeprints.fill")
-
-        nameLabel.font = AppFont.UI.labelLG
-        nameLabel.textColor = AppColor.UI.textPrimary
-        nameLabel.textAlignment = .center
-        nameLabel.numberOfLines = 1
-    }
-
-    override func prepareForReuse() {
-        super.prepareForReuse()
-        imageView.kf.cancelDownloadTask()
-        imageView.image = UIImage(systemName: "shoeprints.fill")
-    }
-
-    func configure(with brand: BrandSummary) {
-        nameLabel.text = brand.name
-        let placeholder = UIImage(systemName: "shoeprints.fill")
-        if let logoURL = brand.logoURL,
-           let url = URL(string: logoURL) {
-            imageView.kf.setImage(with: url, placeholder: placeholder)
-        } else {
-            imageView.image = placeholder
-        }
     }
 }
