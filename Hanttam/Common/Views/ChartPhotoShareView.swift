@@ -80,6 +80,8 @@ struct ChartPhotoShareView<ChartContent: View>: View {
     @State private var subjectFilter: PhotoFilter = .original
     @State private var chartFilter: PhotoFilter = .original
     @State private var bgFilter: PhotoFilter = .original
+    @State private var pixelatedBgPhoto: UIImage?
+    @State private var pixelatedSubjectPhotos: [Int: UIImage] = [:]
     @State private var longPressTimer: DispatchWorkItem?
     @State private var guidanceScanProgress: CGFloat = 0
     @State private var touchSubjectID: ExtractedSubject.ID?
@@ -104,6 +106,7 @@ struct ChartPhotoShareView<ChartContent: View>: View {
         case original = "원본"
         case mono     = "모노톤"
         case invert   = "반전"
+        case pixel    = "픽셀아트"
     }
 
     // Camera
@@ -291,11 +294,19 @@ struct ChartPhotoShareView<ChartContent: View>: View {
                 ForEach(PhotoFilter.allCases, id: \.self) { f in Text(f.rawValue).tag(f) }
             }
             .pickerStyle(.segmented)
+            .onChange(of: subjectFilter) { _, newVal in
+                if newVal == .pixel { pixelateSubjects() }
+                else { pixelatedSubjectPhotos = [:] }
+            }
         } else if editSegment == .bg {
             Picker("필터", selection: $bgFilter) {
                 ForEach(PhotoFilter.allCases, id: \.self) { f in Text(f.rawValue).tag(f) }
             }
             .pickerStyle(.segmented)
+            .onChange(of: bgFilter) { _, newVal in
+                if newVal == .pixel { pixelateBg() }
+                else { pixelatedBgPhoto = nil }
+            }
         } else {
             VStack(spacing: 6) {
                 Picker("배경", selection: $bgStyle) {
@@ -383,6 +394,8 @@ struct ChartPhotoShareView<ChartContent: View>: View {
         currentAssetIndex = index
         clearSelectedSubjects()
         glassPhoto = nil
+        pixelatedBgPhoto = nil
+        pixelatedSubjectPhotos = [:]
         prefetchStripThumbs()
 
         let asset = photoAssets[index]
@@ -432,6 +445,7 @@ struct ChartPhotoShareView<ChartContent: View>: View {
                     self.subjects = extractedSubjects
                     if !extractedSubjects.isEmpty { self.editSegment = .subject }
                     self.clearSelectedSubjects()
+                    self.pixelatedSubjectPhotos = [:]
                     self.glassPhoto = glass
                     self.isExtracting = false
                 }
@@ -460,6 +474,8 @@ struct ChartPhotoShareView<ChartContent: View>: View {
                 photo = image
                 clearSelectedSubjects()
                 glassPhoto = nil
+                pixelatedBgPhoto = nil
+                pixelatedSubjectPhotos = [:]
                 prefetchStripThumbs()
             }
             DispatchQueue.global(qos: .userInitiated).async {
@@ -504,9 +520,10 @@ struct ChartPhotoShareView<ChartContent: View>: View {
     // MARK: - Card Preview (interactive)
 
     private func cardPreview(photo: UIImage, cardWidth: CGFloat, cardHeight: CGFloat) -> some View {
-        ZStack {
+        let displayBg = bgFilter == .pixel ? (pixelatedBgPhoto ?? photo) : photo
+        return ZStack {
             // 배경 사진
-            Image(uiImage: photo)
+            Image(uiImage: displayBg)
                 .resizable().scaledToFill()
                 .frame(width: cardWidth, height: cardHeight).clipped()
                 .saturation(bgFilter == .mono ? 0 : 1)
@@ -664,8 +681,9 @@ struct ChartPhotoShareView<ChartContent: View>: View {
             .scaleEffect(overlayScale)
             .offset(overlayOffset)
 
+        let displayBg = bgFilter == .pixel ? (pixelatedBgPhoto ?? photo) : photo
         return ZStack {
-            Image(uiImage: photo)
+            Image(uiImage: displayBg)
                 .resizable().scaledToFill()
                 .frame(width: cardW, height: cardH).clipped()
                 .saturation(bgFilter == .mono ? 0 : 1)
@@ -725,7 +743,8 @@ struct ChartPhotoShareView<ChartContent: View>: View {
     @ViewBuilder
     private func guidanceLayersView(cardWidth: CGFloat, cardHeight: CGFloat) -> some View {
         ForEach(subjects) { subject in
-            Image(uiImage: subject.image)
+            let displayImg = subjectFilter == .pixel ? (pixelatedSubjectPhotos[subject.id] ?? subject.image) : subject.image
+            Image(uiImage: displayImg)
                 .resizable().scaledToFill()
                 .frame(width: cardWidth, height: cardHeight)
                 .clipped()
@@ -752,8 +771,9 @@ struct ChartPhotoShareView<ChartContent: View>: View {
         showsScan: Bool,
         showsInteractionEffect: Bool
     ) -> some View {
-        ZStack {
-            Image(uiImage: subject.image)
+        let displayImg = subjectFilter == .pixel ? (pixelatedSubjectPhotos[subject.id] ?? subject.image) : subject.image
+        return ZStack {
+            Image(uiImage: displayImg)
                 .resizable().scaledToFill()
                 .frame(width: cardWidth, height: cardHeight)
                 .clipped()
@@ -1054,10 +1074,33 @@ struct ChartPhotoShareView<ChartContent: View>: View {
         didHandleTouchAsSubject = false
     }
 
+    // MARK: - Pixelate
+
+    private func pixelateBg() {
+        guard let photo else { return }
+        DispatchQueue.global(qos: .userInitiated).async {
+            let result = ShareCardService.shared.pixelate(photo)
+            DispatchQueue.main.async { pixelatedBgPhoto = result }
+        }
+    }
+
+    private func pixelateSubjects() {
+        for subject in subjects {
+            DispatchQueue.global(qos: .userInitiated).async {
+                let result = ShareCardService.shared.pixelate(subject.image)
+                DispatchQueue.main.async {
+                    if let result { pixelatedSubjectPhotos[subject.id] = result }
+                }
+            }
+        }
+    }
+
     // MARK: - Actions
 
     private func handlePhoto(_ uiImage: UIImage) {
         photo = uiImage
+        pixelatedBgPhoto = nil
+        pixelatedSubjectPhotos = [:]
         isExtracting = true
         DispatchQueue.global(qos: .userInitiated).async {
             let extractedSubjects = ShareCardService.shared.extractSubjects(from: uiImage)
@@ -1089,6 +1132,8 @@ struct ChartPhotoShareView<ChartContent: View>: View {
         subjectFilter = .original
         chartFilter = .original
         bgFilter = .original
+        pixelatedBgPhoto = nil
+        pixelatedSubjectPhotos = [:]
         shouldDismissAfterAlert = false
         currentAssetIndex = -1
         adjacentThumbs = [:]
