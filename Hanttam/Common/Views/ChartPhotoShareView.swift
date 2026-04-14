@@ -101,9 +101,9 @@ struct ChartPhotoShareView<ChartContent: View>: View {
     }
 
     private enum EditSegment: String, CaseIterable {
-        case subject = "피사체"
-        case chart   = "차트"
         case bg      = "배경"
+        case chart   = "차트"
+        case subject = "피사체"
     }
 
 
@@ -247,7 +247,7 @@ struct ChartPhotoShareView<ChartContent: View>: View {
     @ViewBuilder
     private var editSegmentPicker: some View {
         Picker("편집 대상", selection: $editSegment) {
-            ForEach(subjects.isEmpty ? [.chart, .bg] : EditSegment.allCases, id: \.self) { seg in
+            ForEach(subjects.isEmpty ? [.bg, .chart] : EditSegment.allCases, id: \.self) { seg in
                 Text(seg.rawValue).tag(seg)
             }
         }
@@ -304,6 +304,7 @@ struct ChartPhotoShareView<ChartContent: View>: View {
             )
             .onChange(of: bgFilter) { _, newVal in
                 handleBgFilterChange(newVal)
+                subjectFilter = newVal
             }
         } else {
             VStack(spacing: 6) {
