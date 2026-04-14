@@ -77,11 +77,15 @@ struct ChartPhotoShareView<ChartContent: View>: View {
     @State private var solidTone: Double = 0.0  // -1(흰) ~ 0(투명) ~ +1(검정)
     @State private var bgStyle: OverlayBgStyle = .solid
     @State private var editSegment: EditSegment = .chart
-    @State private var subjectFilter: PhotoFilter = .original
-    @State private var chartFilter: PhotoFilter = .original
-    @State private var bgFilter: PhotoFilter = .original
+    @State private var subjectFilter: PhotoFilterKind = .original
+    @State private var chartFilter: PhotoFilterKind = .original
+    @State private var bgFilter: PhotoFilterKind = .original
     @State private var pixelatedBgPhoto: UIImage?
     @State private var pixelatedSubjectPhotos: [Int: UIImage] = [:]
+    /// Baked filter results for the background, keyed by filter cacheKey.
+    @State private var filteredBgPhotos: [String: UIImage] = [:]
+    /// Baked filter results for each subject, keyed by "\(subjectID)_\(cacheKey)".
+    @State private var filteredSubjectPhotos: [String: UIImage] = [:]
     @State private var longPressTimer: DispatchWorkItem?
     @State private var guidanceScanProgress: CGFloat = 0
     @State private var touchSubjectID: ExtractedSubject.ID?
@@ -102,12 +106,6 @@ struct ChartPhotoShareView<ChartContent: View>: View {
         case bg      = "배경"
     }
 
-    private enum PhotoFilter: String, CaseIterable {
-        case original = "원본"
-        case mono     = "모노톤"
-        case invert   = "반전"
-        case pixel    = "픽셀아트"
-    }
 
     // Camera
     @State private var showCamera = false
@@ -290,22 +288,22 @@ struct ChartPhotoShareView<ChartContent: View>: View {
     @ViewBuilder
     private var editSegmentControls: some View {
         if editSegment == .subject {
-            Picker("필터", selection: $subjectFilter) {
-                ForEach(PhotoFilter.allCases, id: \.self) { f in Text(f.rawValue).tag(f) }
-            }
-            .pickerStyle(.segmented)
+            PhotoFilterPicker(
+                filters: PhotoFilterKind.allPhotoFilters,
+                source: subjects.first?.image ?? photo,
+                selection: $subjectFilter
+            )
             .onChange(of: subjectFilter) { _, newVal in
-                if newVal == .pixel { pixelateSubjects() }
-                else { pixelatedSubjectPhotos = [:] }
+                handleSubjectFilterChange(newVal)
             }
         } else if editSegment == .bg {
-            Picker("필터", selection: $bgFilter) {
-                ForEach(PhotoFilter.allCases, id: \.self) { f in Text(f.rawValue).tag(f) }
-            }
-            .pickerStyle(.segmented)
+            PhotoFilterPicker(
+                filters: PhotoFilterKind.allPhotoFilters,
+                source: photo,
+                selection: $bgFilter
+            )
             .onChange(of: bgFilter) { _, newVal in
-                if newVal == .pixel { pixelateBg() }
-                else { pixelatedBgPhoto = nil }
+                handleBgFilterChange(newVal)
             }
         } else {
             VStack(spacing: 6) {
@@ -396,6 +394,8 @@ struct ChartPhotoShareView<ChartContent: View>: View {
         glassPhoto = nil
         pixelatedBgPhoto = nil
         pixelatedSubjectPhotos = [:]
+        filteredBgPhotos = [:]
+        filteredSubjectPhotos = [:]
         prefetchStripThumbs()
 
         let asset = photoAssets[index]
@@ -446,6 +446,7 @@ struct ChartPhotoShareView<ChartContent: View>: View {
                     if !extractedSubjects.isEmpty { self.editSegment = .subject }
                     self.clearSelectedSubjects()
                     self.pixelatedSubjectPhotos = [:]
+                    self.filteredSubjectPhotos = [:]
                     self.glassPhoto = glass
                     self.isExtracting = false
                 }
@@ -520,7 +521,7 @@ struct ChartPhotoShareView<ChartContent: View>: View {
     // MARK: - Card Preview (interactive)
 
     private func cardPreview(photo: UIImage, cardWidth: CGFloat, cardHeight: CGFloat) -> some View {
-        let displayBg = bgFilter == .pixel ? (pixelatedBgPhoto ?? photo) : photo
+        let displayBg = bgDisplayImage(photo: photo)
         return ZStack {
             // 배경 사진
             Image(uiImage: displayBg)
@@ -681,7 +682,7 @@ struct ChartPhotoShareView<ChartContent: View>: View {
             .scaleEffect(overlayScale)
             .offset(overlayOffset)
 
-        let displayBg = bgFilter == .pixel ? (pixelatedBgPhoto ?? photo) : photo
+        let displayBg = bgDisplayImage(photo: photo)
         return ZStack {
             Image(uiImage: displayBg)
                 .resizable().scaledToFill()
@@ -743,7 +744,7 @@ struct ChartPhotoShareView<ChartContent: View>: View {
     @ViewBuilder
     private func guidanceLayersView(cardWidth: CGFloat, cardHeight: CGFloat) -> some View {
         ForEach(subjects) { subject in
-            let displayImg = subjectFilter == .pixel ? (pixelatedSubjectPhotos[subject.id] ?? subject.image) : subject.image
+            let displayImg = subjectDisplayImage(subject)
             Image(uiImage: displayImg)
                 .resizable().scaledToFill()
                 .frame(width: cardWidth, height: cardHeight)
@@ -771,7 +772,7 @@ struct ChartPhotoShareView<ChartContent: View>: View {
         showsScan: Bool,
         showsInteractionEffect: Bool
     ) -> some View {
-        let displayImg = subjectFilter == .pixel ? (pixelatedSubjectPhotos[subject.id] ?? subject.image) : subject.image
+        let displayImg = subjectDisplayImage(subject)
         return ZStack {
             Image(uiImage: displayImg)
                 .resizable().scaledToFill()
@@ -1074,10 +1075,58 @@ struct ChartPhotoShareView<ChartContent: View>: View {
         didHandleTouchAsSubject = false
     }
 
-    // MARK: - Pixelate
+    // MARK: - Filter helpers
+
+    /// Returns the image to display for the background, accounting for the current bgFilter.
+    private func bgDisplayImage(photo: UIImage) -> UIImage {
+        switch bgFilter {
+        case .original, .mono, .invert:
+            return photo
+        case .pixel:
+            return pixelatedBgPhoto ?? photo
+        case .film:
+            return filteredBgPhotos[bgFilter.cacheKey] ?? photo
+        }
+    }
+
+    /// Returns the image to display for a subject, accounting for the current subjectFilter.
+    private func subjectDisplayImage(_ subject: ExtractedSubject) -> UIImage {
+        switch subjectFilter {
+        case .original, .mono, .invert:
+            return subject.image
+        case .pixel:
+            return pixelatedSubjectPhotos[subject.id] ?? subject.image
+        case .film:
+            let key = "\(subject.id)_\(subjectFilter.cacheKey)"
+            return filteredSubjectPhotos[key] ?? subject.image
+        }
+    }
+
+    private func handleBgFilterChange(_ newVal: PhotoFilterKind) {
+        switch newVal {
+        case .original, .mono, .invert:
+            break
+        case .pixel:
+            pixelateBg()
+        case .film:
+            bakeBgFilter(newVal)
+        }
+    }
+
+    private func handleSubjectFilterChange(_ newVal: PhotoFilterKind) {
+        switch newVal {
+        case .original, .mono, .invert:
+            break
+        case .pixel:
+            pixelateSubjects()
+        case .film:
+            bakeSubjectFilter(newVal)
+        }
+    }
 
     private func pixelateBg() {
         guard let photo else { return }
+        if pixelatedBgPhoto != nil { return }
         DispatchQueue.global(qos: .userInitiated).async {
             let result = ShareCardService.shared.pixelate(photo)
             DispatchQueue.main.async { pixelatedBgPhoto = result }
@@ -1086,10 +1135,42 @@ struct ChartPhotoShareView<ChartContent: View>: View {
 
     private func pixelateSubjects() {
         for subject in subjects {
+            if pixelatedSubjectPhotos[subject.id] != nil { continue }
             DispatchQueue.global(qos: .userInitiated).async {
                 let result = ShareCardService.shared.pixelate(subject.image)
                 DispatchQueue.main.async {
                     if let result { pixelatedSubjectPhotos[subject.id] = result }
+                }
+            }
+        }
+    }
+
+    private func bakeBgFilter(_ filter: PhotoFilterKind) {
+        guard case .film = filter, let photo else { return }
+        let key = filter.cacheKey
+        if filteredBgPhotos[key] != nil { return }
+        DispatchQueue.global(qos: .userInitiated).async {
+            let result = FilmFilterEngine.shared.applySimple(kind: filter, to: photo)
+            DispatchQueue.main.async {
+                if let result, self.bgFilter.cacheKey == key {
+                    filteredBgPhotos[key] = result
+                }
+            }
+        }
+    }
+
+    private func bakeSubjectFilter(_ filter: PhotoFilterKind) {
+        guard case .film = filter else { return }
+        let key = filter.cacheKey
+        for subject in subjects {
+            let subjectKey = "\(subject.id)_\(key)"
+            if filteredSubjectPhotos[subjectKey] != nil { continue }
+            DispatchQueue.global(qos: .userInitiated).async {
+                let result = FilmFilterEngine.shared.applySimple(kind: filter, to: subject.image)
+                DispatchQueue.main.async {
+                    if let result, self.subjectFilter.cacheKey == key {
+                        filteredSubjectPhotos[subjectKey] = result
+                    }
                 }
             }
         }
@@ -1101,6 +1182,8 @@ struct ChartPhotoShareView<ChartContent: View>: View {
         photo = uiImage
         pixelatedBgPhoto = nil
         pixelatedSubjectPhotos = [:]
+        filteredBgPhotos = [:]
+        filteredSubjectPhotos = [:]
         isExtracting = true
         DispatchQueue.global(qos: .userInitiated).async {
             let extractedSubjects = ShareCardService.shared.extractSubjects(from: uiImage)
@@ -1134,6 +1217,8 @@ struct ChartPhotoShareView<ChartContent: View>: View {
         bgFilter = .original
         pixelatedBgPhoto = nil
         pixelatedSubjectPhotos = [:]
+        filteredBgPhotos = [:]
+        filteredSubjectPhotos = [:]
         shouldDismissAfterAlert = false
         currentAssetIndex = -1
         adjacentThumbs = [:]
