@@ -2311,13 +2311,11 @@ enum RunDetailContentView {
                 }
                 .padding(.horizontal, 8)
                 
-                // 미니 맵 경로 (실외일 경우)
+                // 루트 경로 (실외일 경우)
                 if !record.isIndoor && !data.altPoints.isEmpty {
                     let coords = data.altPoints.map { CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude) }
-                    RunDetailRouteMapView(coordinates: coords, highlightCoordinate: nil)
-                        .frame(height: 160)
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
-                        .opacity(0.8)
+                    WorkoutRouteView(coordinates: coords)
+                        .frame(width: 80, height: 80)
                 }
                 
                 Text(record.date.formatted(.dateTime.year().month().day().weekday(.wide)))
