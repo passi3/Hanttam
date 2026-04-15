@@ -180,12 +180,8 @@ final class RunDetailViewController: HTViewController {
             RunDetailContentView.RunShareOverlay(record: self.record, avgPace: avgPace, paceData: chartHelper.timeSeries(for: .pace))
         }
         let vc = UIHostingController(rootView: shareView)
+        vc.modalPresentationStyle = .fullScreen
         vc.view.backgroundColor = AppColor.UI.backgroundGrouped
-        if let sheet = vc.sheetPresentationController {
-            sheet.detents = [.large()]
-            sheet.prefersGrabberVisible = true
-            sheet.preferredCornerRadius = 20
-        }
         present(vc, animated: true)
     }
 }
