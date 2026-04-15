@@ -610,7 +610,7 @@ enum RunDetailContentView {
                     animatedHR = avgHR
                 }
             }
-            .sheet(item: $activeShareType) { shareType in
+            .fullScreenCover(item: $activeShareType) { shareType in
                 ChartPhotoShareView {
                     if shareType == .metrics {
                         RunDetailContentView.SummaryMetricsShareOverlay(
@@ -1000,11 +1000,10 @@ enum RunDetailContentView {
                 .padding(20)
                 .background(DS.card)
                 .overlay(Rectangle().fill(DS.accent).frame(width: 3), alignment: .leading)
-                .sheet(isPresented: $showShareSheet) {
+                .fullScreenCover(isPresented: $showShareSheet) {
                     ChartPhotoShareView {
                         chartForShare
                     }
-                    .presentationDragIndicator(.visible)
                 }
             }
         }
@@ -1516,7 +1515,7 @@ enum RunDetailContentView {
                     Label("차트 공유", systemImage: "camera.fill")
                 }
             }
-            .sheet(isPresented: $showShareSheet) {
+            .fullScreenCover(isPresented: $showShareSheet) {
                 ChartPhotoShareView {
                     VStack(alignment: .leading, spacing: 10) {
                         Text(metric.title)
@@ -2114,7 +2113,7 @@ enum RunDetailContentView {
             .background(DS.card)
             .overlay(Rectangle().fill(DS.accent).frame(width: 3), alignment: .leading)
             .clipShape(RoundedRectangle(cornerRadius: RunDetailLayout.cardRadius))
-            .sheet(isPresented: $showShareSheet) {
+            .fullScreenCover(isPresented: $showShareSheet) {
                 ChartPhotoShareView {
                     SplitPaceShareOverlay(
                         lapRows: lapRows,

@@ -245,20 +245,22 @@ struct ChartPhotoShareView<ChartContent: View>: View {
     // MARK: - Card Editor
 
     private func cardEditor(photo: UIImage) -> some View {
-        GeometryReader { geo in
-            let cardW = geo.size.width - 40
-            let cardH = cardW * 4 / 3
-            VStack(spacing: 8) {
-                editSegmentPicker
-                cardPreviewStack(photo: photo, cardWidth: cardW, cardHeight: cardH)
-                editSegmentControls
-                Spacer(minLength: 0)
-                if !photoAssets.isEmpty { photoStrip }
+        VStack(spacing: 8) {
+            editSegmentPicker
+            GeometryReader { geo in
+                let cardW = geo.size.width
+                let cardH = cardW * 4 / 3
+                VStack(spacing: 8) {
+                    cardPreviewStack(photo: photo, cardWidth: cardW, cardHeight: cardH)
+                    editSegmentControls
+                    Spacer(minLength: 0)
+                    if !photoAssets.isEmpty { photoStrip }
+                }
             }
-            .padding(.horizontal, 20)
-            .padding(.top, 12)
-            .padding(.bottom, 8)
         }
+        .padding(.horizontal, 20)
+        .padding(.top, 12)
+        .padding(.bottom, 8)
     }
 
     @ViewBuilder
@@ -428,6 +430,7 @@ struct ChartPhotoShareView<ChartContent: View>: View {
         currentAssetIndex = index
         subjects = []
         clearSelectedSubjects()
+        resetEditingState()
         glassPhoto = nil
         pixelatedBgPhoto = nil
         pixelatedSubjectPhotos = [:]
@@ -510,9 +513,12 @@ struct ChartPhotoShareView<ChartContent: View>: View {
                 currentAssetIndex = index
                 photo = image
                 clearSelectedSubjects()
+                resetEditingState()
                 glassPhoto = nil
                 pixelatedBgPhoto = nil
                 pixelatedSubjectPhotos = [:]
+                filteredBgPhotos = [:]
+                filteredSubjectPhotos = [:]
                 prefetchStripThumbs()
             }
             DispatchQueue.global(qos: .userInitiated).async {
@@ -913,6 +919,21 @@ struct ChartPhotoShareView<ChartContent: View>: View {
         cancelSubjectTracking()
     }
 
+    private func resetEditingState() {
+        overlayOffset = .zero
+        dragAccumulated = .zero
+        overlayScale = 0.8
+        scaleAccumulated = 0.8
+        solidTone = 0.0
+        bgStyle = .solid
+        editSegment = .bg
+        subjectFilter = .original
+        chartFilter = .original
+        bgFilter = .original
+        subjectFilterIntensity = 1.0
+        bgFilterIntensity = 1.0
+    }
+
     private func subject(for id: ExtractedSubject.ID) -> ExtractedSubject? {
         subjects.first(where: { $0.id == id })
     }
@@ -1274,18 +1295,7 @@ struct ChartPhotoShareView<ChartContent: View>: View {
         glassPhoto = nil
         subjects = []
         clearSelectedSubjects()
-        overlayOffset = .zero
-        dragAccumulated = .zero
-        overlayScale = 0.8
-        scaleAccumulated = 0.8
-        solidTone = 0.0
-        bgStyle = .solid
-        editSegment = .chart
-        subjectFilter = .original
-        chartFilter = .original
-        bgFilter = .original
-        subjectFilterIntensity = 1.0
-        bgFilterIntensity = 1.0
+        resetEditingState()
         pixelatedBgPhoto = nil
         pixelatedSubjectPhotos = [:]
         filteredBgPhotos = [:]
