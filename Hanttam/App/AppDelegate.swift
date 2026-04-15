@@ -6,6 +6,7 @@
 //
 
 import UIKit
+import UserNotifications
 import FirebaseCore
 import FirebaseAnalytics
 
@@ -22,6 +23,9 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         _ = GearLocalStore.shared
         _ = WatchBridge.shared
 
+        UNUserNotificationCenter.current().delegate = self
+        WorkoutNotificationService.shared.startMonitoring()
+
         return true
     }
 
@@ -34,4 +38,15 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     func application(_ application: UIApplication, didDiscardSceneSessions sceneSessions: Set<UISceneSession>) { }
 
 
+}
+
+// MARK: - UNUserNotificationCenterDelegate
+extension AppDelegate: UNUserNotificationCenterDelegate {
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification,
+        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
+    ) {
+        completionHandler([.banner, .sound])
+    }
 }

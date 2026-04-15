@@ -22,6 +22,7 @@
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>remote-notification</string>
+		<string>processing</string>
 	</array>
 	<key>NSHealthShareUsageDescription</key>
 	<string>운동 기록과 경로를 건강 앱에서 읽어와 러닝 기록을 보여주기 위해 필요합니다.</string>
