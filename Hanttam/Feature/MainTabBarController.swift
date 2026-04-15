@@ -9,6 +9,7 @@ import UIKit
 import SwiftUI
 import RxSwift
 import RxCocoa
+internal import HealthKit
 
 final class MainTabBarController: UITabBarController {
 
@@ -61,5 +62,34 @@ final class MainTabBarController: UITabBarController {
             .observe(on: MainScheduler.instance)
             .subscribe(onNext: { [weak self] _ in self?.selectedIndex = 1 })
             .disposed(by: disposeBag)
+
+        NotificationCenter.default.rx
+            .notification(WorkoutNotificationService.didTapWorkoutNotification)
+            .observe(on: MainScheduler.instance)
+            .subscribe(onNext: { [weak self] notification in
+                guard let uuidString = notification.userInfo?[WorkoutNotificationService.workoutUUIDKey] as? String else { return }
+                self?.navigateToWorkoutDetail(workoutUUID: uuidString)
+            })
+            .disposed(by: disposeBag)
+    }
+
+    // MARK: - Deep Link
+
+    private func navigateToWorkoutDetail(workoutUUID: String) {
+        // 기록 탭(index 2)으로 이동
+        selectedIndex = 2
+
+        // 현재 모달이 떠있으면 dismiss
+        if let presented = viewControllers?[2].presentedViewController {
+            presented.dismiss(animated: false)
+        }
+
+        HealthKitStore.shared.fetchRunningWorkouts { [weak self] records in
+            guard let record = records.first(where: { $0.workout?.uuid.uuidString == workoutUUID }) else { return }
+            guard let nav = self?.viewControllers?[2] as? UINavigationController else { return }
+            nav.popToRootViewController(animated: false)
+            let detailVC = RunDetailTabViewController(record: record)
+            nav.pushViewController(detailVC, animated: true)
+        }
     }
 }

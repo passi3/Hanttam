@@ -111,13 +111,23 @@ final class WorkoutNotificationService {
         return !ownBundleIDs.contains(bundleID)
     }
 
+    // MARK: - Notification Name
+
+    static let didTapWorkoutNotification = Notification.Name("WorkoutNotificationService.didTapWorkout")
+    static let workoutUUIDKey = "workoutUUID"
+
     // MARK: - Local Notification
 
     private func sendPhotoNotification(for workout: HKWorkout) {
+        let hasGear = !GearLocalStore.shared.fetchRegisteredShoes().isEmpty
+
         let content = UNMutableNotificationContent()
         content.title = "운동 완료! 💪"
-        content.body = "방금 운동한 기록을 사진으로 남겨보세요!"
+        content.body = hasGear
+            ? "어떤 신발로 뛰었는지 기록해보세요!"
+            : "방금 운동한 기록을 사진으로 남겨보세요!"
         content.sound = .default
+        content.userInfo = [WorkoutNotificationService.workoutUUIDKey: workout.uuid.uuidString]
 
         let request = UNNotificationRequest(
             identifier: "workout-photo-\(workout.uuid.uuidString)",
