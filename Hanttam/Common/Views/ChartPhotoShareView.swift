@@ -426,6 +426,7 @@ struct ChartPhotoShareView<ChartContent: View>: View {
     private func scrubToIndex(_ index: Int) {
         guard index >= 0, index < photoAssets.count, index != currentAssetIndex else { return }
         currentAssetIndex = index
+        subjects = []
         clearSelectedSubjects()
         glassPhoto = nil
         pixelatedBgPhoto = nil
@@ -1247,6 +1248,8 @@ struct ChartPhotoShareView<ChartContent: View>: View {
 
     private func handlePhoto(_ uiImage: UIImage) {
         photo = uiImage
+        subjects = []
+        clearSelectedSubjects()
         pixelatedBgPhoto = nil
         pixelatedSubjectPhotos = [:]
         filteredBgPhotos = [:]
