@@ -76,20 +76,6 @@ final class MainTabBarController: UITabBarController {
     // MARK: - Deep Link
 
     private func navigateToWorkoutDetail(workoutUUID: String) {
-        // 기록 탭(index 2)으로 이동
         selectedIndex = 2
-
-        // 현재 모달이 떠있으면 dismiss
-        if let presented = viewControllers?[2].presentedViewController {
-            presented.dismiss(animated: false)
-        }
-
-        HealthKitStore.shared.fetchRunningWorkouts { [weak self] records in
-            guard let record = records.first(where: { $0.workout?.uuid.uuidString == workoutUUID }) else { return }
-            guard let nav = self?.viewControllers?[2] as? UINavigationController else { return }
-            nav.popToRootViewController(animated: false)
-            let detailVC = RunDetailTabViewController(record: record)
-            nav.pushViewController(detailVC, animated: true)
-        }
     }
 }
