@@ -57,11 +57,18 @@ extension AppDelegate: UNUserNotificationCenterDelegate {
     ) {
         let userInfo = response.notification.request.content.userInfo
         if let uuidString = userInfo[WorkoutNotificationService.workoutUUIDKey] as? String {
-            NotificationCenter.default.post(
-                name: WorkoutNotificationService.didTapWorkoutNotification,
-                object: nil,
-                userInfo: [WorkoutNotificationService.workoutUUIDKey: uuidString]
-            )
+            // MainTabBarController가 이미 떠 있으면 바로 전달,
+            // 아직 SplashViewController 단계면 pending에 저장해서 나중에 소비.
+            if let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+               scene.windows.first?.rootViewController is MainTabBarController {
+                NotificationCenter.default.post(
+                    name: WorkoutNotificationService.didTapWorkoutNotification,
+                    object: nil,
+                    userInfo: [WorkoutNotificationService.workoutUUIDKey: uuidString]
+                )
+            } else {
+                MainTabBarController.pendingWorkoutUUID = uuidString
+            }
         }
         completionHandler()
     }
