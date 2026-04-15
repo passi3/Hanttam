@@ -112,8 +112,10 @@ struct ChartPhotoShareView<ChartContent: View>: View {
     // Camera
     @State private var showCamera = false
 
-    // Save
+    // Save / Share
     @State private var isSaving = false
+    @State private var isSharing = false
+    @State private var sharingImage: UIImage?
     @State private var saveResult: ShareSaveResult?
     @State private var shouldDismissAfterAlert = false
 
@@ -187,12 +189,20 @@ struct ChartPhotoShareView<ChartContent: View>: View {
                 }
                 if photo != nil {
                     ToolbarItem(placement: .topBarTrailing) {
-                        Button {
-                            if let photo { saveToPhotos(photo: photo) }
-                        } label: {
-                            Image(systemName: "square.and.arrow.down")
+                        HStack(spacing: 16) {
+                            Button {
+                                if let photo { sharePhoto(photo: photo) }
+                            } label: {
+                                Image(systemName: "square.and.arrow.up")
+                            }
+                            .disabled(isSaving || isExtracting)
+                            Button {
+                                if let photo { saveToPhotos(photo: photo) }
+                            } label: {
+                                Image(systemName: "square.and.arrow.down")
+                            }
+                            .disabled(isSaving || isExtracting)
                         }
-                        .disabled(isSaving || isExtracting)
                     }
                 }
             }
@@ -213,6 +223,11 @@ struct ChartPhotoShareView<ChartContent: View>: View {
                 Button("확인") { }
             } message: {
                 Text(saveResult?.message ?? "")
+            }
+            .sheet(isPresented: $isSharing) {
+                if let img = sharingImage {
+                    ActivityView(image: img)
+                }
             }
         }
     }
@@ -464,7 +479,6 @@ struct ChartPhotoShareView<ChartContent: View>: View {
                 DispatchQueue.main.async {
                     guard self.currentAssetIndex == index, self.photo != nil else { return }
                     self.subjects = extractedSubjects
-                    if !extractedSubjects.isEmpty { self.editSegment = .subject }
                     self.clearSelectedSubjects()
                     self.pixelatedSubjectPhotos = [:]
                     self.filteredSubjectPhotos = [:]
@@ -506,7 +520,6 @@ struct ChartPhotoShareView<ChartContent: View>: View {
                 DispatchQueue.main.async {
                     guard self.currentAssetIndex == index, self.photo != nil else { return }
                     subjects = extractedSubjects
-                    if !extractedSubjects.isEmpty { editSegment = .subject }
                     clearSelectedSubjects()
                     glassPhoto = glass
                     isExtracting = false
@@ -1245,7 +1258,6 @@ struct ChartPhotoShareView<ChartContent: View>: View {
             DispatchQueue.main.async {
                 guard self.photo === uiImage else { return }
                 subjects = extractedSubjects
-                if !extractedSubjects.isEmpty { editSegment = .subject }
                 clearSelectedSubjects()
                 glassPhoto = glass
                 isExtracting = false
@@ -1281,6 +1293,14 @@ struct ChartPhotoShareView<ChartContent: View>: View {
     }
 
     @MainActor
+    private func sharePhoto(photo: UIImage) {
+        let content = renderContent(photo: photo)
+        guard let image = ShareCardService.shared.renderSwiftUIView(content) else { return }
+        sharingImage = image
+        isSharing = true
+    }
+
+    @MainActor
     private func saveToPhotos(photo: UIImage) {
         isSaving = true
         let content = renderContent(photo: photo)
@@ -1302,6 +1322,18 @@ struct ChartPhotoShareView<ChartContent: View>: View {
             }
         }
     }
+}
+
+// MARK: - Activity View
+
+private struct ActivityView: UIViewControllerRepresentable {
+    let image: UIImage
+
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        UIActivityViewController(activityItems: [image], applicationActivities: nil)
+    }
+
+    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
 }
 
 // MARK: - Photo Grid Picker
