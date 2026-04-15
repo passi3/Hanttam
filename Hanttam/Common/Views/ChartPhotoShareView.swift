@@ -76,10 +76,12 @@ struct ChartPhotoShareView<ChartContent: View>: View {
     @State private var scaleAccumulated: CGFloat = 0.8
     @State private var solidTone: Double = 0.0  // -1(흰) ~ 0(투명) ~ +1(검정)
     @State private var bgStyle: OverlayBgStyle = .solid
-    @State private var editSegment: EditSegment = .chart
+    @State private var editSegment: EditSegment = .bg
     @State private var subjectFilter: PhotoFilterKind = .original
     @State private var chartFilter: PhotoFilterKind = .original
     @State private var bgFilter: PhotoFilterKind = .original
+    @State private var subjectFilterIntensity: Double = 1.0
+    @State private var bgFilterIntensity: Double = 1.0
     @State private var pixelatedBgPhoto: UIImage?
     @State private var pixelatedSubjectPhotos: [Int: UIImage] = [:]
     /// Baked filter results for the background, keyed by filter cacheKey.
@@ -288,23 +290,41 @@ struct ChartPhotoShareView<ChartContent: View>: View {
     @ViewBuilder
     private var editSegmentControls: some View {
         if editSegment == .subject {
-            PhotoFilterPicker(
-                filters: PhotoFilterKind.allPhotoFilters,
-                source: subjects.first?.image ?? photo,
-                selection: $subjectFilter
-            )
-            .onChange(of: subjectFilter) { _, newVal in
-                handleSubjectFilterChange(newVal)
+            VStack(spacing: 4) {
+                PhotoFilterPicker(
+                    filters: PhotoFilterKind.allPhotoFilters,
+                    source: subjects.first?.image ?? photo,
+                    selection: $subjectFilter
+                )
+                .onChange(of: subjectFilter) { _, newVal in
+                    subjectFilterIntensity = 1.0
+                    handleSubjectFilterChange(newVal)
+                }
+                if case .film = subjectFilter {
+                    filterIntensitySlider(value: $subjectFilterIntensity) {
+                        invalidateSubjectFilterCache()
+                        handleSubjectFilterChange(subjectFilter)
+                    }
+                }
             }
         } else if editSegment == .bg {
-            PhotoFilterPicker(
-                filters: PhotoFilterKind.allPhotoFilters,
-                source: photo,
-                selection: $bgFilter
-            )
-            .onChange(of: bgFilter) { _, newVal in
-                handleBgFilterChange(newVal)
-                subjectFilter = newVal
+            VStack(spacing: 4) {
+                PhotoFilterPicker(
+                    filters: PhotoFilterKind.allPhotoFilters,
+                    source: photo,
+                    selection: $bgFilter
+                )
+                .onChange(of: bgFilter) { _, newVal in
+                    bgFilterIntensity = 1.0
+                    handleBgFilterChange(newVal)
+                    subjectFilter = newVal
+                }
+                if case .film = bgFilter {
+                    filterIntensitySlider(value: $bgFilterIntensity) {
+                        invalidateBgFilterCache()
+                        handleBgFilterChange(bgFilter)
+                    }
+                }
             }
         } else {
             VStack(spacing: 6) {
@@ -1076,6 +1096,27 @@ struct ChartPhotoShareView<ChartContent: View>: View {
         didHandleTouchAsSubject = false
     }
 
+    // MARK: - Intensity Slider
+
+    private func filterIntensitySlider(value: Binding<Double>, onChanged: @escaping () -> Void) -> some View {
+        HStack(spacing: 8) {
+            Text("강도")
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(.secondary)
+                .frame(width: 28)
+            Slider(value: value, in: 0...1, step: 0.01)
+                .tint(.primary)
+                .onChange(of: value.wrappedValue) { _, _ in
+                    onChanged()
+                }
+            Text("\(Int(value.wrappedValue * 100))%")
+                .font(.system(size: 11, weight: .medium).monospacedDigit())
+                .foregroundStyle(.secondary)
+                .frame(width: 36, alignment: .trailing)
+        }
+        .padding(.horizontal, 4)
+    }
+
     // MARK: - Filter helpers
 
     /// Returns the image to display for the background, accounting for the current bgFilter.
@@ -1147,11 +1188,13 @@ struct ChartPhotoShareView<ChartContent: View>: View {
     }
 
     private func bakeBgFilter(_ filter: PhotoFilterKind) {
-        guard case .film = filter, let photo else { return }
+        guard case .film(let stockID) = filter, let photo else { return }
         let key = filter.cacheKey
+        let intensity = bgFilterIntensity
         if filteredBgPhotos[key] != nil { return }
         DispatchQueue.global(qos: .userInitiated).async {
-            let result = FilmFilterEngine.shared.applySimple(kind: filter, to: photo)
+            guard let stock = FilmStocks.stock(for: stockID) else { return }
+            let result = FilmFilterEngine.shared.apply(stock: stock, to: photo, intensity: intensity)
             DispatchQueue.main.async {
                 if let result, self.bgFilter.cacheKey == key {
                     filteredBgPhotos[key] = result
@@ -1161,13 +1204,15 @@ struct ChartPhotoShareView<ChartContent: View>: View {
     }
 
     private func bakeSubjectFilter(_ filter: PhotoFilterKind) {
-        guard case .film = filter else { return }
+        guard case .film(let stockID) = filter else { return }
         let key = filter.cacheKey
+        let intensity = subjectFilterIntensity
         for subject in subjects {
             let subjectKey = "\(subject.id)_\(key)"
             if filteredSubjectPhotos[subjectKey] != nil { continue }
             DispatchQueue.global(qos: .userInitiated).async {
-                let result = FilmFilterEngine.shared.applySimple(kind: filter, to: subject.image)
+                guard let stock = FilmStocks.stock(for: stockID) else { return }
+                let result = FilmFilterEngine.shared.apply(stock: stock, to: subject.image, intensity: intensity)
                 DispatchQueue.main.async {
                     if let result, self.subjectFilter.cacheKey == key {
                         filteredSubjectPhotos[subjectKey] = result
@@ -1175,6 +1220,14 @@ struct ChartPhotoShareView<ChartContent: View>: View {
                 }
             }
         }
+    }
+
+    private func invalidateBgFilterCache() {
+        filteredBgPhotos = [:]
+    }
+
+    private func invalidateSubjectFilterCache() {
+        filteredSubjectPhotos = [:]
     }
 
     // MARK: - Actions
@@ -1216,6 +1269,8 @@ struct ChartPhotoShareView<ChartContent: View>: View {
         subjectFilter = .original
         chartFilter = .original
         bgFilter = .original
+        subjectFilterIntensity = 1.0
+        bgFilterIntensity = 1.0
         pixelatedBgPhoto = nil
         pixelatedSubjectPhotos = [:]
         filteredBgPhotos = [:]
