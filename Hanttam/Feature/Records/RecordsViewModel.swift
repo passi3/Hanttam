@@ -12,7 +12,7 @@ import RxSwift
 internal import HealthKit
 
 final class RecordsViewModel: HTReusableVMProtocol, ObservableObject {
-    
+
     struct Input {
         let viewDidLoad : Observable<Void>
         let refresh     : Observable<Void>
@@ -26,45 +26,37 @@ final class RecordsViewModel: HTReusableVMProtocol, ObservableObject {
         let selectedRecord : Driver<RunningRecord>
     }
 
-    @Published var records: [RunningRecord] = []
-    @Published var period : ChartPeriod = .monthly {
+    // MARK: - ObservableObject state (SwiftUI interop via RunningChartView)
+
+    @Published var period: ChartPeriod = .monthly {
         didSet { periodRelay.accept(period) }
     }
-    @Published var offset : Int = 0 {
+    @Published var offset: Int = 0 {
         didSet { offsetRelay.accept(offset) }
     }
-    @Published private(set) var filteredRecords: [RunningRecord] = []
+    @Published private(set) var records: [RunningRecord] = []
 
-    private let recordsRelay = BehaviorRelay<[RunningRecord]>(value: [])
+    // MARK: - Rx relays
+
+    private let recordsRelay         = BehaviorRelay<[RunningRecord]>(value: [])
     private let filteredRecordsRelay = BehaviorRelay<[RunningRecord]>(value: [])
-    private let periodRelay = BehaviorRelay<ChartPeriod>(value: .monthly)
-    private let offsetRelay = BehaviorRelay<Int>(value: 0)
-    private let isLoadingRelay = BehaviorRelay<Bool>(value: false)
-    private let selectedRecordRelay = PublishRelay<RunningRecord>()
-    private let disposeBag = DisposeBag()
+    private let periodRelay          = BehaviorRelay<ChartPeriod>(value: .monthly)
+    private let offsetRelay          = BehaviorRelay<Int>(value: 0)
+    private let isLoadingRelay       = BehaviorRelay<Bool>(value: false)
+    private let selectedRecordRelay  = PublishRelay<RunningRecord>()
+    private let disposeBag           = DisposeBag()
 
     private let store = HealthKitStore.shared
 
     init() {
-        setupBindings()
-    }
-
-    private func setupBindings() {
         recordsRelay
             .observe(on: MainScheduler.instance)
             .subscribe(onNext: { [weak self] in self?.records = $0 })
             .disposed(by: disposeBag)
 
-        // filteredRecords 계산 및 동기화
         Observable.combineLatest(recordsRelay, periodRelay, offsetRelay)
-            .map { (records, period, offset) in
-                Self.filterRecords(records, period: period, offset: offset)
-            }
-            .observe(on: MainScheduler.instance)
-            .subscribe(onNext: { [weak self] filtered in
-                self?.filteredRecords = filtered
-                self?.filteredRecordsRelay.accept(filtered)
-            })
+            .map { Self.filterRecords($0, period: $1, offset: $2) }
+            .bind(to: filteredRecordsRelay)
             .disposed(by: disposeBag)
     }
 
@@ -92,7 +84,35 @@ final class RecordsViewModel: HTReusableVMProtocol, ObservableObject {
         )
     }
 
+    // MARK: - Delete
+
+    func deleteRecord(_ record: RunningRecord, completion: @escaping (Bool, Error?) -> Void) {
+        guard let workout = record.workout else { completion(false, nil); return }
+        store.deleteWorkout(workout) { [weak self] success, error in
+            if success {
+                var current = self?.recordsRelay.value ?? []
+                current.removeAll { $0 == record }
+                self?.recordsRelay.accept(current)
+                RunningLevelManager.shared.update(with: current)
+            }
+            completion(success, error)
+        }
+    }
+
     // MARK: - Private
+
+    private func fetchRecords() {
+        isLoadingRelay.accept(true)
+        store.requestAuthorization { [weak self] ok in
+            guard ok else { self?.isLoadingRelay.accept(false); return }
+            self?.store.debugAllRoutes()
+            self?.store.fetchRunningWorkouts { [weak self] (items: [RunningRecord]) in
+                self?.recordsRelay.accept(items)
+                RunningLevelManager.shared.update(with: items)
+                self?.isLoadingRelay.accept(false)
+            }
+        }
+    }
 
     private static func filterRecords(_ records: [RunningRecord], period: ChartPeriod, offset: Int) -> [RunningRecord] {
         let cal = Calendar.current
@@ -117,38 +137,6 @@ final class RecordsViewModel: HTReusableVMProtocol, ObservableObject {
             return records.filter { cal.component(.year, from: $0.date) == targetYear }
         case .all:
             return records
-        }
-    }
-
-    func deleteRecord(_ record: RunningRecord, completion: @escaping (Bool, Error?) -> Void) {
-        guard let workout = record.workout else {
-            completion(false, nil)
-            return
-        }
-        store.deleteWorkout(workout) { [weak self] success, error in
-            if success {
-                var current = self?.recordsRelay.value ?? []
-                current.removeAll { $0 == record }
-                self?.recordsRelay.accept(current)
-                RunningLevelManager.shared.update(with: current)
-            }
-            completion(success, error)
-        }
-    }
-
-    private func fetchRecords() {
-        isLoadingRelay.accept(true)
-        store.requestAuthorization { [weak self] ok in
-            guard ok else {
-                self?.isLoadingRelay.accept(false)
-                return
-            }
-            self?.store.debugAllRoutes()
-            self?.store.fetchRunningWorkouts() { [weak self] (records: [RunningRecord]) in
-                self?.recordsRelay.accept(records)
-                RunningLevelManager.shared.update(with: records)
-                self?.isLoadingRelay.accept(false)
-            }
         }
     }
 }

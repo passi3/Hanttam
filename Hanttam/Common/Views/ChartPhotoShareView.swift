@@ -11,6 +11,13 @@ import Combine
 import Photos
 import AVFoundation
 
+private extension View {
+    @ViewBuilder
+    func colorInvertIf(_ condition: Bool) -> some View {
+        if condition { colorInvert() } else { self }
+    }
+}
+
 // MARK: - Overlay Text Color Environment
 
 struct OverlayTextColorKey: EnvironmentKey {
@@ -69,6 +76,12 @@ struct ChartPhotoShareView<ChartContent: View>: View {
     @State private var scaleAccumulated: CGFloat = 0.8
     @State private var solidTone: Double = 0.0  // -1(흰) ~ 0(투명) ~ +1(검정)
     @State private var bgStyle: OverlayBgStyle = .solid
+    @State private var editSegment: EditSegment = .chart
+    @State private var subjectFilter: PhotoFilter = .original
+    @State private var chartFilter: PhotoFilter = .original
+    @State private var bgFilter: PhotoFilter = .original
+    @State private var pixelatedBgPhoto: UIImage?
+    @State private var pixelatedSubjectPhotos: [Int: UIImage] = [:]
     @State private var longPressTimer: DispatchWorkItem?
     @State private var guidanceScanProgress: CGFloat = 0
     @State private var touchSubjectID: ExtractedSubject.ID?
@@ -81,6 +94,19 @@ struct ChartPhotoShareView<ChartContent: View>: View {
     private enum OverlayBgStyle: String, CaseIterable {
         case solid = "솔리드"
         case glass = "글래스"
+    }
+
+    private enum EditSegment: String, CaseIterable {
+        case subject = "피사체"
+        case chart   = "차트"
+        case bg      = "배경"
+    }
+
+    private enum PhotoFilter: String, CaseIterable {
+        case original = "원본"
+        case mono     = "모노톤"
+        case invert   = "반전"
+        case pixel    = "픽셀아트"
     }
 
     // Camera
@@ -102,7 +128,7 @@ struct ChartPhotoShareView<ChartContent: View>: View {
     }
 
     private var hasSelectedSubjects: Bool { !selectedSubjects.isEmpty }
-    private var shouldShowGuidanceScan: Bool { !subjects.isEmpty && selectedSubjects.isEmpty }
+    private var shouldShowGuidanceScan: Bool { !subjects.isEmpty && selectedSubjects.isEmpty && editSegment == .subject }
     private var subjectGlowColor: Color { RunningLevelManager.shared.accentColor }
 
     /// solidTone: -1(흰) ~ 0(투명) ~ +1(검정)
@@ -207,79 +233,105 @@ struct ChartPhotoShareView<ChartContent: View>: View {
         GeometryReader { geo in
             let cardW = geo.size.width - 40
             let cardH = cardW * 4 / 3
-            VStack(spacing: 12) {
-                // 카드 프리뷰
-                ZStack {
-                    cardPreview(photo: photo, cardWidth: cardW, cardHeight: cardH)
-
-                    if isExtracting {
-                        ZStack {
-                            Color.black.opacity(0.4)
-                            VStack(spacing: 16) {
-                                ProgressView()
-                                    .tint(.white)
-                                    .controlSize(.large)
-                                    .scaleEffect(1.2)
-                                
-                                Text("로딩 중...")
-                                    .font(.system(size: 14, weight: .semibold))
-                                    .foregroundStyle(.white)
-                                    .shadow(radius: 4)
-                            }
-                        }
-                        .clipShape(RoundedRectangle(cornerRadius: 16))
-                        .transition(.opacity)
-                    }
-                }
-                .animation(.easeInOut(duration: 0.3), value: isExtracting)
-                .frame(width: cardW, height: cardH)
-
-                if hasSelectedSubjects {
-                    Text("길게 눌러 선택/해제, 드래그로 해제")
-                        .font(.system(size: 11, weight: .light))
-                        .foregroundStyle(.secondary)
-                } else {
-                    Text(subjects.isEmpty ? "" : "피사체를 길게 눌러 선택하세요")
-                        .font(.system(size: 11, weight: .light))
-                        .foregroundStyle(.secondary)
-                }
-
-                // 배경 스타일
-                VStack(spacing: 10) {
-                    Picker("배경", selection: $bgStyle) {
-                        ForEach(OverlayBgStyle.allCases, id: \.self) { style in
-                            Text(style.rawValue).tag(style)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-
-                    VStack(spacing: 4) {
-                        HStack {
-                            Circle()
-                                .fill(.white)
-                                .frame(width: 12, height: 12)
-                                .overlay(Circle().stroke(Color.secondary.opacity(0.3), lineWidth: 0.5))
-                            Slider(value: $solidTone, in: -1...1, step: 0.01)
-                                .tint(.primary)
-                            Circle()
-                                .fill(.black)
-                                .frame(width: 12, height: 12)
-                        }
-                        Text(solidToneLabel)
-                            .font(.system(size: 11, weight: .light))
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                .animation(.easeInOut(duration: 0.2), value: bgStyle)
-
+            VStack(spacing: 8) {
+                editSegmentPicker
+                cardPreviewStack(photo: photo, cardWidth: cardW, cardHeight: cardH)
+                editSegmentControls
                 Spacer(minLength: 0)
+                if !photoAssets.isEmpty { photoStrip }
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 12)
+            .padding(.bottom, 8)
+        }
+    }
 
-                // 하단 썸네일 스트립 (현재 기준 좌우 2장)
-                if !photoAssets.isEmpty {
-                    photoStrip
+    @ViewBuilder
+    private var editSegmentPicker: some View {
+        Picker("편집 대상", selection: $editSegment) {
+            ForEach(subjects.isEmpty ? [.chart, .bg] : EditSegment.allCases, id: \.self) { seg in
+                Text(seg.rawValue).tag(seg)
+            }
+        }
+        .pickerStyle(.segmented)
+        .onChange(of: subjects) { _, newSubjects in
+            if newSubjects.isEmpty && editSegment == .subject {
+                editSegment = .chart
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func cardPreviewStack(photo: UIImage, cardWidth: CGFloat, cardHeight: CGFloat) -> some View {
+        ZStack {
+            cardPreview(photo: photo, cardWidth: cardWidth, cardHeight: cardHeight)
+            if isExtracting {
+                ZStack {
+                    Color.black.opacity(0.4)
+                    VStack(spacing: 16) {
+                        ProgressView()
+                            .tint(.white)
+                            .controlSize(.large)
+                            .scaleEffect(1.2)
+                        Text("로딩 중...")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .shadow(radius: 4)
+                    }
+                }
+                .clipShape(RoundedRectangle(cornerRadius: 16))
+                .transition(.opacity)
+            }
+        }
+        .animation(.easeInOut(duration: 0.3), value: isExtracting)
+        .frame(width: cardWidth, height: cardHeight)
+    }
+
+    @ViewBuilder
+    private var editSegmentControls: some View {
+        if editSegment == .subject {
+            Picker("필터", selection: $subjectFilter) {
+                ForEach(PhotoFilter.allCases, id: \.self) { f in Text(f.rawValue).tag(f) }
+            }
+            .pickerStyle(.segmented)
+            .onChange(of: subjectFilter) { _, newVal in
+                if newVal == .pixel { pixelateSubjects() }
+                else { pixelatedSubjectPhotos = [:] }
+            }
+        } else if editSegment == .bg {
+            Picker("필터", selection: $bgFilter) {
+                ForEach(PhotoFilter.allCases, id: \.self) { f in Text(f.rawValue).tag(f) }
+            }
+            .pickerStyle(.segmented)
+            .onChange(of: bgFilter) { _, newVal in
+                if newVal == .pixel { pixelateBg() }
+                else { pixelatedBgPhoto = nil }
+            }
+        } else {
+            VStack(spacing: 6) {
+                Picker("배경", selection: $bgStyle) {
+                    ForEach(OverlayBgStyle.allCases, id: \.self) { style in
+                        Text(style.rawValue).tag(style)
+                    }
+                }
+                .pickerStyle(.segmented)
+                HStack(spacing: 8) {
+                    Circle()
+                        .fill(.white)
+                        .frame(width: 10, height: 10)
+                        .overlay(Circle().stroke(Color.secondary.opacity(0.3), lineWidth: 0.5))
+                    Slider(value: $solidTone, in: -1...1, step: 0.01)
+                        .tint(.primary)
+                    Circle()
+                        .fill(.black)
+                        .frame(width: 10, height: 10)
+                    Text(solidToneLabel)
+                        .font(.system(size: 10, weight: .light))
+                        .foregroundStyle(.secondary)
+                        .frame(minWidth: 52, alignment: .leading)
                 }
             }
-            .padding(20)
+            .animation(.easeInOut(duration: 0.2), value: bgStyle)
         }
     }
 
@@ -287,13 +339,13 @@ struct ChartPhotoShareView<ChartContent: View>: View {
 
     private var stripRange: [Int] {
         guard currentAssetIndex >= 0 else { return [] }
-        let lo = max(0, currentAssetIndex - 2)
-        let hi = min(photoAssets.count - 1, currentAssetIndex + 2)
+        let lo = max(0, currentAssetIndex - 3)
+        let hi = min(photoAssets.count - 1, currentAssetIndex + 3)
         return Array(lo...hi)
     }
 
     private var photoStrip: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 4) {
             ForEach(stripRange, id: \.self) { idx in
                 let isCurrent = idx == currentAssetIndex
                 ZStack {
@@ -304,10 +356,10 @@ struct ChartPhotoShareView<ChartContent: View>: View {
                             .scaledToFill()
                     }
                 }
-                .frame(width: 52, height: 52)
-                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .frame(width: 44, height: 44)
+                .clipShape(RoundedRectangle(cornerRadius: 7))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 8)
+                    RoundedRectangle(cornerRadius: 7)
                         .stroke(isCurrent ? Color.accentColor : .clear, lineWidth: 2)
                 )
                 .opacity(isCurrent ? 1.0 : 0.6)
@@ -320,7 +372,7 @@ struct ChartPhotoShareView<ChartContent: View>: View {
             DragGesture(minimumDistance: 5)
                 .onChanged { value in
                     if dragBaseIndex < 0 { dragBaseIndex = currentAssetIndex }
-                    let step: CGFloat = 58
+                    let step: CGFloat = 48
                     let delta = Int(round(-value.translation.width / step))
                     let target = max(0, min(photoAssets.count - 1, dragBaseIndex + delta))
                     if target != currentAssetIndex {
@@ -342,6 +394,8 @@ struct ChartPhotoShareView<ChartContent: View>: View {
         currentAssetIndex = index
         clearSelectedSubjects()
         glassPhoto = nil
+        pixelatedBgPhoto = nil
+        pixelatedSubjectPhotos = [:]
         prefetchStripThumbs()
 
         let asset = photoAssets[index]
@@ -389,7 +443,9 @@ struct ChartPhotoShareView<ChartContent: View>: View {
                 DispatchQueue.main.async {
                     guard self.currentAssetIndex == index, self.photo != nil else { return }
                     self.subjects = extractedSubjects
+                    if !extractedSubjects.isEmpty { self.editSegment = .subject }
                     self.clearSelectedSubjects()
+                    self.pixelatedSubjectPhotos = [:]
                     self.glassPhoto = glass
                     self.isExtracting = false
                 }
@@ -418,6 +474,8 @@ struct ChartPhotoShareView<ChartContent: View>: View {
                 photo = image
                 clearSelectedSubjects()
                 glassPhoto = nil
+                pixelatedBgPhoto = nil
+                pixelatedSubjectPhotos = [:]
                 prefetchStripThumbs()
             }
             DispatchQueue.global(qos: .userInitiated).async {
@@ -426,6 +484,7 @@ struct ChartPhotoShareView<ChartContent: View>: View {
                 DispatchQueue.main.async {
                     guard self.currentAssetIndex == index, self.photo != nil else { return }
                     subjects = extractedSubjects
+                    if !extractedSubjects.isEmpty { editSegment = .subject }
                     clearSelectedSubjects()
                     glassPhoto = glass
                     isExtracting = false
@@ -436,10 +495,10 @@ struct ChartPhotoShareView<ChartContent: View>: View {
 
     private func prefetchStripThumbs() {
         guard currentAssetIndex >= 0 else { return }
-        let lo = max(0, currentAssetIndex - 2)
-        let hi = min(photoAssets.count - 1, currentAssetIndex + 2)
+        let lo = max(0, currentAssetIndex - 3)
+        let hi = min(photoAssets.count - 1, currentAssetIndex + 3)
         let scale = UIScreen.main.scale
-        let size = CGSize(width: 52 * scale, height: 52 * scale)
+        let size = CGSize(width: 44 * scale, height: 44 * scale)
         let options = PHImageRequestOptions()
         options.deliveryMode = .opportunistic
         options.isNetworkAccessAllowed = true
@@ -461,11 +520,14 @@ struct ChartPhotoShareView<ChartContent: View>: View {
     // MARK: - Card Preview (interactive)
 
     private func cardPreview(photo: UIImage, cardWidth: CGFloat, cardHeight: CGFloat) -> some View {
-        ZStack {
+        let displayBg = bgFilter == .pixel ? (pixelatedBgPhoto ?? photo) : photo
+        return ZStack {
             // 배경 사진
-            Image(uiImage: photo)
+            Image(uiImage: displayBg)
                 .resizable().scaledToFill()
                 .frame(width: cardWidth, height: cardHeight).clipped()
+                .saturation(bgFilter == .mono ? 0 : 1)
+                .colorInvertIf(bgFilter == .invert)
 
             if !backSubjectLayers.isEmpty {
                 subjectLayersView(backSubjectLayers, cardWidth: cardWidth, cardHeight: cardHeight)
@@ -497,7 +559,7 @@ struct ChartPhotoShareView<ChartContent: View>: View {
         .clipped()
         .clipShape(RoundedRectangle(cornerRadius: 16))
         .overlay(alignment: .center) {
-            if !subjects.isEmpty && !hasSelectedSubjects {
+            if !subjects.isEmpty && !hasSelectedSubjects && editSegment == .subject {
                 Text("피사체를 길게 눌러 선택")
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(.white)
@@ -507,7 +569,8 @@ struct ChartPhotoShareView<ChartContent: View>: View {
             }
         }
         .simultaneousGesture(
-            subjectSelectionTrackingGesture(photo: photo, cardSize: CGSize(width: cardWidth, height: cardHeight))
+            subjectSelectionTrackingGesture(photo: photo, cardSize: CGSize(width: cardWidth, height: cardHeight)),
+            isEnabled: editSegment == .subject
         )
         .onAppear { startGuidanceScanIfNeeded() }
         .onChange(of: shouldShowGuidanceScan) { _, shouldShow in
@@ -553,6 +616,7 @@ struct ChartPhotoShareView<ChartContent: View>: View {
 
     private func chartOverlay(photo: UIImage, cardHeight: CGFloat) -> some View {
         chartContent()
+            .saturation(chartFilter == .mono ? 0 : 1)
             .environment(\.overlayTextColor, overlayText)
             .environment(\.overlaySubTextColor, overlaySubText)
             .padding(12)
@@ -608,6 +672,7 @@ struct ChartPhotoShareView<ChartContent: View>: View {
         }()
 
         let overlayView = chartContent()
+            .saturation(chartFilter == .mono ? 0 : 1)
             .environment(\.overlayTextColor, overlayText)
             .environment(\.overlaySubTextColor, overlaySubText)
             .padding(12)
@@ -616,10 +681,13 @@ struct ChartPhotoShareView<ChartContent: View>: View {
             .scaleEffect(overlayScale)
             .offset(overlayOffset)
 
+        let displayBg = bgFilter == .pixel ? (pixelatedBgPhoto ?? photo) : photo
         return ZStack {
-            Image(uiImage: photo)
+            Image(uiImage: displayBg)
                 .resizable().scaledToFill()
                 .frame(width: cardW, height: cardH).clipped()
+                .saturation(bgFilter == .mono ? 0 : 1)
+                .colorInvertIf(bgFilter == .invert)
 
             ForEach(backSubjectLayers) { layer in
                 if let subject = subject(for: layer.id) {
@@ -675,10 +743,13 @@ struct ChartPhotoShareView<ChartContent: View>: View {
     @ViewBuilder
     private func guidanceLayersView(cardWidth: CGFloat, cardHeight: CGFloat) -> some View {
         ForEach(subjects) { subject in
-            Image(uiImage: subject.image)
+            let displayImg = subjectFilter == .pixel ? (pixelatedSubjectPhotos[subject.id] ?? subject.image) : subject.image
+            Image(uiImage: displayImg)
                 .resizable().scaledToFill()
                 .frame(width: cardWidth, height: cardHeight)
                 .clipped()
+                .saturation(subjectFilter == .mono ? 0 : 1)
+                .colorInvertIf(subjectFilter == .invert)
                 .overlay {
                     subjectGlowOverlay(
                         image: subject.image,
@@ -700,11 +771,14 @@ struct ChartPhotoShareView<ChartContent: View>: View {
         showsScan: Bool,
         showsInteractionEffect: Bool
     ) -> some View {
-        ZStack {
-            Image(uiImage: subject.image)
+        let displayImg = subjectFilter == .pixel ? (pixelatedSubjectPhotos[subject.id] ?? subject.image) : subject.image
+        return ZStack {
+            Image(uiImage: displayImg)
                 .resizable().scaledToFill()
                 .frame(width: cardWidth, height: cardHeight)
                 .clipped()
+                .saturation(subjectFilter == .mono ? 0 : 1)
+                .colorInvertIf(subjectFilter == .invert)
 
             if showsScan {
                 subjectGlowOverlay(
@@ -1000,10 +1074,33 @@ struct ChartPhotoShareView<ChartContent: View>: View {
         didHandleTouchAsSubject = false
     }
 
+    // MARK: - Pixelate
+
+    private func pixelateBg() {
+        guard let photo else { return }
+        DispatchQueue.global(qos: .userInitiated).async {
+            let result = ShareCardService.shared.pixelate(photo)
+            DispatchQueue.main.async { pixelatedBgPhoto = result }
+        }
+    }
+
+    private func pixelateSubjects() {
+        for subject in subjects {
+            DispatchQueue.global(qos: .userInitiated).async {
+                let result = ShareCardService.shared.pixelate(subject.image)
+                DispatchQueue.main.async {
+                    if let result { pixelatedSubjectPhotos[subject.id] = result }
+                }
+            }
+        }
+    }
+
     // MARK: - Actions
 
     private func handlePhoto(_ uiImage: UIImage) {
         photo = uiImage
+        pixelatedBgPhoto = nil
+        pixelatedSubjectPhotos = [:]
         isExtracting = true
         DispatchQueue.global(qos: .userInitiated).async {
             let extractedSubjects = ShareCardService.shared.extractSubjects(from: uiImage)
@@ -1011,6 +1108,7 @@ struct ChartPhotoShareView<ChartContent: View>: View {
             DispatchQueue.main.async {
                 guard self.photo === uiImage else { return }
                 subjects = extractedSubjects
+                if !extractedSubjects.isEmpty { editSegment = .subject }
                 clearSelectedSubjects()
                 glassPhoto = glass
                 isExtracting = false
@@ -1030,6 +1128,12 @@ struct ChartPhotoShareView<ChartContent: View>: View {
         scaleAccumulated = 0.8
         solidTone = 0.0
         bgStyle = .solid
+        editSegment = .chart
+        subjectFilter = .original
+        chartFilter = .original
+        bgFilter = .original
+        pixelatedBgPhoto = nil
+        pixelatedSubjectPhotos = [:]
         shouldDismissAfterAlert = false
         currentAssetIndex = -1
         adjacentThumbs = [:]

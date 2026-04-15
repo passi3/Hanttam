@@ -102,6 +102,21 @@ final class ShareCardService: NSObject {
         return UIImage(cgImage: cgOutput, scale: image.scale, orientation: image.imageOrientation)
     }
 
+    // MARK: - 픽셀아트
+
+    func pixelate(_ image: UIImage, scale: Float = 30) -> UIImage? {
+        guard let cgImage = image.cgImage else { return nil }
+        let ciImage = CIImage(cgImage: cgImage)
+        let filter = CIFilter.pixellate()
+        filter.inputImage = ciImage
+        filter.scale = scale
+        filter.center = CGPoint(x: ciImage.extent.midX, y: ciImage.extent.midY)
+        guard let output = filter.outputImage,
+              let cgOut = CIContext().createCGImage(output, from: ciImage.extent)
+        else { return nil }
+        return UIImage(cgImage: cgOut, scale: image.scale, orientation: image.imageOrientation)
+    }
+
     // MARK: - 피사체 추출
 
     func extractSubjects(from photo: UIImage) -> [ExtractedSubject] {
