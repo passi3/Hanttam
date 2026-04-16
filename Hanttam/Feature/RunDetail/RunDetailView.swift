@@ -37,7 +37,7 @@ enum RunDetailLayout {
     static let summaryMetricColumnSpacing: CGFloat = 28
     static let compactMetricHeaderMinHeight: CGFloat = 36
     static let compactMetricHeaderSpacing: CGFloat = 10
-    static let compactMetricStatWidth: CGFloat = 48
+    static let compactMetricStatWidth: CGFloat = 52
     static let compactMetricStatsGroupSpacing: CGFloat = 8
 }
 
@@ -1454,10 +1454,16 @@ enum RunDetailContentView {
         var body: some View {
             VStack(alignment: .leading, spacing: 16) {
                 HStack {
-                    Text(metric.title)
-                        .font(AppFont.labelSM)
-                        .tracking(1.2)
-                        .foregroundStyle(DS.textLabel)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(metric.title)
+                            .font(AppFont.labelSM)
+                            .tracking(1.2)
+                            .foregroundStyle(DS.textLabel)
+                        Text("(\(metric.unit))")
+                            .font(AppFont.labelSM)
+                            .tracking(1.2)
+                            .foregroundStyle(DS.textDim)
+                    }
                     Spacer()
                     ShareButton { showShareSheet = true }
                 }
@@ -1509,9 +1515,9 @@ enum RunDetailContentView {
                 .frame(height: 160)
                 
                 HStack(spacing: 8) {
-                    statCell(title: "MIN", value: metric.formatWithUnit(minVal))
-                    statCell(title: "AVG", value: metric.formatWithUnit(avg), accent: metric.color)
-                    statCell(title: "MAX", value: metric.formatWithUnit(maxVal))
+                    statCell(title: "MIN", value: metric.format(minVal))
+                    statCell(title: "AVG", value: metric.format(avg), accent: metric.color)
+                    statCell(title: "MAX", value: metric.format(maxVal))
                 }
             }
             .padding(RunDetailLayout.cardPadding)
@@ -1573,9 +1579,9 @@ enum RunDetailContentView {
                         .frame(height: 120)
                         
                         HStack(spacing: 8) {
-                            shareStatCell(title: "MIN", value: metric.formatWithUnit(minVal))
-                            shareStatCell(title: "AVG", value: metric.formatWithUnit(avg), accent: metric.color)
-                            shareStatCell(title: "MAX", value: metric.formatWithUnit(maxVal))
+                            shareStatCell(title: "MIN", value: metric.format(minVal))
+                            shareStatCell(title: "AVG", value: metric.format(avg), accent: metric.color)
+                            shareStatCell(title: "MAX", value: metric.format(maxVal))
                         }
                     }
                 }
@@ -1704,19 +1710,26 @@ enum RunDetailContentView {
         var body: some View {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(alignment: .top, spacing: 10) {
-                    Text(metric.title.uppercased())
-                        .font(AppFont.labelMD)
-                        .tracking(1.2)
-                        .foregroundStyle(DS.textDim)
-                        .lineLimit(1)
-                        .layoutPriority(1)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(metric.title.uppercased())
+                            .font(AppFont.labelMD)
+                            .tracking(1.2)
+                            .foregroundStyle(DS.textDim)
+                            .lineLimit(1)
+                        Text("(\(metric.unit))")
+                            .font(AppFont.labelMD)
+                            .tracking(1.2)
+                            .foregroundStyle(DS.textDim.opacity(0.6))
+                            .lineLimit(1)
+                    }
+                    .layoutPriority(1)
 
                     Spacer(minLength: 8)
 
                     HStack(spacing: RunDetailLayout.compactMetricStatsGroupSpacing) {
-                        statCell(title: "MIN", value: metric.formatWithUnit(displayedMinVal))
-                        statCell(title: "AVG", value: metric.formatWithUnit(avg), accent: metric.color)
-                        statCell(title: "MAX", value: metric.formatWithUnit(displayedMaxVal))
+                        statCell(title: "MIN", value: metric.format(displayedMinVal))
+                        statCell(title: "AVG", value: metric.format(avg), accent: metric.color)
+                        statCell(title: "MAX", value: metric.format(displayedMaxVal))
                     }
                 }
                 .frame(minHeight: RunDetailLayout.compactMetricHeaderMinHeight, alignment: .top)
