@@ -56,7 +56,8 @@ struct TSPoint: Identifiable {
 enum MetricType: CaseIterable {
     case pace, heartRate, cadence, strideLength
     case verticalOscillation, groundContactTime, power, cumulativeElevation, altitude
-    
+    case runningSpeed
+
     var title: String {
         switch self {
         case .pace:                 return "페이스"
@@ -68,23 +69,25 @@ enum MetricType: CaseIterable {
         case .power:                return "달리기파워"
         case .cumulativeElevation:  return "누적 상승 시간"
         case .altitude:             return "고도"
+        case .runningSpeed:         return "속도"
         }
     }
-    
+
     var unit: String {
         switch self {
-        case .pace:                 return "/km"
-        case .heartRate:            return "bpm"
-        case .cadence:              return "spm"
-        case .strideLength:         return "m"
-        case .verticalOscillation:  return "cm"
-        case .groundContactTime:    return "ms"
+        case .pace:                 return "/KM"
+        case .heartRate:            return "BPM"
+        case .cadence:              return "SPM"
+        case .strideLength:         return "M"
+        case .verticalOscillation:  return "CM"
+        case .groundContactTime:    return "MS"
         case .power:                return "W"
-        case .cumulativeElevation:  return "m"
-        case .altitude:             return "m"
+        case .cumulativeElevation:  return "M"
+        case .altitude:             return "M"
+        case .runningSpeed:         return "KPH"
         }
     }
-    
+
     var color: Color {
         switch self {
         case .pace:                 return Color(red: 0.45, green: 0.78, blue: 0.25)
@@ -96,30 +99,32 @@ enum MetricType: CaseIterable {
         case .power:                return Color(red: 0.9, green: 0.6, blue: 0.2)
         case .cumulativeElevation:  return Color(red: 0.55, green: 0.75, blue: 0.3)
         case .altitude:             return Color(red: 0.4, green: 0.65, blue: 0.45)
+        case .runningSpeed:         return Color(red: 0.3, green: 0.75, blue: 0.95)
         }
     }
-    
+
     var gradientTopColor: Color {
         switch self {
         case .pace:                 return Color(red: 0.85, green: 0.9, blue: 0.15)
         default:                    return color.opacity(0.7)
         }
     }
-    
+
     enum ChartStyle {
         case line, bar
     }
-    
+
     var chartStyle: ChartStyle {
         switch self {
         case .heartRate:            return .line
         case .verticalOscillation:  return .line
+        case .runningSpeed:         return .line
         default:                    return .bar
         }
     }
-    
+
     var invertedY: Bool { self == .pace }
-    
+
     func format(_ v: Double) -> String {
         switch self {
         case .pace:                 return formatPaceValue(v)
@@ -131,7 +136,12 @@ enum MetricType: CaseIterable {
         case .power:                return String(format: "%.1f", v)
         case .cumulativeElevation:  return String(format: "%.1f", v)
         case .altitude:             return String(format: "%.1f", v)
+        case .runningSpeed:         return String(format: "%.1f", v)
         }
+    }
+
+    func formatWithUnit(_ v: Double) -> String {
+        format(v) + " " + unit
     }
 }
 
@@ -375,8 +385,18 @@ enum RunDetailContentView {
                         )
                     }
                 )
+            case .runningSpeed:
+                raw = bucketedAverageSeries(
+                    data.speedSamples.compactMap { s in
+                        guard s.value > 0 else { return nil }
+                        return TimedMetricSample(
+                            elapsed: s.startDate.timeIntervalSince(startDate),
+                            value: s.value * 3.6
+                        )
+                    }
+                )
             }
-            
+
             return downsample(raw)
         }
 
@@ -1489,9 +1509,9 @@ enum RunDetailContentView {
                 .frame(height: 160)
                 
                 HStack(spacing: 8) {
-                    statCell(title: "MIN", value: metric.format(minVal))
-                    statCell(title: "AVG", value: metric.format(avg), accent: metric.color)
-                    statCell(title: "MAX", value: metric.format(maxVal))
+                    statCell(title: "MIN", value: metric.formatWithUnit(minVal))
+                    statCell(title: "AVG", value: metric.formatWithUnit(avg), accent: metric.color)
+                    statCell(title: "MAX", value: metric.formatWithUnit(maxVal))
                 }
             }
             .padding(RunDetailLayout.cardPadding)
@@ -1553,9 +1573,9 @@ enum RunDetailContentView {
                         .frame(height: 120)
                         
                         HStack(spacing: 8) {
-                            shareStatCell(title: "MIN", value: metric.format(minVal))
-                            shareStatCell(title: "AVG", value: metric.format(avg), accent: metric.color)
-                            shareStatCell(title: "MAX", value: metric.format(maxVal))
+                            shareStatCell(title: "MIN", value: metric.formatWithUnit(minVal))
+                            shareStatCell(title: "AVG", value: metric.formatWithUnit(avg), accent: metric.color)
+                            shareStatCell(title: "MAX", value: metric.formatWithUnit(maxVal))
                         }
                     }
                 }
@@ -1694,9 +1714,9 @@ enum RunDetailContentView {
                     Spacer(minLength: 8)
 
                     HStack(spacing: RunDetailLayout.compactMetricStatsGroupSpacing) {
-                        statCell(title: "MIN", value: metric.format(displayedMinVal))
-                        statCell(title: "AVG", value: metric.format(avg), accent: metric.color)
-                        statCell(title: "MAX", value: metric.format(displayedMaxVal))
+                        statCell(title: "MIN", value: metric.formatWithUnit(displayedMinVal))
+                        statCell(title: "AVG", value: metric.formatWithUnit(avg), accent: metric.color)
+                        statCell(title: "MAX", value: metric.formatWithUnit(displayedMaxVal))
                     }
                 }
                 .frame(minHeight: RunDetailLayout.compactMetricHeaderMinHeight, alignment: .top)
