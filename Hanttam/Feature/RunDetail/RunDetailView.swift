@@ -1855,9 +1855,16 @@ enum RunDetailContentView {
                         .fill(Color.clear)
                         .contentShape(Rectangle())
                         .gesture(
-                            SpatialTapGesture()
+                            DragGesture(minimumDistance: 0)
+                                .onChanged { value in
+                                    updateSelection(at: value.location, proxy: proxy, geometry: geometry)
+                                }
                                 .onEnded { value in
-                                    handleChartTap(at: value.location, proxy: proxy, geometry: geometry)
+                                    let distance = hypot(value.translation.width, value.translation.height)
+                                    if distance < 5 {
+                                        // 탭으로 간주 — 같은 포인트면 해제
+                                        handleChartTap(at: value.location, proxy: proxy, geometry: geometry)
+                                    }
                                 }
                         )
                 }
@@ -1876,22 +1883,30 @@ enum RunDetailContentView {
             return metric.format(displayedValue)
         }
 
-        private func handleChartTap(at location: CGPoint, proxy: ChartProxy, geometry: GeometryProxy) {
-            guard let plotFrameAnchor = proxy.plotFrame else { return }
+        private func nearestElapsed(at location: CGPoint, proxy: ChartProxy, geometry: GeometryProxy) -> Double? {
+            guard let plotFrameAnchor = proxy.plotFrame else { return nil }
             let plotFrame = geometry[plotFrameAnchor]
-            guard plotFrame.contains(location), !data.isEmpty else { return }
+            guard plotFrame.contains(location), !data.isEmpty else { return nil }
 
             let relativeX = location.x - plotFrame.origin.x
-            guard relativeX >= 0, relativeX <= plotFrame.width else { return }
+            guard relativeX >= 0, relativeX <= plotFrame.width else { return nil }
 
             let ratio = max(0, min(1, relativeX / max(plotFrame.width, 1)))
             let targetElapsed = ratio * maxElapsed
-            guard let nearestPoint = data.min(by: { abs($0.elapsed - targetElapsed) < abs($1.elapsed - targetElapsed) }) else { return }
+            return data.min(by: { abs($0.elapsed - targetElapsed) < abs($1.elapsed - targetElapsed) })?.elapsed
+        }
 
-            if selectedElapsed == nearestPoint.elapsed {
+        private func updateSelection(at location: CGPoint, proxy: ChartProxy, geometry: GeometryProxy) {
+            guard let elapsed = nearestElapsed(at: location, proxy: proxy, geometry: geometry) else { return }
+            selectedElapsed = elapsed
+        }
+
+        private func handleChartTap(at location: CGPoint, proxy: ChartProxy, geometry: GeometryProxy) {
+            guard let elapsed = nearestElapsed(at: location, proxy: proxy, geometry: geometry) else { return }
+            if selectedElapsed == elapsed {
                 selectedElapsed = nil
             } else {
-                selectedElapsed = nearestPoint.elapsed
+                selectedElapsed = elapsed
             }
         }
 
