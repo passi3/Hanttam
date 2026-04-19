@@ -940,6 +940,16 @@ enum RunDetailContentView {
         private func nearest(_ data: [TSPoint], to elapsed: Double) -> TSPoint? {
             data.min(by: { abs($0.elapsed - elapsed) < abs($1.elapsed - elapsed) })
         }
+
+        private func nonZeroDomain(_ lower: Double, _ upper: Double, fallback: ClosedRange<Double>) -> ClosedRange<Double> {
+            let low = min(lower, upper)
+            let high = max(lower, upper)
+            guard low.isFinite, high.isFinite else { return fallback }
+            guard low == high else { return low...high }
+
+            let padding = max(abs(low) * 0.05, 1)
+            return (low - padding)...(high + padding)
+        }
         
         private var maxElapsed: Double {
             [paceData.last?.elapsed, hrData.last?.elapsed, altData.last?.elapsed]
@@ -968,16 +978,23 @@ enum RunDetailContentView {
                     let hrMax = (hrData.map(\.value).max() ?? 1) * 1.05
                     let altMin = (altData.map(\.value).min() ?? 0) * 0.95
                     let altMax = (altData.map(\.value).max() ?? 1) * 1.05
+                    let paceDomain = nonZeroDomain(paceFloor, 0, fallback: -1...0)
+                    let hrDomain = nonZeroDomain(hrMin, hrMax, fallback: 0...1)
+                    let altDomain = nonZeroDomain(altMin, altMax, fallback: 0...1)
                     
                     ZStack(alignment: .topLeading) {
                         Chart {
                             ForEach(altData) { point in
-                                AreaMark(x: .value("t", point.elapsed), y: .value("고도", point.value))
+                                AreaMark(
+                                    x: .value("t", point.elapsed),
+                                    yStart: .value("고도 하단", altDomain.lowerBound),
+                                    yEnd: .value("고도", point.value)
+                                )
                                     .foregroundStyle(Color.green.opacity(0.15).gradient)
-                                    .interpolationMethod(.catmullRom)
+                                    .interpolationMethod(.linear)
                                 LineMark(x: .value("t", point.elapsed), y: .value("고도", point.value))
                                     .foregroundStyle(.green.opacity(0.5))
-                                    .interpolationMethod(.catmullRom)
+                                    .interpolationMethod(.linear)
                             }
                             if let sel = selectedElapsed {
                                 RuleMark(x: .value("선택", sel))
@@ -986,26 +1003,23 @@ enum RunDetailContentView {
                             }
                         }
                         .chartXScale(domain: xDomain)
-                        .chartYScale(domain: altMin...altMax)
-                        .chartXAxis(.hidden)
-                        .chartYAxis(.hidden)
-                        .chartBackground { _ in Color.clear }
-                        .chartPlotBorderStyle(borderColor: .clear)
-                        .chartXSelection(value: $selectedElapsed)
-                        .frame(height: 220)
-                        
-                        Chart {
-                            ForEach(hrData) { point in
-                                LineMark(x: .value("t", point.elapsed), y: .value("심박", point.value))
-                                    .foregroundStyle(Color.red.gradient)
-                                    .interpolationMethod(.catmullRom)
+                        .chartYScale(domain: altDomain)
+                        .chartXAxis {
+                            AxisMarks { value in
+                                AxisValueLabel {
+                                    if let min = value.as(Double.self) {
+                                        Text(String(format: "%.0f분", min))
+                                            .font(.system(size: 9, weight: .light))
+                                            .foregroundStyle(Color.clear)
+                                    }
+                                }
                             }
                         }
-                        .chartXScale(domain: xDomain)
-                        .chartYScale(domain: altMin...altMax)
-                        .chartXAxis(.hidden)
                         .chartYAxis(.hidden)
                         .chartBackground { _ in Color.clear }
+                        .chartPlotStyle { plotArea in
+                            plotArea.clipped()
+                        }
                         .chartPlotBorderStyle(borderColor: .clear)
                         .chartXSelection(value: $selectedElapsed)
                         .frame(height: 220)
@@ -1030,7 +1044,7 @@ enum RunDetailContentView {
                             }
                         }
                         .chartXScale(domain: xDomain)
-                        .chartYScale(domain: paceFloor...0)
+                        .chartYScale(domain: paceDomain)
                         .chartXAxis {
                             AxisMarks { value in
                                 AxisValueLabel {
@@ -1044,7 +1058,39 @@ enum RunDetailContentView {
                         }
                         .chartYAxis(.hidden)
                         .chartBackground { _ in Color.clear }
+                        .chartPlotStyle { plotArea in
+                            plotArea.clipped()
+                        }
                         .chartPlotBorderStyle(borderColor: DS.border.opacity(0.9))
+                        .chartXSelection(value: $selectedElapsed)
+                        .frame(height: 220)
+
+                        Chart {
+                            ForEach(hrData) { point in
+                                LineMark(x: .value("t", point.elapsed), y: .value("심박", point.value))
+                                    .foregroundStyle(Color.red.gradient)
+                                    .interpolationMethod(.cardinal)
+                            }
+                        }
+                        .chartXScale(domain: xDomain)
+                        .chartYScale(domain: hrDomain)
+                        .chartXAxis {
+                            AxisMarks { value in
+                                AxisValueLabel {
+                                    if let min = value.as(Double.self) {
+                                        Text(String(format: "%.0f분", min))
+                                            .font(.system(size: 9, weight: .light))
+                                            .foregroundStyle(Color.clear)
+                                    }
+                                }
+                            }
+                        }
+                        .chartYAxis(.hidden)
+                        .chartBackground { _ in Color.clear }
+                        .chartPlotStyle { plotArea in
+                            plotArea.clipped()
+                        }
+                        .chartPlotBorderStyle(borderColor: .clear)
                         .chartXSelection(value: $selectedElapsed)
                         .frame(height: 220)
                         
@@ -1773,6 +1819,8 @@ enum RunDetailContentView {
 
         private var metric: MetricType { model.metric }
         private var data: [TSPoint] { model.data }
+        private let tooltipWidth: CGFloat = 136
+        private let tooltipHeight: CGFloat = 48
         
         private var selectedPoint: TSPoint? {
             guard let selectedElapsed else { return nil }
@@ -1917,61 +1965,56 @@ enum RunDetailContentView {
             .frame(height: 120)
             .chartOverlay { proxy in
                 GeometryReader { geometry in
-                    Rectangle()
-                        .fill(Color.clear)
-                        .contentShape(Rectangle())
-                        .gesture(
-                            DragGesture(minimumDistance: 0)
-                                .onChanged { value in
-                                    updateSelection(at: value.location, proxy: proxy, geometry: geometry)
-                                }
-                                .onEnded { _ in }
-                        )
-                }
-            }
-            .overlay(alignment: .topLeading) {
-                GeometryReader { proxy in
-                    if let selectedElapsed, let point = selectedPoint {
-                        metricTooltip(for: point, selectedElapsed: selectedElapsed, plotWidth: proxy.size.width)
+                    ZStack(alignment: .topLeading) {
+                        Rectangle()
+                            .fill(Color.clear)
+                            .contentShape(Rectangle())
+                            .gesture(
+                                DragGesture(minimumDistance: 0)
+                                    .onChanged { value in
+                                        updateSelection(at: value.location, proxy: proxy, geometry: geometry)
+                                    }
+                                    .onEnded { _ in }
+                            )
+
+                        if let selectedElapsed,
+                           let point = selectedPoint,
+                           let position = tooltipPosition(for: point, proxy: proxy, geometry: geometry) {
+                            metricTooltip(for: point, selectedElapsed: selectedElapsed)
+                                .position(position)
+                                .allowsHitTesting(false)
+                        }
                     }
                 }
             }
         }
-        
-        private func metricAxisText(for axisValue: Double) -> String {
-            let displayedValue = metric.invertedY ? abs(axisValue) : axisValue
-            return metric.format(displayedValue)
-        }
-        
-        private func continuousElapsed(at location: CGPoint, proxy: ChartProxy, geometry: GeometryProxy) -> Double? {
-            guard let plotFrameAnchor = proxy.plotFrame else { return nil }
+
+        private func tooltipPosition(for point: TSPoint, proxy: ChartProxy, geometry: GeometryProxy) -> CGPoint? {
+            guard let plotFrameAnchor = proxy.plotFrame,
+                  let xPosition = proxy.position(forX: point.elapsed),
+                  let yPosition = proxy.position(forY: metric.invertedY ? -point.value : point.value)
+            else { return nil }
+
             let plotFrame = geometry[plotFrameAnchor]
-            guard plotFrame.contains(location), !data.isEmpty else { return nil }
-            
-            let relativeX = min(max(location.x - plotFrame.origin.x, 0), plotFrame.width)
-            guard relativeX >= 0, relativeX <= plotFrame.width else { return nil }
-            
-            let ratio = relativeX / max(plotFrame.width, 1)
-                        return ratio * model.maxElapsed
+            let rawX = plotFrame.origin.x + xPosition
+            let rawY = plotFrame.origin.y + yPosition - 20 - tooltipHeight / 2
+            let minX = tooltipWidth / 2 + 8
+            let maxX = max(minX, geometry.size.width - tooltipWidth / 2 - 8)
+            return CGPoint(
+                x: min(max(rawX, minX), maxX),
+                y: rawY
+            )
         }
-        
-        private func updateSelection(at location: CGPoint, proxy: ChartProxy, geometry: GeometryProxy) {
-            guard let elapsed = continuousElapsed(at: location, proxy: proxy, geometry: geometry) else { return }
-            selectedElapsed = elapsed
-        }
-                
+
         @ViewBuilder
-        private func metricTooltip(for point: TSPoint, selectedElapsed: Double, plotWidth: CGFloat) -> some View {
-            let xRatio = model.maxElapsed > 0 ? selectedElapsed / model.maxElapsed : 0
-            let clampedX = min(max(xRatio, 0.08), 0.78)
-            
+        private func metricTooltip(for point: TSPoint, selectedElapsed: Double) -> some View {
             let selTotalSec = Int(selectedElapsed * 60)
-                        let selMin = selTotalSec / 60
-                        let selSec = selTotalSec % 60
+            let selMin = selTotalSec / 60
+            let selSec = selTotalSec % 60
             VStack(alignment: .leading, spacing: 4) {
                 Text(selSec > 0 ? "\(selMin)분\(selSec)초" : "\(selMin)분")
                     .font(.system(size: 9, weight: .medium))
-                    .foregroundStyle(DS.textDim)
+                    .foregroundStyle(Color.white.opacity(0.65))
                 HStack(alignment: .firstTextBaseline, spacing: 4) {
                     Circle()
                         .fill(metric.color)
@@ -1986,12 +2029,34 @@ enum RunDetailContentView {
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
-            .background(DS.cardActive, in: RoundedRectangle(cornerRadius: 8))
+            .frame(width: tooltipWidth, height: tooltipHeight, alignment: .leading)
+            .background(Color.black, in: RoundedRectangle(cornerRadius: 8))
             .overlay(
                 RoundedRectangle(cornerRadius: 8)
                     .stroke(DS.border.opacity(0.9), lineWidth: 1)
             )
-            .offset(x: plotWidth * clampedX, y: 4)
+        }
+
+        private func metricAxisText(for axisValue: Double) -> String {
+            let displayedValue = metric.invertedY ? abs(axisValue) : axisValue
+            return metric.format(displayedValue)
+        }
+
+        private func continuousElapsed(at location: CGPoint, proxy: ChartProxy, geometry: GeometryProxy) -> Double? {
+            guard let plotFrameAnchor = proxy.plotFrame else { return nil }
+            let plotFrame = geometry[plotFrameAnchor]
+            guard plotFrame.contains(location), !data.isEmpty else { return nil }
+
+            let relativeX = min(max(location.x - plotFrame.origin.x, 0), plotFrame.width)
+            guard relativeX >= 0, relativeX <= plotFrame.width else { return nil }
+
+            let ratio = relativeX / max(plotFrame.width, 1)
+            return ratio * model.maxElapsed
+        }
+
+        private func updateSelection(at location: CGPoint, proxy: ChartProxy, geometry: GeometryProxy) {
+            guard let elapsed = continuousElapsed(at: location, proxy: proxy, geometry: geometry) else { return }
+            selectedElapsed = elapsed
         }
     }
     
