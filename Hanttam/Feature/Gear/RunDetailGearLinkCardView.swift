@@ -55,7 +55,7 @@ final class RunDetailGearLinkCardView: HTView {
 
         subtitleLabel.font = AppFont.UI.bodyMD
         subtitleLabel.textColor = AppColor.UI.textSecondary
-        subtitleLabel.numberOfLines = 0
+        subtitleLabel.numberOfLines = 2
 
         primaryButton.layer.cornerRadius = 12
         primaryButton.backgroundColor = AppColor.UI.primary

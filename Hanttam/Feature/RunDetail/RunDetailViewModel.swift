@@ -92,7 +92,9 @@ final class RunDetailViewModel: HTReusableVMProtocol {
 
     // MARK: - Gear linking
 
-    func fetchRegisteredShoes() -> [RegisteredShoe] { gearStore.fetchRegisteredShoes() }
+    func fetchRegisteredShoes() -> [RegisteredShoe] {
+        gearStore.fetchRegisteredShoes()
+    }
 
     func refreshLinkedShoe() {
         linkedShoeRelay.accept(

@@ -13,12 +13,17 @@ internal import HealthKit
 
 final class MainTabBarController: UITabBarController {
 
+    /// Cold launch 시 아직 MainTabBarController가 없을 때
+    /// AppDelegate가 UUID를 저장해 viewDidLoad에서 소비
+    static var pendingWorkoutUUID: String?
+
     private let disposeBag = DisposeBag()
 
     override func viewDidLoad() {
         super.viewDidLoad()
         setupTabs()
         bindNotifications()
+        consumePendingDeepLink()
     }
 
     override func viewWillAppear(_ animated: Bool) {
@@ -75,7 +80,22 @@ final class MainTabBarController: UITabBarController {
 
     // MARK: - Deep Link
 
+    private func consumePendingDeepLink() {
+        guard let uuid = MainTabBarController.pendingWorkoutUUID else { return }
+        MainTabBarController.pendingWorkoutUUID = nil
+        navigateToWorkoutDetail(workoutUUID: uuid)
+    }
+
     private func navigateToWorkoutDetail(workoutUUID: String) {
         selectedIndex = 2
+
+        HealthKitStore.shared.fetchRunningRecord(byUUID: workoutUUID) { [weak self] record in
+            guard let self, let record else { return }
+            // 기록 탭의 NavigationController 위에 디테일을 present
+            let detailVC = RunDetailTabViewController(record: record)
+            if let recordsNav = self.viewControllers?[2] {
+                recordsNav.present(detailVC, animated: true)
+            }
+        }
     }
 }

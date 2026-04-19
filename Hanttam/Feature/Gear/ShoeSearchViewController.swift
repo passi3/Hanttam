@@ -52,7 +52,7 @@ final class ShoeSearchViewController: HTViewController {
 
     override func configLayout() {
         tableView.snp.makeConstraints { make in
-            make.edges.equalTo(view.safeAreaLayoutGuide)
+            make.edges.equalToSuperview()
         }
         statusLabel.snp.makeConstraints { make in
             make.center.equalToSuperview()

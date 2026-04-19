@@ -9,18 +9,51 @@ import Foundation
 internal import HealthKit
 import UserNotifications
 
+// MARK: - Notification Scheduling Protocol (테스트 주입용)
+
+protocol NotificationScheduling {
+    func add(_ request: UNNotificationRequest, withCompletionHandler completionHandler: ((Error?) -> Void)?)
+}
+
+extension UNUserNotificationCenter: NotificationScheduling {}
+
+// MARK: - WorkoutNotificationService
+
 final class WorkoutNotificationService {
+
+    // MARK: Singleton (프로덕션)
     static let shared = WorkoutNotificationService()
 
+    // MARK: Notification constants
+    static let didTapWorkoutNotification = Notification.Name("WorkoutNotificationService.didTapWorkout")
+    static let workoutUUIDKey = "workoutUUID"
+
+    // MARK: Dependencies (주입 가능 — 테스트에서 mock 으로 교체)
     private let healthStore = HKHealthStore()
+    private let notificationCenter: NotificationScheduling
+    private let gearStore: GearLocalStoring
+    /// 자체 앱 번들 ID 목록. 테스트에서는 빈 세트 또는 임의 값으로 교체해 필터 동작을 제어.
+    let ownBundleIDs: Set<String>
+
     private let anchorKey = "WorkoutNotificationService.lastAnchor"
 
-    private let ownBundleIDs: Set<String> = [
-        "com.passi3.Hanttam",
-        "com.passi3.Hanttam.watchkitapp"
-    ]
+    // 프로덕션용
+    private init() {
+        self.notificationCenter = UNUserNotificationCenter.current()
+        self.gearStore = GearLocalStore.shared
+        self.ownBundleIDs = ["com.passi3.Hanttam", "com.passi3.Hanttam.watchkitapp"]
+    }
 
-    private init() {}
+    /// 테스트 전용 이니셜라이저
+    init(
+        notificationCenter: NotificationScheduling,
+        gearStore: GearLocalStoring,
+        ownBundleIDs: Set<String> = []
+    ) {
+        self.notificationCenter = notificationCenter
+        self.gearStore = gearStore
+        self.ownBundleIDs = ownBundleIDs
+    }
 
     // MARK: - Public
 
@@ -33,7 +66,7 @@ final class WorkoutNotificationService {
     // MARK: - Notification Permission
 
     private func requestNotificationPermission() {
-        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { granted, error in
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, error in
             if let error {
                 print("[WorkoutNotification] 알림 권한 요청 실패: \(error.localizedDescription)")
             }
@@ -44,21 +77,22 @@ final class WorkoutNotificationService {
 
     private func setupObserver() {
         let workoutType = HKObjectType.workoutType()
+        let runningPredicate = HKQuery.predicateForWorkouts(with: .running)
 
-        let query = HKObserverQuery(sampleType: workoutType, predicate: nil) { [weak self] _, completionHandler, error in
+        let query = HKObserverQuery(sampleType: workoutType, predicate: runningPredicate) { [weak self] _, completionHandler, error in
             if let error {
                 print("[WorkoutNotification] Observer 에러: \(error.localizedDescription)")
                 completionHandler()
                 return
             }
-            self?.checkForNewExternalWorkouts {
+            self?.checkForNewRunningWorkouts {
                 completionHandler()
             }
         }
 
         healthStore.execute(query)
 
-        healthStore.enableBackgroundDelivery(for: workoutType, frequency: .immediate) { success, error in
+        healthStore.enableBackgroundDelivery(for: workoutType, frequency: .immediate) { _, error in
             if let error {
                 print("[WorkoutNotification] Background delivery 등록 실패: \(error.localizedDescription)")
             }
@@ -67,20 +101,18 @@ final class WorkoutNotificationService {
 
     // MARK: - Anchored Query
 
-    private func checkForNewExternalWorkouts(completion: @escaping () -> Void) {
+    private func checkForNewRunningWorkouts(completion: @escaping () -> Void) {
         let workoutType = HKObjectType.workoutType()
         let anchor = loadAnchor()
+        let runningPredicate = HKQuery.predicateForWorkouts(with: .running)
 
         let query = HKAnchoredObjectQuery(
             type: workoutType,
-            predicate: nil,
+            predicate: runningPredicate,
             anchor: anchor,
             limit: HKObjectQueryNoLimit
         ) { [weak self] _, addedObjects, _, newAnchor, error in
-            guard let self else {
-                completion()
-                return
-            }
+            guard let self else { completion(); return }
 
             if let error {
                 print("[WorkoutNotification] Anchored query 에러: \(error.localizedDescription)")
@@ -88,15 +120,10 @@ final class WorkoutNotificationService {
                 return
             }
 
-            if let newAnchor {
-                self.saveAnchor(newAnchor)
-            }
+            if let newAnchor { self.saveAnchor(newAnchor) }
 
-            let externalWorkouts = (addedObjects as? [HKWorkout])?.filter { self.isExternalWorkout($0) } ?? []
-
-            for workout in externalWorkouts {
-                self.sendPhotoNotification(for: workout)
-            }
+            let newRuns = (addedObjects as? [HKWorkout])?.filter { self.isExternalRunning($0) } ?? []
+            for workout in newRuns { self.sendPhotoNotification(for: workout) }
 
             completion()
         }
@@ -104,22 +131,18 @@ final class WorkoutNotificationService {
         healthStore.execute(query)
     }
 
-    // MARK: - Filter
+    // MARK: - Filter (internal for testing)
 
-    private func isExternalWorkout(_ workout: HKWorkout) -> Bool {
+    func isExternalRunning(_ workout: HKWorkout) -> Bool {
+        guard workout.workoutActivityType == .running else { return false }
         let bundleID = workout.sourceRevision.source.bundleIdentifier
         return !ownBundleIDs.contains(bundleID)
     }
 
-    // MARK: - Notification Name
+    // MARK: - Local Notification (internal for testing)
 
-    static let didTapWorkoutNotification = Notification.Name("WorkoutNotificationService.didTapWorkout")
-    static let workoutUUIDKey = "workoutUUID"
-
-    // MARK: - Local Notification
-
-    private func sendPhotoNotification(for workout: HKWorkout) {
-        let hasGear = !GearLocalStore.shared.fetchRegisteredShoes().isEmpty
+    func sendPhotoNotification(for workout: HKWorkout) {
+        let hasGear = !gearStore.fetchRegisteredShoes().isEmpty
 
         let content = UNMutableNotificationContent()
         content.title = "운동 완료! 💪"
@@ -135,7 +158,7 @@ final class WorkoutNotificationService {
             trigger: UNTimeIntervalNotificationTrigger(timeInterval: 1, repeats: false)
         )
 
-        UNUserNotificationCenter.current().add(request) { error in
+        notificationCenter.add(request) { error in
             if let error {
                 print("[WorkoutNotification] 알림 발송 실패: \(error.localizedDescription)")
             }

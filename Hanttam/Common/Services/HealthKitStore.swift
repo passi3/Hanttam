@@ -791,6 +791,45 @@ final class HealthKitStore: NSObject {
         store.execute(query)
     }
     
+    // MARK: - UUID로 단일 워크아웃 조회
+
+    func fetchRunningRecord(byUUID uuidString: String, completion: @escaping (RunningRecord?) -> Void) {
+        guard let store, let uuid = UUID(uuidString: uuidString) else {
+            DispatchQueue.main.async { completion(nil) }
+            return
+        }
+
+        let workoutType = HKObjectType.workoutType()
+        let uuidPredicate = HKQuery.predicateForObject(with: uuid)
+        let query = HKSampleQuery(
+            sampleType: workoutType,
+            predicate: uuidPredicate,
+            limit: 1,
+            sortDescriptors: nil
+        ) { _, samples, _ in
+            guard let workout = samples?.first as? HKWorkout else {
+                DispatchQueue.main.async { completion(nil) }
+                return
+            }
+            let source = workout.sourceRevision.source.name
+            let device = workout.device?.name ?? workout.device?.model
+            let indoor = workout.metadata?[HKMetadataKeyIndoorWorkout] as? Bool ?? false
+            let record = RunningRecord(
+                date: workout.startDate,
+                endDate: workout.endDate,
+                duration: workout.duration,
+                distance: workout.totalDistance?.doubleValue(for: .meter()) ?? 0,
+                calories: workout.totalEnergyBurned?.doubleValue(for: .kilocalorie()) ?? 0,
+                workout: workout,
+                sourceName: source,
+                deviceName: device,
+                isIndoor: indoor
+            )
+            DispatchQueue.main.async { completion(record) }
+        }
+        store.execute(query)
+    }
+
     //인터벌 러닝 조회
     func fetchIntervalWorkouts(completion: @escaping ([IntervalRecord]) -> Void) {
         guard let store else { completion([]); return }

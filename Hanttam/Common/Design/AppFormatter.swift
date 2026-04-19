@@ -30,6 +30,11 @@ final class AppFormatter {
     static let monthKo: DateFormatter = {
         let f = DateFormatter(); f.dateFormat = "M월"; f.locale = .init(identifier: "ko_KR"); return f
     }()
+    
+    /// "HH:mm:ss - 운동 시작/종료 시각
+    static let timeHMS: DateFormatter = {
+        let f = DateFormatter(); f.dateFormat = "HH:mm:ss"; return f
+    }()
 
     // MARK: - Number (String(format:) 래퍼 — 반복 패턴)
 
