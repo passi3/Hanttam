@@ -9,12 +9,28 @@ import RxSwift
 import RxCocoa
 import SnapKit
 
+/// UIHostingController의 intrinsicContentSize 변동이 UIStackView 레이아웃 사이클을
+/// 유발하지 않도록 차단하는 래퍼 뷰. 높이가 고정되면 이후 intrinsicContentSize를 무시한다.
+private final class HostingWrapperView: UIView {
+    var pinnedHeight: CGFloat?
+    override var intrinsicContentSize: CGSize {
+        guard let h = pinnedHeight else { return super.intrinsicContentSize }
+        return CGSize(width: UIView.noIntrinsicMetric, height: h)
+    }
+    override func invalidateIntrinsicContentSize() {
+        // 높이가 고정된 후에는 intrinsicContentSize 무효화를 무시
+        guard pinnedHeight == nil else { return }
+        super.invalidateIntrinsicContentSize()
+    }
+}
+
 class RunDetailSummaryViewController: UIViewController {
     private let record: RunningRecord
     private let viewModel: RunDetailViewModel
     private let disposeBag = DisposeBag()
-    private let contentStack = UIStackView()
     private let gearCardView = RunDetailGearLinkCardView()
+    private let scrollView = UIScrollView()
+    private let containerStack = UIStackView()
 
     init(record: RunningRecord, viewModel: RunDetailViewModel) {
         self.record = record
@@ -32,18 +48,19 @@ class RunDetailSummaryViewController: UIViewController {
 
     private func setupUI() {
         view.backgroundColor = AppColor.UI.backgroundGrouped
-        let scrollView = UIScrollView()
         view.addSubview(scrollView)
         scrollView.snp.makeConstraints { make in make.edges.equalToSuperview() }
 
-        contentStack.axis = .vertical
-        contentStack.spacing = RunDetailLayout.sectionSpacing
-        scrollView.addSubview(contentStack)
-        contentStack.snp.makeConstraints { make in
+        containerStack.axis = .vertical
+        containerStack.spacing = RunDetailLayout.sectionSpacing
+        scrollView.addSubview(containerStack)
+        containerStack.snp.makeConstraints { make in
             make.top.equalToSuperview().offset(RunDetailLayout.topInset)
             make.leading.trailing.equalTo(view).inset(RunDetailLayout.horizontalInset)
             make.bottom.equalToSuperview().offset(-RunDetailLayout.bottomInset)
         }
+
+        containerStack.addArrangedSubview(gearCardView)
     }
 
     private func bind() {
@@ -58,13 +75,16 @@ class RunDetailSummaryViewController: UIViewController {
 
     private func buildContent(with data: RunDetailViewModel.DetailData) {
         let sanitizedData = sanitizedRunDetailData(data)
-        contentStack.arrangedSubviews.forEach { $0.removeFromSuperview() }
+        // gearCardView는 유지, 나머지 arrangedSubview만 제거
+        containerStack.arrangedSubviews.filter { $0 !== gearCardView }.forEach { $0.removeFromSuperview() }
         children.forEach { if $0 !== self { $0.removeFromParent() } }
+        hostingWrapper = nil
 
         embedSwiftUI(RunDetailContentView.SummaryHeroSection(
             record: record, heartRates: sanitizedData.heartRates, data: sanitizedData
         ))
-        contentStack.addArrangedSubview(gearCardView)
+        // gearCardView를 항상 맨 아래로 이동
+        containerStack.addArrangedSubview(gearCardView)
     }
 
     private func setupGearCard() {
@@ -97,12 +117,38 @@ class RunDetailSummaryViewController: UIViewController {
         present(UINavigationController(rootViewController: vc), animated: true)
     }
 
-    private func embedSwiftUI<V: View>(_ swiftUIView: V, height: CGFloat? = nil) {
+    private var hostingWrapper: HostingWrapperView?
+
+    private func embedSwiftUI<V: View>(_ swiftUIView: V) {
         let hosting = UIHostingController(rootView: swiftUIView)
         hosting.view.backgroundColor = .clear
         addChild(hosting)
-        contentStack.addArrangedSubview(hosting.view)
-        if let h = height { hosting.view.snp.makeConstraints { make in make.height.equalTo(h) } }
+
+        // 래퍼 뷰로 감싸서 UIHostingController의 intrinsicContentSize 변동이
+        // UIStackView 레이아웃 사이클을 유발하지 않도록 차단
+        let wrapper = HostingWrapperView()
+        wrapper.addSubview(hosting.view)
+        hosting.view.snp.makeConstraints { make in make.edges.equalToSuperview() }
+        containerStack.addArrangedSubview(wrapper)
+        hostingWrapper = wrapper
+
         hosting.didMove(toParent: self)
+    }
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        guard let wrapper = hostingWrapper,
+              wrapper.bounds.width > 0,
+              wrapper.pinnedHeight == nil else { return }
+
+        // 레이아웃 완료 후 높이를 한 번만 고정
+        let hostingView = wrapper.subviews.first!
+        let fittingSize = hostingView.systemLayoutSizeFitting(
+            CGSize(width: wrapper.bounds.width, height: UIView.layoutFittingCompressedSize.height),
+            withHorizontalFittingPriority: .required,
+            verticalFittingPriority: .fittingSizeLevel
+        )
+        wrapper.pinnedHeight = fittingSize.height
+        wrapper.snp.makeConstraints { make in make.height.equalTo(fittingSize.height) }
     }
 }

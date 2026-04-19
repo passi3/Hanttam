@@ -54,9 +54,9 @@ class RunDetailChartsViewController: UIViewController {
         contentStack.arrangedSubviews.forEach { $0.removeFromSuperview() }
         children.forEach { if $0 !== self { $0.removeFromParent() } }
         let chartHelper = RunDetailContentView.ChartHelper(record: record, data: data)
-        let metrics = MetricType.allCases.compactMap { metric -> (MetricType, [TSPoint])? in
+        let metrics = MetricType.allCases.compactMap { metric -> RunDetailContentView.PerformanceMetricChartModel? in
             let ts = chartHelper.timeSeries(for: metric)
-            return ts.isEmpty ? nil : (metric, ts)
+            return ts.isEmpty ? nil : RunDetailContentView.PerformanceMetricChartModel(metric: metric, data: ts)
         }
         guard !metrics.isEmpty else { return }
         embedSwiftUI(RunDetailContentView.PerformanceMetricsSection(metrics: metrics))
