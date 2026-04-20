@@ -103,13 +103,14 @@ final class WorkoutNotificationService {
 
     private func checkForNewRunningWorkouts(completion: @escaping () -> Void) {
         let workoutType = HKObjectType.workoutType()
-        let anchor = loadAnchor()
+        let existingAnchor = loadAnchor()
+        let isFirstRun = existingAnchor == nil
         let runningPredicate = HKQuery.predicateForWorkouts(with: .running)
 
         let query = HKAnchoredObjectQuery(
             type: workoutType,
             predicate: runningPredicate,
-            anchor: anchor,
+            anchor: existingAnchor,
             limit: HKObjectQueryNoLimit
         ) { [weak self] _, addedObjects, _, newAnchor, error in
             guard let self else { completion(); return }
@@ -121,6 +122,12 @@ final class WorkoutNotificationService {
             }
 
             if let newAnchor { self.saveAnchor(newAnchor) }
+
+            // 첫 실행이면 기존 기록 전체가 반환되므로 알림 없이 anchor 위치만 확보
+            guard !isFirstRun else {
+                completion()
+                return
+            }
 
             let newRuns = (addedObjects as? [HKWorkout])?.filter { self.isExternalRunning($0) } ?? []
             for workout in newRuns { self.sendPhotoNotification(for: workout) }
