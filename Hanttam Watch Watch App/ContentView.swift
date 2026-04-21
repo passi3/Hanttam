@@ -237,7 +237,3 @@ struct WatchDialPage: View {
         meters >= 1000 ? String(format: "%.0fkm", meters / 1000) : String(format: "%.0fm", meters)
     }
 }
-
-#Preview {
-    ContentView()
-}

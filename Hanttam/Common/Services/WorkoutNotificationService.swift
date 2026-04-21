@@ -103,13 +103,14 @@ final class WorkoutNotificationService {
 
     private func checkForNewRunningWorkouts(completion: @escaping () -> Void) {
         let workoutType = HKObjectType.workoutType()
-        let anchor = loadAnchor()
+        let existingAnchor = loadAnchor()
+        let isFirstRun = existingAnchor == nil
         let runningPredicate = HKQuery.predicateForWorkouts(with: .running)
 
         let query = HKAnchoredObjectQuery(
             type: workoutType,
             predicate: runningPredicate,
-            anchor: anchor,
+            anchor: existingAnchor,
             limit: HKObjectQueryNoLimit
         ) { [weak self] _, addedObjects, _, newAnchor, error in
             guard let self else { completion(); return }
@@ -121,6 +122,12 @@ final class WorkoutNotificationService {
             }
 
             if let newAnchor { self.saveAnchor(newAnchor) }
+
+            // 첫 실행이면 기존 기록 전체가 반환되므로 알림 없이 anchor 위치만 확보
+            guard !isFirstRun else {
+                completion()
+                return
+            }
 
             let newRuns = (addedObjects as? [HKWorkout])?.filter { self.isExternalRunning($0) } ?? []
             for workout in newRuns { self.sendPhotoNotification(for: workout) }
@@ -142,27 +149,88 @@ final class WorkoutNotificationService {
     // MARK: - Local Notification (internal for testing)
 
     func sendPhotoNotification(for workout: HKWorkout) {
-        let hasGear = !gearStore.fetchRegisteredShoes().isEmpty
+        fetchWorkoutStats(relativeTo: workout) { [weak self] weeklyCount, streak in
+            guard let self else { return }
 
-        let content = UNMutableNotificationContent()
-        content.title = "운동 완료! 💪"
-        content.body = hasGear
-            ? "어떤 신발로 뛰었는지 기록해보세요!"
-            : "방금 운동한 기록을 사진으로 남겨보세요!"
-        content.sound = .default
-        content.userInfo = [WorkoutNotificationService.workoutUUIDKey: workout.uuid.uuidString]
+            let hasGear = !self.gearStore.fetchRegisteredShoes().isEmpty
+            let gearBody = hasGear ? "어떤 신발로 뛰었는지 기록해보세요!" : "방금 운동한 기록을 사진으로 남겨보세요!"
 
-        let request = UNNotificationRequest(
-            identifier: "workout-photo-\(workout.uuid.uuidString)",
-            content: content,
-            trigger: UNTimeIntervalNotificationTrigger(timeInterval: 1, repeats: false)
-        )
+            let title: String
+            switch (weeklyCount, streak) {
+            case (1, 1):
+                // 이번 주 첫 운동이자 연속 1주 — 첫 시작
+                title = "시작이 반!"
+            case (1, let s):
+                // 이번 주 첫 운동, 연속 s주
+                title = "연속 \(s)주 운동 완료!"
+            case (let n, _):
+                // 이번 주 n번째 운동
+                title = "이번주 \(n)번째 운동 완료!"
+            }
 
-        notificationCenter.add(request) { error in
-            if let error {
-                print("[WorkoutNotification] 알림 발송 실패: \(error.localizedDescription)")
+            let content = UNMutableNotificationContent()
+            content.title = title
+            content.body = gearBody
+            content.sound = .default
+            content.userInfo = [WorkoutNotificationService.workoutUUIDKey: workout.uuid.uuidString]
+
+            let request = UNNotificationRequest(
+                identifier: "workout-photo-\(workout.uuid.uuidString)",
+                content: content,
+                trigger: UNTimeIntervalNotificationTrigger(timeInterval: 1, repeats: false)
+            )
+
+            self.notificationCenter.add(request) { error in
+                if let error {
+                    print("[WorkoutNotification] 알림 발송 실패: \(error.localizedDescription)")
+                }
             }
         }
+    }
+
+    // MARK: - Workout Stats
+
+    private func fetchWorkoutStats(relativeTo workout: HKWorkout, completion: @escaping (_ weeklyCount: Int, _ streak: Int) -> Void) {
+        let calendar = Calendar.current
+        let referenceDate = workout.endDate
+
+        guard let startOfCurrentWeek = calendar.dateInterval(of: .weekOfYear, for: referenceDate)?.start,
+              let twoYearsAgo = calendar.date(byAdding: .year, value: -2, to: referenceDate) else {
+            completion(1, 1)
+            return
+        }
+
+        let predicate = HKQuery.predicateForSamples(withStart: twoYearsAgo, end: referenceDate, options: .strictEndDate)
+        let sort = NSSortDescriptor(key: HKSampleSortIdentifierEndDate, ascending: false)
+
+        let query = HKSampleQuery(
+            sampleType: HKObjectType.workoutType(),
+            predicate: predicate,
+            limit: HKObjectQueryNoLimit,
+            sortDescriptors: [sort]
+        ) { [weak self] _, samples, _ in
+            guard let self else { completion(1, 1); return }
+
+            let runs = (samples as? [HKWorkout])?.filter { self.isExternalRunning($0) } ?? []
+
+            // 이번 주 운동 횟수
+            let weeklyCount = runs.filter { $0.endDate >= startOfCurrentWeek }.count
+
+            // 연속 주 streak: 현재 주부터 역순으로 운동이 있는 주를 카운트
+            var streak = 0
+            var weekStart = startOfCurrentWeek
+            while let weekEnd = calendar.date(byAdding: .weekOfYear, value: 1, to: weekStart) {
+                let hasRun = runs.contains { $0.endDate >= weekStart && $0.endDate < weekEnd }
+                guard hasRun else { break }
+                streak += 1
+                guard let prevWeek = calendar.date(byAdding: .weekOfYear, value: -1, to: weekStart) else { break }
+                weekStart = prevWeek
+            }
+
+            completion(max(weeklyCount, 1), max(streak, 1))
+        }
+
+        healthStore.execute(query)
     }
 
     // MARK: - Anchor Persistence

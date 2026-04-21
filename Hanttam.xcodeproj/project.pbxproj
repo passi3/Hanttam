@@ -78,6 +78,7 @@
 		4060D5452EEAAB2D00329FC8 /* Hanttam.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Hanttam.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		4091A3792F8FC808007150D9 /* HanttamLogicTest.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = HanttamLogicTest.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		409833D22F7D5DFA0029B9CC /* Hanttam Watch Watch App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Hanttam Watch Watch App.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		40B4BC142F97C823001FD03F /* Hanttam.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; path = Hanttam.xcodeproj; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -201,6 +202,11 @@
 				409833D22F7D5DFA0029B9CC /* Hanttam Watch Watch App.app */,
 				4091A3792F8FC808007150D9 /* HanttamLogicTest.xctest */,
 			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		40B4BC172F97C823001FD03F /* Products */ = {
+			isa = PBXGroup;
 			name = Products;
 			sourceTree = "<group>";
 		};
@@ -329,6 +335,12 @@
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 4060D5462EEAAB2D00329FC8 /* Products */;
 			projectDirPath = "";
+			projectReferences = (
+				{
+					ProductGroup = 40B4BC172F97C823001FD03F /* Products */;
+					ProjectRef = 40B4BC142F97C823001FD03F /* Hanttam.xcodeproj */;
+				},
+			);
 			projectRoot = "";
 			targets = (
 				4060D5442EEAAB2D00329FC8 /* Hanttam */,
