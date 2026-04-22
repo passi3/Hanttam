@@ -61,7 +61,8 @@ struct RunningChartView: View {
     private var yAxisValues: [Double] {
         let maxVal = dataPoints.map(\.distance).max() ?? 0
         guard maxVal > 0 else { return [0] }
-        return [maxVal / 3, maxVal * 2 / 3, maxVal]
+        let ceiling = (maxVal / 5).rounded(.up) * 5
+        return [ceiling / 3, ceiling * 2 / 3, ceiling]
     }
 
     // MARK: - 헤더 텍스트
@@ -236,7 +237,7 @@ struct RunningChartView: View {
                 AxisMarks(position: .leading, values: yAxisValues) { value in
                     AxisValueLabel {
                         if let km = value.as(Double.self) {
-                            Text(String(format: "%.1f", km))
+                            Text(String(format: "%.0f", km))
                                 .font(.caption2.monospacedDigit())
                                 .frame(minWidth: 28, alignment: .trailing)
                         }
