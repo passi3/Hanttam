@@ -74,11 +74,11 @@
 /* Begin PBXFileReference section */
 		404E85F92F7FABFF00AC76ED /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
 		404E85FB2F7FABFF00AC76ED /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
-		404E861F2F7FAF6500AC76ED /* HanttamLiveActivityExtensionExtension.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = HanttamLiveActivityExtensionExtension.entitlements; sourceTree = "<group>"; };
 		4060D5452EEAAB2D00329FC8 /* Hanttam.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Hanttam.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		4091A3792F8FC808007150D9 /* HanttamLogicTest.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = HanttamLogicTest.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		409833D22F7D5DFA0029B9CC /* Hanttam Watch Watch App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Hanttam Watch Watch App.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		40B4BC142F97C823001FD03F /* Hanttam.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; path = Hanttam.xcodeproj; sourceTree = "<group>"; };
+		40B4BE502F97C926001FD03F /* Hanttam.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; path = Hanttam.xcodeproj; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -111,11 +111,6 @@
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		404E85FD2F7FABFF00AC76ED /* HanttamLiveActivityExtension */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			path = HanttamLiveActivityExtension;
-			sourceTree = "<group>";
-		};
 		4060D5472EEAAB2D00329FC8 /* Hanttam */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
@@ -185,10 +180,8 @@
 		4060D53C2EEAAB2D00329FC8 = {
 			isa = PBXGroup;
 			children = (
-				404E861F2F7FAF6500AC76ED /* HanttamLiveActivityExtensionExtension.entitlements */,
 				4060D5472EEAAB2D00329FC8 /* Hanttam */,
 				409833D32F7D5DFA0029B9CC /* Hanttam Watch Watch App */,
-				404E85FD2F7FABFF00AC76ED /* HanttamLiveActivityExtension */,
 				4091A37A2F8FC808007150D9 /* HanttamLogicTest */,
 				404E85F82F7FABFF00AC76ED /* Frameworks */,
 				4060D5462EEAAB2D00329FC8 /* Products */,
@@ -206,6 +199,11 @@
 			sourceTree = "<group>";
 		};
 		40B4BC172F97C823001FD03F /* Products */ = {
+			isa = PBXGroup;
+			name = Products;
+			sourceTree = "<group>";
+		};
+		40B4BE532F97C926001FD03F /* Products */ = {
 			isa = PBXGroup;
 			name = Products;
 			sourceTree = "<group>";
@@ -340,6 +338,10 @@
 					ProductGroup = 40B4BC172F97C823001FD03F /* Products */;
 					ProjectRef = 40B4BC142F97C823001FD03F /* Hanttam.xcodeproj */;
 				},
+				{
+					ProductGroup = 40B4BE532F97C926001FD03F /* Products */;
+					ProjectRef = 40B4BE502F97C926001FD03F /* Hanttam.xcodeproj */;
+				},
 			);
 			projectRoot = "";
 			targets = (
@@ -452,7 +454,7 @@
 				GCC_GENERATE_DEBUGGING_SYMBOLS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Hanttam/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "한땀";
+				INFOPLIST_KEY_CFBundleDisplayName = "[Dev]한땀";
 				INFOPLIST_KEY_NSCameraUsageDescription = "편집할 사진을 촬영하기 위해 카메라 접근이 필요합니다.";
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "운동 기록 및 경로를 조회하기 위해 건강 데이터에 대한 접근이 필요합니다.";
 				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "운동 기록을 저장하기 위해 사용합니다.";
