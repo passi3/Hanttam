@@ -25,6 +25,7 @@ private struct ChartDataPoint: Identifiable {
     let label: String
     let date: Date
     let distance: Double
+    let count: Int
 }
 
 // MARK: - Chart View
@@ -57,6 +58,11 @@ struct RunningChartView: View {
 
     private var totalDistance: Double {
         dataPoints.reduce(0) { $0 + $1.distance }
+    }
+
+    private var displayedCount: Int {
+        if let label = selectedLabel { return dataPoints.first { $0.label == label }?.count ?? 0 }
+        return dataPoints.reduce(0) { $0 + $1.count }
     }
 
     private var yAxisValues: [Double] {
@@ -171,14 +177,27 @@ struct RunningChartView: View {
             }
 
             // 요약
-            VStack(alignment: .leading, spacing: 2) {
-                Text(String(format: "%.1f km", selectedPoint?.distance ?? totalDistance))
-                    .font(.system(size: 28, weight: .semibold, design: .monospaced))
-                    .contentTransition(.numericText())
-                    .animation(.spring(duration: 0.2), value: selectedLabel)
-                Text(selectedPoint?.label ?? "총 거리")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+            HStack(alignment: .center) {
+                VStack(alignment: .leading) {
+                    Text("총 거리")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text(String(format: "%.1fkm", selectedPoint?.distance ?? totalDistance))
+                        .font(.system(size: 22, weight: .semibold, design: .monospaced))
+                        .contentTransition(.numericText())
+                        .animation(.spring(duration: 0.2), value: selectedLabel)
+                }
+                Spacer()
+                VStack(alignment: .leading) {
+                    Text("총 워크아웃")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text("\(displayedCount)번")
+                        .font(.system(size: 22, weight: .semibold, design: .monospaced))
+                        // .foregroundStyle(.secondary)
+                        .contentTransition(.numericText())
+                        .animation(.spring(duration: 0.2), value: selectedLabel)
+                }
             }
 
             // 차트
@@ -337,7 +356,8 @@ struct RunningChartView: View {
 
         let dayNames = ["월", "화", "수", "목", "금", "토", "일"]
         var distMap: [Int: Double] = [:]
-        for i in 0..<7 { distMap[i] = 0 }
+        var countMap: [Int: Int] = [:]
+        for i in 0..<7 { distMap[i] = 0; countMap[i] = 0 }
 
         for record in store.records {
             let recordDay = cal.startOfDay(for: record.date)
@@ -345,12 +365,13 @@ struct RunningChartView: View {
             let diff = cal.dateComponents([.day], from: monday, to: recordDay).day ?? -1
             if diff >= 0 && diff < 7 {
                 distMap[diff, default: 0] += record.distance / 1000
+                countMap[diff, default: 0] += 1
             }
         }
 
         return (0..<7).map { i in
             let date = cal.date(byAdding: .day, value: i, to: monday)!
-            return ChartDataPoint(label: dayNames[i], date: date, distance: distMap[i] ?? 0)
+            return ChartDataPoint(label: dayNames[i], date: date, distance: distMap[i] ?? 0, count: countMap[i] ?? 0)
         }
     }
 
@@ -372,18 +393,20 @@ struct RunningChartView: View {
         let maxDay = daysInMonth
 
         var distMap: [Int: Double] = [:]
-        for d in 1...maxDay { distMap[d] = 0 }
+        var countMap: [Int: Int] = [:]
+        for d in 1...maxDay { distMap[d] = 0; countMap[d] = 0 }
 
         for record in store.records {
             guard record.date >= targetMonth && record.date < nextMonth else { continue }
             let d = cal.component(.day, from: record.date)
             if d <= maxDay {
                 distMap[d, default: 0] += record.distance / 1000
+                countMap[d, default: 0] += 1
             }
         }
 
         return (1...maxDay).map { d in
-            ChartDataPoint(label: "\(d)", date: targetMonth, distance: distMap[d] ?? 0)
+            ChartDataPoint(label: "\(d)", date: targetMonth, distance: distMap[d] ?? 0, count: countMap[d] ?? 0)
         }
     }
 
@@ -397,18 +420,20 @@ struct RunningChartView: View {
         let maxMonth = 12
 
         var distMap: [Int: Double] = [:]
-        for m in 1...maxMonth { distMap[m] = 0 }
+        var countMap: [Int: Int] = [:]
+        for m in 1...maxMonth { distMap[m] = 0; countMap[m] = 0 }
 
         for record in store.records {
             guard cal.component(.year, from: record.date) == targetYear else { continue }
             let m = cal.component(.month, from: record.date)
             if m <= maxMonth {
                 distMap[m, default: 0] += record.distance / 1000
+                countMap[m, default: 0] += 1
             }
         }
 
         return (1...maxMonth).map { m in
-            ChartDataPoint(label: "\(m)월", date: now, distance: distMap[m] ?? 0)
+            ChartDataPoint(label: "\(m)월", date: now, distance: distMap[m] ?? 0, count: countMap[m] ?? 0)
         }
     }
 
@@ -426,15 +451,19 @@ struct RunningChartView: View {
         let years = yearSet.sorted()
 
         var distMap: [Int: Double] = [:]
-        for y in years { distMap[y] = 0 }
+        var countMap: [Int: Int] = [:]
+        for y in years { distMap[y] = 0; countMap[y] = 0 }
 
         for record in store.records {
             let y = cal.component(.year, from: record.date)
-            if distMap[y] != nil { distMap[y]! += record.distance / 1000 }
+            if distMap[y] != nil {
+                distMap[y]! += record.distance / 1000
+                countMap[y]! += 1
+            }
         }
 
         return years.map { y in
-            ChartDataPoint(label: "\(y)", date: Date(), distance: distMap[y] ?? 0)
+            ChartDataPoint(label: "\(y)", date: Date(), distance: distMap[y] ?? 0, count: countMap[y] ?? 0)
         }
     }
 }
@@ -630,7 +659,7 @@ struct RunningChartShareView: View {
             if diff >= 0 && diff < 7 { distMap[diff, default: 0] += record.distance / 1000 }
         }
         return (0..<7).map { i in
-            ChartDataPoint(label: dayNames[i], date: cal.date(byAdding: .day, value: i, to: monday)!, distance: distMap[i] ?? 0)
+            ChartDataPoint(label: dayNames[i], date: cal.date(byAdding: .day, value: i, to: monday)!, distance: distMap[i] ?? 0, count: 0)
         }
     }
 
@@ -648,7 +677,7 @@ struct RunningChartShareView: View {
             if d <= daysInMonth { distMap[d, default: 0] += record.distance / 1000 }
         }
         return (1...daysInMonth).map { d in
-            ChartDataPoint(label: "\(d)", date: targetMonth, distance: distMap[d] ?? 0)
+            ChartDataPoint(label: "\(d)", date: targetMonth, distance: distMap[d] ?? 0, count: 0)
         }
     }
 
@@ -661,7 +690,7 @@ struct RunningChartShareView: View {
             let m = cal.component(.month, from: record.date)
             distMap[m, default: 0] += record.distance / 1000
         }
-        return (1...12).map { m in ChartDataPoint(label: "\(m)월", date: Date(), distance: distMap[m] ?? 0) }
+        return (1...12).map { m in ChartDataPoint(label: "\(m)월", date: Date(), distance: distMap[m] ?? 0, count: 0) }
     }
 
     private func aggregateYears() -> [ChartDataPoint] {
@@ -675,6 +704,6 @@ struct RunningChartShareView: View {
             let y = cal.component(.year, from: record.date)
             if distMap[y] != nil { distMap[y]! += record.distance / 1000 }
         }
-        return years.map { y in ChartDataPoint(label: "\(y)", date: Date(), distance: distMap[y] ?? 0) }
+        return years.map { y in ChartDataPoint(label: "\(y)", date: Date(), distance: distMap[y] ?? 0, count: 0) }
     }
 }
