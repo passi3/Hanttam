@@ -224,16 +224,18 @@ struct RunningChartView: View {
                                     if preDragSelectedLabel == nil {
                                         preDragSelectedLabel = selectedLabel
                                     }
-                                    // 수평 이동이 30pt 이상이면 내비게이션 스와이프로 간주, 선택 업데이트 생략
-                                    guard abs(value.translation.width) < 30 else { return }
+                                    // 이미 바가 선택된 상태에서만 드래그로 선택 변경 허용
+                                    guard preDragSelectedLabel != nil else { return }
                                     let x = value.location.x - geo[proxy.plotFrame!].origin.x
-                                    if let label: String = proxy.value(atX: x) {
+                                    if let label: String = proxy.value(atX: x),
+                                       dataPoints.first(where: { $0.label == label })?.distance ?? 0 > 0 {
                                         selectedLabel = label
                                     }
                                 }
                                 .onEnded { value in
                                     defer { preDragSelectedLabel = nil }
                                     let dx = value.translation.width
+                                    // 스와이프: 기간 이동
                                     if dx < -30 && canGoForward {
                                         withAnimation(.spring(duration: 0.3)) { store.offset += 1 }
                                         selectedLabel = nil
@@ -241,9 +243,13 @@ struct RunningChartView: View {
                                         withAnimation(.spring(duration: 0.3)) { store.offset -= 1 }
                                         selectedLabel = nil
                                     } else if abs(value.translation.width) + abs(value.translation.height) < 10 {
-                                        // 탭: 이미 선택된 바를 다시 탭하면 선택 해제
-                                        withAnimation(.spring(duration: 0.2)) {
-                                            if selectedLabel == preDragSelectedLabel { selectedLabel = nil }
+                                        // 탭: 선택 또는 선택 해제
+                                        let x = value.location.x - geo[proxy.plotFrame!].origin.x
+                                        if let label: String = proxy.value(atX: x),
+                                           dataPoints.first(where: { $0.label == label })?.distance ?? 0 > 0 {
+                                            withAnimation(.spring(duration: 0.2)) {
+                                                selectedLabel = (label == preDragSelectedLabel) ? nil : label
+                                            }
                                         }
                                     }
                                 }
