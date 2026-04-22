@@ -25,6 +25,7 @@ private struct ChartDataPoint: Identifiable {
     let label: String
     let date: Date
     let distance: Double
+    let count: Int
 }
 
 // MARK: - Chart View
@@ -33,6 +34,10 @@ struct RunningChartView: View {
 
     @ObservedObject var store: RecordsViewModel
     @State private var selectedLabel: String?
+    @State private var showDatePicker = false
+    @State private var pickerYear: Int = Calendar.current.component(.year, from: Date())
+    @State private var pickerMonth: Int = Calendar.current.component(.month, from: Date())
+    @State private var preDragSelectedLabel: String?
 
     private var period: ChartPeriod { store.period }
     private var offset: Int { store.offset }
@@ -53,6 +58,18 @@ struct RunningChartView: View {
 
     private var totalDistance: Double {
         dataPoints.reduce(0) { $0 + $1.distance }
+    }
+
+    private var displayedCount: Int {
+        if let label = selectedLabel { return dataPoints.first { $0.label == label }?.count ?? 0 }
+        return dataPoints.reduce(0) { $0 + $1.count }
+    }
+
+    private var yAxisValues: [Double] {
+        let maxVal = dataPoints.map(\.distance).max() ?? 0
+        guard maxVal > 0 else { return [0] }
+        let ceiling = (maxVal / 5).rounded(.up) * 5
+        return [ceiling / 3, ceiling * 2 / 3, ceiling]
     }
 
     // MARK: - 헤더 텍스트
@@ -132,23 +149,55 @@ struct RunningChartView: View {
                 store.offset = 0
                 selectedLabel = nil
             }
+            .onChange(of: selectedLabel) { _, newLabel in
+                store.selectedChartLabel = newLabel
+            }
 
             // 기간 표시
             if period != .all {
-                Text(periodTitle)
-                    .font(.system(size: 14, weight: .medium))
-                    .contentTransition(.numericText())
+                if period == .monthly || period == .yearly {
+                    Button {
+                        syncPickerToCurrentOffset()
+                        showDatePicker = true
+                    } label: {
+                        HStack(spacing: 4) {
+                            Text(periodTitle)
+                                .font(.system(size: 14, weight: .medium))
+                                .contentTransition(.numericText())
+                            Image(systemName: "chevron.down")
+                                .font(.system(size: 10, weight: .medium))
+                        }
+                        .foregroundStyle(Color.black)
+                    }
+                } else {
+                    Text(periodTitle)
+                        .font(.system(size: 14, weight: .medium))
+                        .contentTransition(.numericText())
+                }
             }
 
             // 요약
-            VStack(alignment: .leading, spacing: 2) {
-                Text(String(format: "%.1f km", selectedPoint?.distance ?? totalDistance))
-                    .font(.system(size: 28, weight: .semibold, design: .monospaced))
-                    .contentTransition(.numericText())
-                    .animation(.spring(duration: 0.2), value: selectedLabel)
-                Text(selectedPoint?.label ?? "총 거리")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+            HStack(alignment: .center) {
+                VStack(alignment: .leading) {
+                    Text("총 거리")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text(String(format: "%.1fkm", selectedPoint?.distance ?? totalDistance))
+                        .font(.system(size: 22, weight: .semibold, design: .monospaced))
+                        .contentTransition(.numericText())
+                        .animation(.spring(duration: 0.2), value: selectedLabel)
+                }
+                Spacer()
+                VStack(alignment: .leading) {
+                    Text("총 워크아웃")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text("\(displayedCount)번")
+                        .font(.system(size: 22, weight: .semibold, design: .monospaced))
+                        // .foregroundStyle(.secondary)
+                        .contentTransition(.numericText())
+                        .animation(.spring(duration: 0.2), value: selectedLabel)
+                }
             }
 
             // 차트
@@ -169,24 +218,33 @@ struct RunningChartView: View {
                     Rectangle()
                         .fill(.clear)
                         .contentShape(Rectangle())
-                        .onTapGesture { location in
-                            let x = location.x - geo[proxy.plotFrame!].origin.x
-                            if let label: String = proxy.value(atX: x) {
-                                withAnimation(.spring(duration: 0.2)) {
-                                    selectedLabel = (selectedLabel == label) ? nil : label
-                                }
-                            }
-                        }
                         .gesture(
-                            DragGesture(minimumDistance: 30)
+                            DragGesture(minimumDistance: 0)
+                                .onChanged { value in
+                                    if preDragSelectedLabel == nil {
+                                        preDragSelectedLabel = selectedLabel
+                                    }
+                                    // 수평 이동이 30pt 이상이면 내비게이션 스와이프로 간주, 선택 업데이트 생략
+                                    guard abs(value.translation.width) < 30 else { return }
+                                    let x = value.location.x - geo[proxy.plotFrame!].origin.x
+                                    if let label: String = proxy.value(atX: x) {
+                                        selectedLabel = label
+                                    }
+                                }
                                 .onEnded { value in
-                                    let horizontal = value.translation.width
-                                    if horizontal < -30 && canGoForward {
+                                    defer { preDragSelectedLabel = nil }
+                                    let dx = value.translation.width
+                                    if dx < -30 && canGoForward {
                                         withAnimation(.spring(duration: 0.3)) { store.offset += 1 }
                                         selectedLabel = nil
-                                    } else if horizontal > 30 && canGoBack {
+                                    } else if dx > 30 && canGoBack {
                                         withAnimation(.spring(duration: 0.3)) { store.offset -= 1 }
                                         selectedLabel = nil
+                                    } else if abs(value.translation.width) + abs(value.translation.height) < 10 {
+                                        // 탭: 이미 선택된 바를 다시 탭하면 선택 해제
+                                        withAnimation(.spring(duration: 0.2)) {
+                                            if selectedLabel == preDragSelectedLabel { selectedLabel = nil }
+                                        }
                                     }
                                 }
                         )
@@ -194,20 +252,21 @@ struct RunningChartView: View {
             }
             .chartXAxis {
                 AxisMarks { value in
-                    if period == .monthly {
-                        let label = value.as(String.self) ?? ""
-                        if monthlyVisibleLabels.contains(label) {
+                    let label = value.as(String.self) ?? ""
+                    switch period {
+                    case .monthly:
+                        if let day = Int(label), (day - 1) % 7 == 0 {
                             AxisValueLabel { Text(label).font(.caption2) }
-                        } else {
-                            AxisValueLabel { Text("") }
+                            AxisGridLine()
                         }
-                    } else {
+                    default:
                         AxisValueLabel()
+                        AxisGridLine()
                     }
                 }
             }
             .chartYAxis {
-                AxisMarks(position: .leading) { value in
+                AxisMarks(position: .leading, values: yAxisValues) { value in
                     AxisValueLabel {
                         if let km = value.as(Double.self) {
                             Text(String(format: "%.0f", km))
@@ -215,7 +274,7 @@ struct RunningChartView: View {
                                 .frame(minWidth: 28, alignment: .trailing)
                         }
                     }
-                    AxisGridLine().foregroundStyle(.clear)
+                    AxisGridLine()
                     AxisTick()
                 }
             }
@@ -224,6 +283,51 @@ struct RunningChartView: View {
             .animation(.spring(duration: 0.3), value: offset)
         }
         .padding(20)
+        .sheet(isPresented: $showDatePicker) {
+            PeriodPickerSheet(period: period, year: $pickerYear, month: $pickerMonth) {
+                applyPicker()
+                showDatePicker = false
+            } onCancel: {
+                showDatePicker = false
+            }
+            .presentationDetents([.height(300)])
+        }
+    }
+
+    // MARK: - Picker Helpers
+
+    private func syncPickerToCurrentOffset() {
+        let cal = Calendar.current
+        let now = Date()
+        switch period {
+        case .monthly:
+            let base = cal.date(from: cal.dateComponents([.year, .month], from: now))!
+            let target = cal.date(byAdding: .month, value: store.offset, to: base)!
+            pickerYear  = cal.component(.year,  from: target)
+            pickerMonth = cal.component(.month, from: target)
+        case .yearly:
+            pickerYear  = cal.component(.year, from: now) + store.offset
+            pickerMonth = cal.component(.month, from: now)
+        default:
+            pickerYear  = cal.component(.year,  from: now)
+            pickerMonth = cal.component(.month, from: now)
+        }
+    }
+
+    private func applyPicker() {
+        let cal = Calendar.current
+        let now = Date()
+        let currentYear  = cal.component(.year,  from: now)
+        let currentMonth = cal.component(.month, from: now)
+        switch period {
+        case .monthly:
+            store.offset = min((pickerYear - currentYear) * 12 + (pickerMonth - currentMonth), 0)
+        case .yearly:
+            store.offset = min(pickerYear - currentYear, 0)
+        default:
+            break
+        }
+        selectedLabel = nil
     }
 
     // MARK: - 월별 X축 라벨
@@ -252,7 +356,8 @@ struct RunningChartView: View {
 
         let dayNames = ["월", "화", "수", "목", "금", "토", "일"]
         var distMap: [Int: Double] = [:]
-        for i in 0..<7 { distMap[i] = 0 }
+        var countMap: [Int: Int] = [:]
+        for i in 0..<7 { distMap[i] = 0; countMap[i] = 0 }
 
         for record in store.records {
             let recordDay = cal.startOfDay(for: record.date)
@@ -260,12 +365,13 @@ struct RunningChartView: View {
             let diff = cal.dateComponents([.day], from: monday, to: recordDay).day ?? -1
             if diff >= 0 && diff < 7 {
                 distMap[diff, default: 0] += record.distance / 1000
+                countMap[diff, default: 0] += 1
             }
         }
 
         return (0..<7).map { i in
             let date = cal.date(byAdding: .day, value: i, to: monday)!
-            return ChartDataPoint(label: dayNames[i], date: date, distance: distMap[i] ?? 0)
+            return ChartDataPoint(label: dayNames[i], date: date, distance: distMap[i] ?? 0, count: countMap[i] ?? 0)
         }
     }
 
@@ -287,18 +393,20 @@ struct RunningChartView: View {
         let maxDay = daysInMonth
 
         var distMap: [Int: Double] = [:]
-        for d in 1...maxDay { distMap[d] = 0 }
+        var countMap: [Int: Int] = [:]
+        for d in 1...maxDay { distMap[d] = 0; countMap[d] = 0 }
 
         for record in store.records {
             guard record.date >= targetMonth && record.date < nextMonth else { continue }
             let d = cal.component(.day, from: record.date)
             if d <= maxDay {
                 distMap[d, default: 0] += record.distance / 1000
+                countMap[d, default: 0] += 1
             }
         }
 
         return (1...maxDay).map { d in
-            ChartDataPoint(label: "\(d)", date: targetMonth, distance: distMap[d] ?? 0)
+            ChartDataPoint(label: "\(d)", date: targetMonth, distance: distMap[d] ?? 0, count: countMap[d] ?? 0)
         }
     }
 
@@ -312,18 +420,20 @@ struct RunningChartView: View {
         let maxMonth = 12
 
         var distMap: [Int: Double] = [:]
-        for m in 1...maxMonth { distMap[m] = 0 }
+        var countMap: [Int: Int] = [:]
+        for m in 1...maxMonth { distMap[m] = 0; countMap[m] = 0 }
 
         for record in store.records {
             guard cal.component(.year, from: record.date) == targetYear else { continue }
             let m = cal.component(.month, from: record.date)
             if m <= maxMonth {
                 distMap[m, default: 0] += record.distance / 1000
+                countMap[m, default: 0] += 1
             }
         }
 
         return (1...maxMonth).map { m in
-            ChartDataPoint(label: "\(m)월", date: now, distance: distMap[m] ?? 0)
+            ChartDataPoint(label: "\(m)월", date: now, distance: distMap[m] ?? 0, count: countMap[m] ?? 0)
         }
     }
 
@@ -341,15 +451,78 @@ struct RunningChartView: View {
         let years = yearSet.sorted()
 
         var distMap: [Int: Double] = [:]
-        for y in years { distMap[y] = 0 }
+        var countMap: [Int: Int] = [:]
+        for y in years { distMap[y] = 0; countMap[y] = 0 }
 
         for record in store.records {
             let y = cal.component(.year, from: record.date)
-            if distMap[y] != nil { distMap[y]! += record.distance / 1000 }
+            if distMap[y] != nil {
+                distMap[y]! += record.distance / 1000
+                countMap[y]! += 1
+            }
         }
 
         return years.map { y in
-            ChartDataPoint(label: "\(y)", date: Date(), distance: distMap[y] ?? 0)
+            ChartDataPoint(label: "\(y)", date: Date(), distance: distMap[y] ?? 0, count: countMap[y] ?? 0)
+        }
+    }
+}
+
+// MARK: - Period Picker Sheet
+
+private struct PeriodPickerSheet: View {
+    let period: ChartPeriod
+    @Binding var year: Int
+    @Binding var month: Int
+    let onConfirm: () -> Void
+    let onCancel: () -> Void
+
+    private let currentYear  = Calendar.current.component(.year,  from: Date())
+    private let currentMonth = Calendar.current.component(.month, from: Date())
+    private var years: [Int] { Array((2015...currentYear).reversed()) }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Button("취소", action: onCancel)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button("확인", action: onConfirm)
+                    .fontWeight(.semibold)
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 16)
+
+            Divider()
+
+            HStack(spacing: 0) {
+                Picker("연도", selection: $year) {
+                    ForEach(years, id: \.self) { y in
+                        Text(String(y) + "년").tag(y)
+                    }
+                }
+                .pickerStyle(.wheel)
+
+                if period == .monthly {
+                    Picker("월", selection: $month) {
+                        ForEach(1...12, id: \.self) { m in
+                            Text("\(m)월").tag(m)
+                        }
+                    }
+                    .pickerStyle(.wheel)
+                }
+            }
+            // 미래 선택 방지
+            .onChange(of: year) { _, newYear in
+                if newYear == currentYear && month > currentMonth {
+                    month = currentMonth
+                }
+            }
+            .onChange(of: month) { _, newMonth in
+                if year == currentYear && newMonth > currentMonth {
+                    month = currentMonth
+                }
+            }
         }
     }
 }
@@ -486,7 +659,7 @@ struct RunningChartShareView: View {
             if diff >= 0 && diff < 7 { distMap[diff, default: 0] += record.distance / 1000 }
         }
         return (0..<7).map { i in
-            ChartDataPoint(label: dayNames[i], date: cal.date(byAdding: .day, value: i, to: monday)!, distance: distMap[i] ?? 0)
+            ChartDataPoint(label: dayNames[i], date: cal.date(byAdding: .day, value: i, to: monday)!, distance: distMap[i] ?? 0, count: 0)
         }
     }
 
@@ -504,7 +677,7 @@ struct RunningChartShareView: View {
             if d <= daysInMonth { distMap[d, default: 0] += record.distance / 1000 }
         }
         return (1...daysInMonth).map { d in
-            ChartDataPoint(label: "\(d)", date: targetMonth, distance: distMap[d] ?? 0)
+            ChartDataPoint(label: "\(d)", date: targetMonth, distance: distMap[d] ?? 0, count: 0)
         }
     }
 
@@ -517,7 +690,7 @@ struct RunningChartShareView: View {
             let m = cal.component(.month, from: record.date)
             distMap[m, default: 0] += record.distance / 1000
         }
-        return (1...12).map { m in ChartDataPoint(label: "\(m)월", date: Date(), distance: distMap[m] ?? 0) }
+        return (1...12).map { m in ChartDataPoint(label: "\(m)월", date: Date(), distance: distMap[m] ?? 0, count: 0) }
     }
 
     private func aggregateYears() -> [ChartDataPoint] {
@@ -531,6 +704,6 @@ struct RunningChartShareView: View {
             let y = cal.component(.year, from: record.date)
             if distMap[y] != nil { distMap[y]! += record.distance / 1000 }
         }
-        return years.map { y in ChartDataPoint(label: "\(y)", date: Date(), distance: distMap[y] ?? 0) }
+        return years.map { y in ChartDataPoint(label: "\(y)", date: Date(), distance: distMap[y] ?? 0, count: 0) }
     }
 }
