@@ -33,6 +33,9 @@ struct RunningChartView: View {
 
     @ObservedObject var store: RecordsViewModel
     @State private var selectedLabel: String?
+    @State private var showDatePicker = false
+    @State private var pickerYear: Int = Calendar.current.component(.year, from: Date())
+    @State private var pickerMonth: Int = Calendar.current.component(.month, from: Date())
 
     private var period: ChartPeriod { store.period }
     private var offset: Int { store.offset }
@@ -53,6 +56,12 @@ struct RunningChartView: View {
 
     private var totalDistance: Double {
         dataPoints.reduce(0) { $0 + $1.distance }
+    }
+
+    private var yAxisValues: [Double] {
+        let maxVal = dataPoints.map(\.distance).max() ?? 0
+        guard maxVal > 0 else { return [0] }
+        return [maxVal / 3, maxVal * 2 / 3, maxVal]
     }
 
     // MARK: - 헤더 텍스트
@@ -135,9 +144,25 @@ struct RunningChartView: View {
 
             // 기간 표시
             if period != .all {
-                Text(periodTitle)
-                    .font(.system(size: 14, weight: .medium))
-                    .contentTransition(.numericText())
+                if period == .monthly || period == .yearly {
+                    Button {
+                        syncPickerToCurrentOffset()
+                        showDatePicker = true
+                    } label: {
+                        HStack(spacing: 4) {
+                            Text(periodTitle)
+                                .font(.system(size: 14, weight: .medium))
+                                .contentTransition(.numericText())
+                            Image(systemName: "chevron.down")
+                                .font(.system(size: 10, weight: .medium))
+                        }
+                        .foregroundStyle(.primary)
+                    }
+                } else {
+                    Text(periodTitle)
+                        .font(.system(size: 14, weight: .medium))
+                        .contentTransition(.numericText())
+                }
             }
 
             // 요약
@@ -194,28 +219,29 @@ struct RunningChartView: View {
             }
             .chartXAxis {
                 AxisMarks { value in
-                    if period == .monthly {
-                        let label = value.as(String.self) ?? ""
-                        if monthlyVisibleLabels.contains(label) {
+                    let label = value.as(String.self) ?? ""
+                    switch period {
+                    case .monthly:
+                        if let day = Int(label), (day - 1) % 7 == 0 {
                             AxisValueLabel { Text(label).font(.caption2) }
-                        } else {
-                            AxisValueLabel { Text("") }
+                            AxisGridLine()
                         }
-                    } else {
+                    default:
                         AxisValueLabel()
+                        AxisGridLine()
                     }
                 }
             }
             .chartYAxis {
-                AxisMarks(position: .leading) { value in
+                AxisMarks(position: .leading, values: yAxisValues) { value in
                     AxisValueLabel {
                         if let km = value.as(Double.self) {
-                            Text(String(format: "%.0f", km))
+                            Text(String(format: "%.1f", km))
                                 .font(.caption2.monospacedDigit())
                                 .frame(minWidth: 28, alignment: .trailing)
                         }
                     }
-                    AxisGridLine().foregroundStyle(.clear)
+                    AxisGridLine()
                     AxisTick()
                 }
             }
@@ -224,6 +250,51 @@ struct RunningChartView: View {
             .animation(.spring(duration: 0.3), value: offset)
         }
         .padding(20)
+        .sheet(isPresented: $showDatePicker) {
+            PeriodPickerSheet(period: period, year: $pickerYear, month: $pickerMonth) {
+                applyPicker()
+                showDatePicker = false
+            } onCancel: {
+                showDatePicker = false
+            }
+            .presentationDetents([.height(300)])
+        }
+    }
+
+    // MARK: - Picker Helpers
+
+    private func syncPickerToCurrentOffset() {
+        let cal = Calendar.current
+        let now = Date()
+        switch period {
+        case .monthly:
+            let base = cal.date(from: cal.dateComponents([.year, .month], from: now))!
+            let target = cal.date(byAdding: .month, value: store.offset, to: base)!
+            pickerYear  = cal.component(.year,  from: target)
+            pickerMonth = cal.component(.month, from: target)
+        case .yearly:
+            pickerYear  = cal.component(.year, from: now) + store.offset
+            pickerMonth = cal.component(.month, from: now)
+        default:
+            pickerYear  = cal.component(.year,  from: now)
+            pickerMonth = cal.component(.month, from: now)
+        }
+    }
+
+    private func applyPicker() {
+        let cal = Calendar.current
+        let now = Date()
+        let currentYear  = cal.component(.year,  from: now)
+        let currentMonth = cal.component(.month, from: now)
+        switch period {
+        case .monthly:
+            store.offset = min((pickerYear - currentYear) * 12 + (pickerMonth - currentMonth), 0)
+        case .yearly:
+            store.offset = min(pickerYear - currentYear, 0)
+        default:
+            break
+        }
+        selectedLabel = nil
     }
 
     // MARK: - 월별 X축 라벨
@@ -350,6 +421,65 @@ struct RunningChartView: View {
 
         return years.map { y in
             ChartDataPoint(label: "\(y)", date: Date(), distance: distMap[y] ?? 0)
+        }
+    }
+}
+
+// MARK: - Period Picker Sheet
+
+private struct PeriodPickerSheet: View {
+    let period: ChartPeriod
+    @Binding var year: Int
+    @Binding var month: Int
+    let onConfirm: () -> Void
+    let onCancel: () -> Void
+
+    private let currentYear  = Calendar.current.component(.year,  from: Date())
+    private let currentMonth = Calendar.current.component(.month, from: Date())
+    private var years: [Int] { Array((2015...currentYear).reversed()) }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Button("취소", action: onCancel)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button("확인", action: onConfirm)
+                    .fontWeight(.semibold)
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 16)
+
+            Divider()
+
+            HStack(spacing: 0) {
+                Picker("연도", selection: $year) {
+                    ForEach(years, id: \.self) { y in
+                        Text(String(y) + "년").tag(y)
+                    }
+                }
+                .pickerStyle(.wheel)
+
+                if period == .monthly {
+                    Picker("월", selection: $month) {
+                        ForEach(1...12, id: \.self) { m in
+                            Text("\(m)월").tag(m)
+                        }
+                    }
+                    .pickerStyle(.wheel)
+                }
+            }
+            // 미래 선택 방지
+            .onChange(of: year) { _, newYear in
+                if newYear == currentYear && month > currentMonth {
+                    month = currentMonth
+                }
+            }
+            .onChange(of: month) { _, newMonth in
+                if year == currentYear && newMonth > currentMonth {
+                    month = currentMonth
+                }
+            }
         }
     }
 }
