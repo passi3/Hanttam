@@ -76,6 +76,7 @@
 		404E85FB2F7FABFF00AC76ED /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
 		4060D5452EEAAB2D00329FC8 /* Hanttam.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Hanttam.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		4091A3792F8FC808007150D9 /* HanttamLogicTest.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = HanttamLogicTest.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		4091E5362F98AB3400A77170 /* Hanttam.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; path = Hanttam.xcodeproj; sourceTree = "<group>"; };
 		409833D22F7D5DFA0029B9CC /* Hanttam Watch Watch App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Hanttam Watch Watch App.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		40B4BC142F97C823001FD03F /* Hanttam.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; path = Hanttam.xcodeproj; sourceTree = "<group>"; };
 		40B4BE502F97C926001FD03F /* Hanttam.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; path = Hanttam.xcodeproj; sourceTree = "<group>"; };
@@ -195,6 +196,11 @@
 				409833D22F7D5DFA0029B9CC /* Hanttam Watch Watch App.app */,
 				4091A3792F8FC808007150D9 /* HanttamLogicTest.xctest */,
 			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		4091E5392F98AB3400A77170 /* Products */ = {
+			isa = PBXGroup;
 			name = Products;
 			sourceTree = "<group>";
 		};
@@ -342,6 +348,10 @@
 					ProductGroup = 40B4BE532F97C926001FD03F /* Products */;
 					ProjectRef = 40B4BE502F97C926001FD03F /* Hanttam.xcodeproj */;
 				},
+				{
+					ProductGroup = 4091E5392F98AB3400A77170 /* Products */;
+					ProjectRef = 4091E5362F98AB3400A77170 /* Hanttam.xcodeproj */;
+				},
 			);
 			projectRoot = "";
 			targets = (
@@ -472,7 +482,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.2.0;
+				MARKETING_VERSION = 1.2.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.passi3.Hanttam;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -520,7 +530,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.2.0;
+				MARKETING_VERSION = 1.2.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.passi3.Hanttam;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
