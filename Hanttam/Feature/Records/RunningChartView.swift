@@ -36,6 +36,7 @@ struct RunningChartView: View {
     @State private var showDatePicker = false
     @State private var pickerYear: Int = Calendar.current.component(.year, from: Date())
     @State private var pickerMonth: Int = Calendar.current.component(.month, from: Date())
+    @State private var preDragSelectedLabel: String?
 
     private var period: ChartPeriod { store.period }
     private var offset: Int { store.offset }
@@ -142,6 +143,9 @@ struct RunningChartView: View {
                 store.offset = 0
                 selectedLabel = nil
             }
+            .onChange(of: selectedLabel) { _, newLabel in
+                store.selectedChartLabel = newLabel
+            }
 
             // 기간 표시
             if period != .all {
@@ -157,7 +161,7 @@ struct RunningChartView: View {
                             Image(systemName: "chevron.down")
                                 .font(.system(size: 10, weight: .medium))
                         }
-                        .foregroundStyle(.primary)
+                        .foregroundStyle(Color.black)
                     }
                 } else {
                     Text(periodTitle)
@@ -195,24 +199,33 @@ struct RunningChartView: View {
                     Rectangle()
                         .fill(.clear)
                         .contentShape(Rectangle())
-                        .onTapGesture { location in
-                            let x = location.x - geo[proxy.plotFrame!].origin.x
-                            if let label: String = proxy.value(atX: x) {
-                                withAnimation(.spring(duration: 0.2)) {
-                                    selectedLabel = (selectedLabel == label) ? nil : label
-                                }
-                            }
-                        }
                         .gesture(
-                            DragGesture(minimumDistance: 30)
+                            DragGesture(minimumDistance: 0)
+                                .onChanged { value in
+                                    if preDragSelectedLabel == nil {
+                                        preDragSelectedLabel = selectedLabel
+                                    }
+                                    // 수평 이동이 30pt 이상이면 내비게이션 스와이프로 간주, 선택 업데이트 생략
+                                    guard abs(value.translation.width) < 30 else { return }
+                                    let x = value.location.x - geo[proxy.plotFrame!].origin.x
+                                    if let label: String = proxy.value(atX: x) {
+                                        selectedLabel = label
+                                    }
+                                }
                                 .onEnded { value in
-                                    let horizontal = value.translation.width
-                                    if horizontal < -30 && canGoForward {
+                                    defer { preDragSelectedLabel = nil }
+                                    let dx = value.translation.width
+                                    if dx < -30 && canGoForward {
                                         withAnimation(.spring(duration: 0.3)) { store.offset += 1 }
                                         selectedLabel = nil
-                                    } else if horizontal > 30 && canGoBack {
+                                    } else if dx > 30 && canGoBack {
                                         withAnimation(.spring(duration: 0.3)) { store.offset -= 1 }
                                         selectedLabel = nil
+                                    } else if abs(value.translation.width) + abs(value.translation.height) < 10 {
+                                        // 탭: 이미 선택된 바를 다시 탭하면 선택 해제
+                                        withAnimation(.spring(duration: 0.2)) {
+                                            if selectedLabel == preDragSelectedLabel { selectedLabel = nil }
+                                        }
                                     }
                                 }
                         )

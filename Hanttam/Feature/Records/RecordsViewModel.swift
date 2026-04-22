@@ -34,17 +34,21 @@ final class RecordsViewModel: HTReusableVMProtocol, ObservableObject {
     @Published var offset: Int = 0 {
         didSet { offsetRelay.accept(offset) }
     }
+    @Published var selectedChartLabel: String? = nil {
+        didSet { selectedChartLabelRelay.accept(selectedChartLabel) }
+    }
     @Published private(set) var records: [RunningRecord] = []
 
     // MARK: - Rx relays
 
-    private let recordsRelay         = BehaviorRelay<[RunningRecord]>(value: [])
-    private let filteredRecordsRelay = BehaviorRelay<[RunningRecord]>(value: [])
-    private let periodRelay          = BehaviorRelay<ChartPeriod>(value: .monthly)
-    private let offsetRelay          = BehaviorRelay<Int>(value: 0)
-    private let isLoadingRelay       = BehaviorRelay<Bool>(value: false)
-    private let selectedRecordRelay  = PublishRelay<RunningRecord>()
-    private let disposeBag           = DisposeBag()
+    private let recordsRelay              = BehaviorRelay<[RunningRecord]>(value: [])
+    private let filteredRecordsRelay      = BehaviorRelay<[RunningRecord]>(value: [])
+    private let periodRelay               = BehaviorRelay<ChartPeriod>(value: .monthly)
+    private let offsetRelay               = BehaviorRelay<Int>(value: 0)
+    private let selectedChartLabelRelay   = BehaviorRelay<String?>(value: nil)
+    private let isLoadingRelay            = BehaviorRelay<Bool>(value: false)
+    private let selectedRecordRelay       = PublishRelay<RunningRecord>()
+    private let disposeBag                = DisposeBag()
 
     private let store = HealthKitStore.shared
 
@@ -54,8 +58,8 @@ final class RecordsViewModel: HTReusableVMProtocol, ObservableObject {
             .subscribe(onNext: { [weak self] in self?.records = $0 })
             .disposed(by: disposeBag)
 
-        Observable.combineLatest(recordsRelay, periodRelay, offsetRelay)
-            .map { Self.filterRecords($0, period: $1, offset: $2) }
+        Observable.combineLatest(recordsRelay, periodRelay, offsetRelay, selectedChartLabelRelay)
+            .map { Self.filterRecords($0, period: $1, offset: $2, selectedLabel: $3) }
             .bind(to: filteredRecordsRelay)
             .disposed(by: disposeBag)
     }
@@ -114,9 +118,17 @@ final class RecordsViewModel: HTReusableVMProtocol, ObservableObject {
         }
     }
 
-    private static func filterRecords(_ records: [RunningRecord], period: ChartPeriod, offset: Int) -> [RunningRecord] {
+    private static func filterRecords(
+        _ records: [RunningRecord],
+        period: ChartPeriod,
+        offset: Int,
+        selectedLabel: String?
+    ) -> [RunningRecord] {
         let cal = Calendar.current
         let now = Date()
+
+        // 1차: period/offset 기간 필터
+        let periodFiltered: [RunningRecord]
         switch period {
         case .weekly:
             let today          = cal.startOfDay(for: now)
@@ -125,18 +137,36 @@ final class RecordsViewModel: HTReusableVMProtocol, ObservableObject {
             let currentMonday  = cal.date(byAdding: .day, value: -daysFromMonday, to: today)!
             let monday         = cal.date(byAdding: .weekOfYear, value: offset, to: currentMonday)!
             let sunday         = cal.date(byAdding: .day, value: 7, to: monday)!
-            return records.filter { $0.date >= monday && $0.date < sunday }
+            periodFiltered = records.filter { $0.date >= monday && $0.date < sunday }
         case .monthly:
             let comps       = cal.dateComponents([.year, .month], from: now)
             let baseMonth   = cal.date(from: comps)!
             let targetMonth = cal.date(byAdding: .month, value: offset, to: baseMonth)!
             let nextMonth   = cal.date(byAdding: .month, value: 1, to: targetMonth)!
-            return records.filter { $0.date >= targetMonth && $0.date < nextMonth }
+            periodFiltered = records.filter { $0.date >= targetMonth && $0.date < nextMonth }
         case .yearly:
             let targetYear = cal.component(.year, from: now) + offset
-            return records.filter { cal.component(.year, from: $0.date) == targetYear }
+            periodFiltered = records.filter { cal.component(.year, from: $0.date) == targetYear }
         case .all:
-            return records
+            periodFiltered = records
+        }
+
+        // 2차: 차트 선택 라벨 필터
+        guard let label = selectedLabel else { return periodFiltered }
+        let dayNames = ["일", "월", "화", "수", "목", "금", "토"] // Calendar weekday: 1=일
+
+        return periodFiltered.filter { record in
+            switch period {
+            case .weekly:
+                let weekday = cal.component(.weekday, from: record.date)
+                return dayNames[weekday - 1] == label
+            case .monthly:
+                return "\(cal.component(.day, from: record.date))" == label
+            case .yearly:
+                return "\(cal.component(.month, from: record.date))월" == label
+            case .all:
+                return "\(cal.component(.year, from: record.date))" == label
+            }
         }
     }
 }

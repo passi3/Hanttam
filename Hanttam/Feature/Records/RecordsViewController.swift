@@ -172,27 +172,28 @@ final class RecordsViewController: HTViewController {
         )
         let output = viewModel.transform(input: input)
 
-        // 전체 기록 로드 완료 시 캐시 초기화
+        // 전체 기록 로드 완료 시 캐시 초기화 + interval fetch
         output.records
             .drive(onNext: { [weak self] records in
                 guard let self else { return }
                 self.allRecords = records
                 self.routeSnapshots.removeAll()
                 self.failedRouteDates.removeAll()
+                HealthKitStore.shared.fetchIntervalWorkouts { [weak self] intervals in
+                    guard let self else { return }
+                    self.intervalRecords = intervals
+                    self.applySnapshot(animated: false)
+                }
             })
             .disposed(by: disposeBag)
 
-        // 필터링된 기록으로 테이블 갱신 (period/offset 변경 포함)
+        // 필터링된 기록으로 테이블 갱신 (period/offset/차트 선택 변경 포함)
         output.filteredRecords
             .drive(onNext: { [weak self] records in
                 guard let self else { return }
                 self.records = records
-                HealthKitStore.shared.fetchIntervalWorkouts { [weak self] intervals in
-                    guard let self else { return }
-                    self.intervalRecords = intervals
-                    self.isExpanded = false
-                    self.applySnapshot(animated: true)
-                }
+                self.isExpanded = false
+                self.applySnapshot(animated: true)
             })
             .disposed(by: disposeBag)
         
