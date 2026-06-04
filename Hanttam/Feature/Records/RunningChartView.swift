@@ -38,6 +38,9 @@ struct RunningChartView: View {
     @State private var pickerYear: Int = Calendar.current.component(.year, from: Date())
     @State private var pickerMonth: Int = Calendar.current.component(.month, from: Date())
     @State private var preDragSelectedLabel: String?
+    @State private var longPressTimer: DispatchWorkItem?
+    @State private var isLongPressed: Bool = false
+    @State private var longPressStartX: CGFloat = 0
 
     private var period: ChartPeriod { store.period }
     private var offset: Int { store.offset }
@@ -221,18 +224,49 @@ struct RunningChartView: View {
                         .gesture(
                             DragGesture(minimumDistance: 0)
                                 .onChanged { value in
-                                    if preDragSelectedLabel == nil {
-                                        preDragSelectedLabel = selectedLabel
-                                    }
-                                    // 수평 이동이 30pt 이상이면 내비게이션 스와이프로 간주, 선택 업데이트 생략
-                                    guard abs(value.translation.width) < 30 else { return }
                                     let x = value.location.x - geo[proxy.plotFrame!].origin.x
-                                    if let label: String = proxy.value(atX: x) {
-                                        selectedLabel = label
+
+                                    // 최초 터치: 롱프레스 타이머 시작
+                                    if longPressTimer == nil && !isLongPressed {
+                                        longPressStartX = x
+                                        let work = DispatchWorkItem {
+                                            isLongPressed = true
+                                            preDragSelectedLabel = selectedLabel
+                                            if let label: String = proxy.value(atX: longPressStartX),
+                                               dataPoints.first(where: { $0.label == label })?.distance ?? 0 > 0 {
+                                                selectedLabel = label
+                                                preDragSelectedLabel = label
+                                            }
+                                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                        }
+                                        longPressTimer = work
+                                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: work)
+                                    }
+
+                                    // 롱프레스 미활성 상태에서 이동이 크면 스와이프 의도 → 타이머 취소
+                                    let moved = hypot(value.translation.width, value.translation.height)
+                                    if !isLongPressed && moved >= 15 {
+                                        longPressTimer?.cancel()
+                                        longPressTimer = nil
+                                    }
+
+                                    // 롱프레스 활성 상태: 드래그로 바 이동
+                                    if isLongPressed {
+                                        if let label: String = proxy.value(atX: x),
+                                           dataPoints.first(where: { $0.label == label })?.distance ?? 0 > 0 {
+                                            selectedLabel = label
+                                            preDragSelectedLabel = label
+                                        }
                                     }
                                 }
                                 .onEnded { value in
-                                    defer { preDragSelectedLabel = nil }
+                                    let wasLongPressed = isLongPressed
+                                    defer { cancelLongPress(); preDragSelectedLabel = nil }
+
+                                    // 롱프레스 해제: selectedLabel 유지
+                                    guard !wasLongPressed else { return }
+
+                                    // 일반 모드: 스와이프 또는 탭
                                     let dx = value.translation.width
                                     if dx < -30 && canGoForward {
                                         withAnimation(.spring(duration: 0.3)) { store.offset += 1 }
@@ -241,9 +275,12 @@ struct RunningChartView: View {
                                         withAnimation(.spring(duration: 0.3)) { store.offset -= 1 }
                                         selectedLabel = nil
                                     } else if abs(value.translation.width) + abs(value.translation.height) < 10 {
-                                        // 탭: 이미 선택된 바를 다시 탭하면 선택 해제
-                                        withAnimation(.spring(duration: 0.2)) {
-                                            if selectedLabel == preDragSelectedLabel { selectedLabel = nil }
+                                        let x = value.location.x - geo[proxy.plotFrame!].origin.x
+                                        if let label: String = proxy.value(atX: x),
+                                           dataPoints.first(where: { $0.label == label })?.distance ?? 0 > 0 {
+                                            withAnimation(.spring(duration: 0.2)) {
+                                                selectedLabel = (selectedLabel == label) ? nil : label
+                                            }
                                         }
                                     }
                                 }
@@ -292,6 +329,14 @@ struct RunningChartView: View {
             }
             .presentationDetents([.height(300)])
         }
+    }
+
+    // MARK: - Long Press Helpers
+
+    private func cancelLongPress() {
+        longPressTimer?.cancel()
+        longPressTimer = nil
+        isLongPressed = false
     }
 
     // MARK: - Picker Helpers
