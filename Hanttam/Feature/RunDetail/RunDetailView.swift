@@ -1791,11 +1791,12 @@ enum RunDetailContentView {
                 self.chartDomain = (minVal - padding)...(maxVal + padding)
             }
         }
-        func nearestPoint(to elapsed: Double) -> TSPoint? {
+
+        func nearestPointIndex(to elapsed: Double) -> Int? {
             guard !data.isEmpty else { return nil }
-            guard elapsed > data[0].elapsed else { return data[0] }
-            guard elapsed < data[data.count - 1].elapsed else { return data[data.count - 1] }
-            
+            guard elapsed > data[0].elapsed else { return 0 }
+            guard elapsed < data[data.count - 1].elapsed else { return data.count - 1 }
+
             var low = 0
             var high = data.count - 1
             while low < high {
@@ -1806,25 +1807,44 @@ enum RunDetailContentView {
                     high = mid
                 }
             }
-            
+
             let upper = data[low]
             let lower = data[low - 1]
-            return abs(lower.elapsed - elapsed) <= abs(upper.elapsed - elapsed) ? lower : upper
+            return abs(lower.elapsed - elapsed) <= abs(upper.elapsed - elapsed) ? low - 1 : low
         }
+
+        func point(at index: Int) -> TSPoint {
+            data[index]
+        }
+
+        func nearestPoint(to elapsed: Double) -> TSPoint? {
+            guard let index = nearestPointIndex(to: elapsed) else { return nil }
+            return point(at: index)
+        }
+    }
+
+    struct PerformanceMetricSelection: Equatable {
+        let sourceMetric: MetricType
+        let sourcePointID: Int
+        let elapsed: Double
+        let plotXBucket: Int
     }
     
     struct PerformanceMetricCard: View {
         let model: PerformanceMetricChartModel
-        @Binding var selectedElapsed: Double?
+        @Binding var selection: PerformanceMetricSelection?
 
         private var metric: MetricType { model.metric }
         private var data: [TSPoint] { model.data }
         private let tooltipWidth: CGFloat = 136
         private let tooltipHeight: CGFloat = 48
-        
-        private var selectedPoint: TSPoint? {
-            guard let selectedElapsed else { return nil }
-            return model.nearestPoint(to: selectedElapsed)
+
+        private struct SelectedMetricPoint {
+            let selection: PerformanceMetricSelection
+            let point: TSPoint
+            let dotPosition: CGPoint
+            let plotFrame: CGRect
+            let containerWidth: CGFloat
         }
         
         var body: some View {
@@ -1939,19 +1959,6 @@ enum RunDetailContentView {
                 RuleMark(y: .value("avg", metric.invertedY ? -model.avg : model.avg))
                                   .foregroundStyle(metric.color.opacity(0.55))
                                   .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 4]))
-                
-                if let selectedElapsed, let point = selectedPoint {
-                    RuleMark(x: .value("selected", selectedElapsed))
-                        .foregroundStyle(DS.textDim.opacity(0.9))
-                        .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 4]))
-                    
-                    PointMark(
-                        x: .value("selectedPoint", point.elapsed),
-                        y: .value("selectedValue", metric.invertedY ? -point.value : point.value)
-                    )
-                    .symbolSize(36)
-                    .foregroundStyle(metric.color)
-                }
             }
             .chartXAxis(.hidden)
             .chartYAxis {
@@ -1977,11 +1984,8 @@ enum RunDetailContentView {
                                     .onEnded { _ in }
                             )
 
-                        if let selectedElapsed,
-                           let point = selectedPoint,
-                           let position = tooltipPosition(for: point, proxy: proxy, geometry: geometry) {
-                            metricTooltip(for: point, selectedElapsed: selectedElapsed)
-                                .position(position)
+                        if let selected = selectedMetricPoint(proxy: proxy, geometry: geometry) {
+                            selectionIndicator(for: selected)
                                 .allowsHitTesting(false)
                         }
                     }
@@ -1989,19 +1993,52 @@ enum RunDetailContentView {
             }
         }
 
-        private func tooltipPosition(for point: TSPoint, proxy: ChartProxy, geometry: GeometryProxy) -> CGPoint? {
-            guard let plotFrameAnchor = proxy.plotFrame,
+        @ViewBuilder
+        private func selectionIndicator(for selected: SelectedMetricPoint) -> some View {
+            ZStack(alignment: .topLeading) {
+                Path { path in
+                    path.move(to: CGPoint(x: selected.dotPosition.x, y: selected.plotFrame.minY))
+                    path.addLine(to: CGPoint(x: selected.dotPosition.x, y: selected.plotFrame.maxY))
+                }
+                .stroke(DS.textDim.opacity(0.9), style: StrokeStyle(lineWidth: 1, dash: [4, 4]))
+
+                Circle()
+                    .fill(metric.color)
+                    .frame(width: 6, height: 6)
+                    .position(selected.dotPosition)
+
+                metricTooltip(for: selected.point, selectedElapsed: selected.selection.elapsed)
+                    .position(tooltipPosition(forDot: selected.dotPosition, containerWidth: selected.containerWidth))
+            }
+        }
+
+        private func selectedMetricPoint(proxy: ChartProxy, geometry: GeometryProxy) -> SelectedMetricPoint? {
+            guard let selection,
+                  let point = model.nearestPoint(to: selection.elapsed),
+                  let plotFrameAnchor = proxy.plotFrame,
                   let xPosition = proxy.position(forX: point.elapsed),
                   let yPosition = proxy.position(forY: metric.invertedY ? -point.value : point.value)
             else { return nil }
 
             let plotFrame = geometry[plotFrameAnchor]
-            let rawX = plotFrame.origin.x + xPosition
-            let rawY = plotFrame.origin.y + yPosition - 20 - tooltipHeight / 2
+            return SelectedMetricPoint(
+                selection: selection,
+                point: point,
+                dotPosition: CGPoint(
+                    x: plotFrame.origin.x + xPosition,
+                    y: plotFrame.origin.y + yPosition
+                ),
+                plotFrame: plotFrame,
+                containerWidth: geometry.size.width
+            )
+        }
+
+        private func tooltipPosition(forDot dotPosition: CGPoint, containerWidth: CGFloat) -> CGPoint {
+            let rawY = dotPosition.y - 20 - tooltipHeight / 2
             let minX = tooltipWidth / 2 + 8
-            let maxX = max(minX, geometry.size.width - tooltipWidth / 2 - 8)
+            let maxX = max(minX, containerWidth - tooltipWidth / 2 - 8)
             return CGPoint(
-                x: min(max(rawX, minX), maxX),
+                x: min(max(dotPosition.x, minX), maxX),
                 y: rawY
             )
         }
@@ -2042,28 +2079,41 @@ enum RunDetailContentView {
             return metric.format(displayedValue)
         }
 
-        private func continuousElapsed(at location: CGPoint, proxy: ChartProxy, geometry: GeometryProxy) -> Double? {
+        private func selectionCandidate(at location: CGPoint, proxy: ChartProxy, geometry: GeometryProxy) -> PerformanceMetricSelection? {
             guard let plotFrameAnchor = proxy.plotFrame else { return nil }
             let plotFrame = geometry[plotFrameAnchor]
-            guard plotFrame.contains(location), !data.isEmpty else { return nil }
+            guard plotFrame.contains(location), !data.isEmpty, model.maxElapsed > 0 else { return nil }
 
             let relativeX = min(max(location.x - plotFrame.origin.x, 0), plotFrame.width)
             guard relativeX >= 0, relativeX <= plotFrame.width else { return nil }
 
             let ratio = relativeX / max(plotFrame.width, 1)
-            return ratio * model.maxElapsed
+            let elapsed = ratio * model.maxElapsed
+            guard let pointIndex = model.nearestPointIndex(to: elapsed) else { return nil }
+            let point = model.point(at: pointIndex)
+            return PerformanceMetricSelection(
+                sourceMetric: metric,
+                sourcePointID: point.id,
+                elapsed: point.elapsed,
+                plotXBucket: Int(relativeX.rounded())
+            )
         }
 
         private func updateSelection(at location: CGPoint, proxy: ChartProxy, geometry: GeometryProxy) {
-            guard let elapsed = continuousElapsed(at: location, proxy: proxy, geometry: geometry) else { return }
-            selectedElapsed = elapsed
+            guard let candidate = selectionCandidate(at: location, proxy: proxy, geometry: geometry) else { return }
+            if let selection,
+               selection.sourceMetric == candidate.sourceMetric,
+               (selection.plotXBucket == candidate.plotXBucket || selection.sourcePointID == candidate.sourcePointID) {
+                return
+            }
+            selection = candidate
         }
     }
     
     struct PerformanceMetricsSection: View {
         let metrics: [PerformanceMetricChartModel]
         
-        @State private var selectedElapsed: Double?
+        @State private var selection: PerformanceMetricSelection?
         
         var body: some View {
             VStack(alignment: .leading, spacing: RunDetailLayout.sectionSpacing) {
@@ -2072,7 +2122,7 @@ enum RunDetailContentView {
                 ForEach(Array(metrics.enumerated()), id: \.offset) { _, model in
                     PerformanceMetricCard(
                         model: model,
-                        selectedElapsed: $selectedElapsed
+                        selection: $selection
                     )
                 }
             }
