@@ -72,12 +72,14 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		40354F592FF7801C00917FDE /* Hanttam.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; path = Hanttam.xcodeproj; sourceTree = "<group>"; };
 		404E85F92F7FABFF00AC76ED /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
 		404E85FB2F7FABFF00AC76ED /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
 		405C991B2FB55D7C004F15AF /* Hanttam.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; path = Hanttam.xcodeproj; sourceTree = "<group>"; };
 		405D4E6A2FD1811F000ABD58 /* Hanttam.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; path = Hanttam.xcodeproj; sourceTree = "<group>"; };
 		4060D5452EEAAB2D00329FC8 /* Hanttam.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Hanttam.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		408B79762FF76E7F005CEE13 /* Hanttam.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; path = Hanttam.xcodeproj; sourceTree = "<group>"; };
+		408B7A982FF77E33005CEE13 /* Hanttam.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; path = Hanttam.xcodeproj; sourceTree = "<group>"; };
 		4091A3792F8FC808007150D9 /* HanttamLogicTest.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = HanttamLogicTest.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		4091E5362F98AB3400A77170 /* Hanttam.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; path = Hanttam.xcodeproj; sourceTree = "<group>"; };
 		409833D22F7D5DFA0029B9CC /* Hanttam Watch Watch App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Hanttam Watch Watch App.app"; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -173,6 +175,11 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		40354F5C2FF7801C00917FDE /* Products */ = {
+			isa = PBXGroup;
+			name = Products;
+			sourceTree = "<group>";
+		};
 		404E85F82F7FABFF00AC76ED /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
@@ -214,6 +221,11 @@
 			sourceTree = "<group>";
 		};
 		408B79792FF76E7F005CEE13 /* Products */ = {
+			isa = PBXGroup;
+			name = Products;
+			sourceTree = "<group>";
+		};
+		408B7A9B2FF77E33005CEE13 /* Products */ = {
 			isa = PBXGroup;
 			name = Products;
 			sourceTree = "<group>";
@@ -365,12 +377,24 @@
 			projectDirPath = "";
 			projectReferences = (
 				{
-					ProductGroup = 40B4BC172F97C823001FD03F /* Products */;
-					ProjectRef = 40B4BC142F97C823001FD03F /* Hanttam.xcodeproj */;
-				},
-				{
 					ProductGroup = 40B4BE532F97C926001FD03F /* Products */;
 					ProjectRef = 40B4BE502F97C926001FD03F /* Hanttam.xcodeproj */;
+				},
+				{
+					ProductGroup = 408B79792FF76E7F005CEE13 /* Products */;
+					ProjectRef = 408B79762FF76E7F005CEE13 /* Hanttam.xcodeproj */;
+				},
+				{
+					ProductGroup = 408B7A9B2FF77E33005CEE13 /* Products */;
+					ProjectRef = 408B7A982FF77E33005CEE13 /* Hanttam.xcodeproj */;
+				},
+				{
+					ProductGroup = 405D4E6D2FD1811F000ABD58 /* Products */;
+					ProjectRef = 405D4E6A2FD1811F000ABD58 /* Hanttam.xcodeproj */;
+				},
+				{
+					ProductGroup = 40B4BC172F97C823001FD03F /* Products */;
+					ProjectRef = 40B4BC142F97C823001FD03F /* Hanttam.xcodeproj */;
 				},
 				{
 					ProductGroup = 4091E5392F98AB3400A77170 /* Products */;
@@ -381,16 +405,12 @@
 					ProjectRef = 40B86A4D2FEDC4520017E879 /* Hanttam.xcodeproj */;
 				},
 				{
-					ProductGroup = 408B79792FF76E7F005CEE13 /* Products */;
-					ProjectRef = 408B79762FF76E7F005CEE13 /* Hanttam.xcodeproj */;
+					ProductGroup = 40354F5C2FF7801C00917FDE /* Products */;
+					ProjectRef = 40354F592FF7801C00917FDE /* Hanttam.xcodeproj */;
 				},
 				{
 					ProductGroup = 405C991E2FB55D7C004F15AF /* Products */;
 					ProjectRef = 405C991B2FB55D7C004F15AF /* Hanttam.xcodeproj */;
-				},
-				{
-					ProductGroup = 405D4E6D2FD1811F000ABD58 /* Products */;
-					ProjectRef = 405D4E6A2FD1811F000ABD58 /* Hanttam.xcodeproj */;
 				},
 			);
 			projectRoot = "";
@@ -493,7 +513,7 @@
 		4060D5592EEAAB2F00329FC8 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon_Dev;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Hanttam/Hanttam.entitlements;
 				CODE_SIGN_STYLE = Automatic;
@@ -504,7 +524,7 @@
 				GCC_GENERATE_DEBUGGING_SYMBOLS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Hanttam/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "[Dev]한땀";
+				INFOPLIST_KEY_CFBundleDisplayName = "Dev_한땀";
 				INFOPLIST_KEY_NSCameraUsageDescription = "편집할 사진을 촬영하기 위해 카메라 접근이 필요합니다.";
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "운동 기록 및 경로를 조회하기 위해 건강 데이터에 대한 접근이 필요합니다.";
 				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "운동 기록을 저장하기 위해 사용합니다.";
@@ -523,7 +543,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.2.5;
-				PRODUCT_BUNDLE_IDENTIFIER = com.passi3.Hanttam;
+				PRODUCT_BUNDLE_IDENTIFIER = com.passi3.Hanttam.Dev;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				STRIP_INSTALLED_PRODUCT = NO;
@@ -758,23 +778,25 @@
 			};
 			name = Release;
 		};
-		409833DF2F7D5DFD0029B9CC /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_ENTITLEMENTS = "Hanttam Watch Watch App/Hanttam Watch Watch App.entitlements";
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 29MZ57KJPA;
-				ENABLE_PREVIEWS = YES;
-				INFOPLIST_FILE = "Hanttam Watch Watch App/Info.plist";
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-				);
+			409833DF2F7D5DFD0029B9CC /* Debug */ = {
+				isa = XCBuildConfiguration;
+				buildSettings = {
+					APP_BUNDLE_IDENTIFIER = com.passi3.Hanttam.Dev;
+					ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon_Dev;
+					ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+					CODE_SIGN_ENTITLEMENTS = "Hanttam Watch Watch App/Hanttam Watch Watch App.entitlements";
+					CODE_SIGN_STYLE = Automatic;
+					CURRENT_PROJECT_VERSION = 1;
+					DEVELOPMENT_TEAM = 29MZ57KJPA;
+					ENABLE_PREVIEWS = YES;
+					INFOPLIST_FILE = "Hanttam Watch Watch App/Info.plist";
+					INFOPLIST_KEY_CFBundleDisplayName = "Dev_한땀";
+					LD_RUNPATH_SEARCH_PATHS = (
+						"$(inherited)",
+						"@executable_path/Frameworks",
+					);
 				MARKETING_VERSION = 1.0.1;
-				PRODUCT_BUNDLE_IDENTIFIER = com.passi3.Hanttam.watchkitapp;
+					PRODUCT_BUNDLE_IDENTIFIER = com.passi3.Hanttam.Dev.watchkitapp;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = watchos;
 				SKIP_INSTALL = YES;
@@ -789,17 +811,19 @@
 			};
 			name = Debug;
 		};
-		409833E02F7D5DFD0029B9CC /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_ENTITLEMENTS = "Hanttam Watch Watch App/Hanttam Watch Watch App.entitlements";
-				CODE_SIGN_STYLE = Automatic;
+			409833E02F7D5DFD0029B9CC /* Release */ = {
+				isa = XCBuildConfiguration;
+				buildSettings = {
+					APP_BUNDLE_IDENTIFIER = com.passi3.Hanttam;
+					ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+					ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+					CODE_SIGN_ENTITLEMENTS = "Hanttam Watch Watch App/Hanttam Watch Watch App.entitlements";
+					CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 29MZ57KJPA;
 				ENABLE_PREVIEWS = YES;
 				INFOPLIST_FILE = "Hanttam Watch Watch App/Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "한땀";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
