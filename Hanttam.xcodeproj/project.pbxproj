@@ -82,6 +82,7 @@
 		409833D22F7D5DFA0029B9CC /* Hanttam Watch Watch App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Hanttam Watch Watch App.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		40B4BC142F97C823001FD03F /* Hanttam.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; path = Hanttam.xcodeproj; sourceTree = "<group>"; };
 		40B4BE502F97C926001FD03F /* Hanttam.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; path = Hanttam.xcodeproj; sourceTree = "<group>"; };
+		40B86A4D2FEDC4520017E879 /* Hanttam.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; path = Hanttam.xcodeproj; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -226,6 +227,11 @@
 			name = Products;
 			sourceTree = "<group>";
 		};
+		40B86A502FEDC4520017E879 /* Products */ = {
+			isa = PBXGroup;
+			name = Products;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -365,6 +371,10 @@
 					ProjectRef = 4091E5362F98AB3400A77170 /* Hanttam.xcodeproj */;
 				},
 				{
+					ProductGroup = 40B86A502FEDC4520017E879 /* Products */;
+					ProjectRef = 40B86A4D2FEDC4520017E879 /* Hanttam.xcodeproj */;
+				},
+				{
 					ProductGroup = 405C991E2FB55D7C004F15AF /* Products */;
 					ProjectRef = 405C991B2FB55D7C004F15AF /* Hanttam.xcodeproj */;
 				},
@@ -502,7 +512,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.2.3;
+				MARKETING_VERSION = 1.2.4;
 				PRODUCT_BUNDLE_IDENTIFIER = com.passi3.Hanttam;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -550,7 +560,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.2.3;
+				MARKETING_VERSION = 1.2.4;
 				PRODUCT_BUNDLE_IDENTIFIER = com.passi3.Hanttam;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
