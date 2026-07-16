@@ -36,6 +36,6 @@
 	<key>WKApplication</key>
 	<true/>
 	<key>WKCompanionAppBundleIdentifier</key>
-	<string>com.passi3.Hanttam</string>
+	<string>$(APP_BUNDLE_IDENTIFIER)</string>
 </dict>
 </plist>

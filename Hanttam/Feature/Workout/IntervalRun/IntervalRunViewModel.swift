@@ -69,6 +69,7 @@ final class IntervalRunViewModel: NSObject {
     private let restDuration: TimeInterval
     private let isIndoor    : Bool
     private var isWatchPrimary: Bool
+    private let voiceEventSessionID = UUID().uuidString
 
     // MARK: - State
     private var phase           : Phase           = .preparing
@@ -416,6 +417,7 @@ final class IntervalRunViewModel: NSObject {
 
     private func startResting() {
         recordLap(type: .run)
+        announceIntervalLapCompletion(completedSet: currentSet)
 
         phase         = .resting
         restRemaining = restDuration
@@ -493,6 +495,49 @@ final class IntervalRunViewModel: NSObject {
         }
     }
 
+    private func announceIntervalLapCompletion(completedSet: Int) {
+        guard !isWatchPrimary else { return }
+        let metrics = HealthKitStore.shared.currentPhoneWorkoutMetrics
+        let totalDistance = completedRunDistance
+        let summary = IntervalLapCompletionSummary(
+            eventID: "phone-\(voiceEventSessionID)-interval-lap-\(completedSet)-\(laps.count)",
+            completedSet: completedSet,
+            totalDistance: totalDistance,
+            totalDuration: elapsed,
+            avgPace: averageRunPace(totalDistance: totalDistance),
+            lapPace: lastRunLapPace,
+            avgHeartRate: metrics.avgHeartRate,
+            lapHeartRate: lastRunLapAvgHeartRate
+        )
+        WorkoutVoiceAnnouncementService.shared.announceIntervalLapCompletion(summary)
+    }
+
+    private func announceWorkoutCompletionIfNeeded(showResult: Bool) {
+        guard showResult, !isWatchPrimary else { return }
+        let metrics = HealthKitStore.shared.currentPhoneWorkoutMetrics
+        let totalDistance = completedRunDistance
+        let completedSets = laps.filter { $0.type == .run }.count
+        let summary = WorkoutCompletionSummary(
+            eventID: "phone-\(voiceEventSessionID)-interval-workout",
+            completedSets: completedSets,
+            totalDistance: totalDistance,
+            totalDuration: elapsed,
+            avgPace: averageRunPace(totalDistance: totalDistance),
+            avgHeartRate: metrics.avgHeartRate
+        )
+        WorkoutVoiceAnnouncementService.shared.announceWorkoutCompletion(summary)
+    }
+
+    private var completedRunDistance: Double {
+        laps.filter { $0.type == .run }.reduce(0) { $0 + $1.distance }
+    }
+
+    private func averageRunPace(totalDistance: Double) -> TimeInterval? {
+        let totalDuration = laps.filter { $0.type == .run }.reduce(0) { $0 + $1.duration }
+        guard totalDistance > 10, totalDuration > 0 else { return nil }
+        return totalDuration / (totalDistance / 1000)
+    }
+
     // MARK: - Finish
     private func finishWorkout(showResult: Bool, completion: ((HKWorkout?) -> Void)? = nil) {
         if case .finished = phase {
@@ -504,6 +549,7 @@ final class IntervalRunViewModel: NSObject {
         timer?.invalidate()
         timer = nil
         locationManager.stopUpdatingLocation()
+        announceWorkoutCompletionIfNeeded(showResult: showResult)
 
         guard !isWatchPrimary else {
             if showResult { emitResult(workout: nil) }
@@ -856,6 +902,7 @@ extension IntervalRunViewModel: CLLocationManagerDelegate {
         if case .runningLap = phase, lapDistance_ >= lapDistance {
             if currentSet >= totalSets {
                 recordLap(type: .run)
+                announceIntervalLapCompletion(completedSet: currentSet)
                 finishAndEmitResult()
             } else {
                 startResting()

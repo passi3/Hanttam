@@ -1,12 +1,26 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Scheme
-   LastUpgradeVersion = "2640"
+   LastUpgradeVersion = "2660"
    version = "1.7">
    <BuildAction
       parallelizeBuildables = "YES"
       buildImplicitDependencies = "YES"
       buildArchitectures = "Automatic">
       <BuildActionEntries>
+         <BuildActionEntry
+            buildForTesting = "YES"
+            buildForRunning = "YES"
+            buildForProfiling = "YES"
+            buildForArchiving = "YES"
+            buildForAnalyzing = "YES">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "409833D12F7D5DFA0029B9CC"
+               BuildableName = "Hanttam Watch Watch App.app"
+               BlueprintName = "Hanttam Watch Watch App"
+               ReferencedContainer = "container:Hanttam.xcodeproj">
+            </BuildableReference>
+         </BuildActionEntry>
          <BuildActionEntry
             buildForTesting = "YES"
             buildForRunning = "YES"
@@ -45,9 +59,9 @@
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "4060D5442EEAAB2D00329FC8"
-            BuildableName = "Hanttam.app"
-            BlueprintName = "Hanttam"
+            BlueprintIdentifier = "409833D12F7D5DFA0029B9CC"
+            BuildableName = "Hanttam Watch Watch App.app"
+            BlueprintName = "Hanttam Watch Watch App"
             ReferencedContainer = "container:Hanttam.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
@@ -62,9 +76,9 @@
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "4060D5442EEAAB2D00329FC8"
-            BuildableName = "Hanttam.app"
-            BlueprintName = "Hanttam"
+            BlueprintIdentifier = "409833D12F7D5DFA0029B9CC"
+            BuildableName = "Hanttam Watch Watch App.app"
+            BlueprintName = "Hanttam Watch Watch App"
             ReferencedContainer = "container:Hanttam.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>

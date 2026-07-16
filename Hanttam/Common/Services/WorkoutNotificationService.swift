@@ -153,19 +153,19 @@ final class WorkoutNotificationService {
             guard let self else { return }
 
             let hasGear = !self.gearStore.fetchRegisteredShoes().isEmpty
-            let gearBody = hasGear ? "어떤 신발로 뛰었는지 기록해보세요!" : "방금 운동한 기록을 사진으로 남겨보세요!"
+            let gearBody = hasGear ? "어떤 신발로 뛰었는지 기록해보세요!" : "방금 운동 기록을 사진으로 남겨보세요!"
 
             let title: String
             switch (weeklyCount, streak) {
             case (1, 1):
                 // 이번 주 첫 운동이자 연속 1주 — 첫 시작
-                title = "시작이 반!"
+                title = "이번주 첫 번째 러닝 완료!"
             case (1, let s):
                 // 이번 주 첫 운동, 연속 s주
-                title = "연속 \(s)주 운동 완료!"
+                title = "연속 \(s)주 러닝 완료!"
             case (let n, _):
-                // 이번 주 n번째 운동
-                title = "이번주 \(n)번째 운동 완료!"
+                // 이번 주 n번째 러닝
+                title = "이번주 \(n) 번째 러닝 완료!"
             }
 
             let content = UNMutableNotificationContent()
