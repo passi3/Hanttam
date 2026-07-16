@@ -104,7 +104,9 @@
 				Common/Models/UserRunningLevel.swift,
 				Common/Models/WorkoutAttributes.swift,
 				Common/Models/WorkoutStreamProtocol.swift,
+				Common/Models/WorkoutVoiceAnnouncement.swift,
 				Common/Services/RunningLevelManager.swift,
+				Common/Services/WorkoutVoiceAnnouncementService.swift,
 			);
 			target = 409833D12F7D5DFA0029B9CC /* Hanttam Watch Watch App */;
 		};

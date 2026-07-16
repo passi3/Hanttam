@@ -71,6 +71,7 @@ final class WatchBridge: NSObject, ObservableObject {
         static let startSets = "pendingStartSets"
         static let startLapDistance = "pendingStartLapDistance"
         static let startRestDuration = "pendingStartRestDuration"
+        static let voiceAnnouncementsEnabled = "voiceAnnouncementsEnabled"
     }
 
     var pendingWorkoutConfiguration: HKWorkoutConfiguration?
@@ -117,6 +118,8 @@ final class WatchBridge: NSObject, ObservableObject {
     }
 
     func applyPendingStartContext(_ context: [String: Any]) {
+        applyVoiceAnnouncementPreference(context)
+
         guard let requestID = context[AppContextKey.startRequestID] as? String,
               let kindRaw = context[AppContextKey.startKind] as? String,
               let kind = WorkoutKind(rawValue: kindRaw) else { return }
@@ -130,6 +133,11 @@ final class WatchBridge: NSObject, ObservableObject {
             skipCountdown: true
         )
         notifyPendingStartIfReady()
+    }
+
+    private func applyVoiceAnnouncementPreference(_ context: [String: Any]) {
+        guard let isEnabled = context[AppContextKey.voiceAnnouncementsEnabled] as? Bool else { return }
+        WorkoutVoiceAnnouncementPreferences.isEnabled = isEnabled
     }
 
     private func notifyPendingStartIfReady() {

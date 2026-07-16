@@ -16,6 +16,7 @@ final class SettingsViewController: HTViewController {
 
     private enum Section: Int, CaseIterable {
         case permissions
+        case voice
         case appInfo
     }
 
@@ -30,6 +31,7 @@ final class SettingsViewController: HTViewController {
 
     private var permissionItems: [SettingsViewModel.PermissionItem] = []
     private var appVersion: String = "-"
+    private var voiceAnnouncementsEnabled = WorkoutVoiceAnnouncementPreferences.isEnabled
 
     // MARK: - Init
 
@@ -69,6 +71,7 @@ final class SettingsViewController: HTViewController {
         view.backgroundColor = AppColor.UI.backgroundGrouped
 
         tableView.register(SettingsPermissionCell.self, forCellReuseIdentifier: SettingsPermissionCell.reuseID)
+        tableView.register(SettingsSwitchCell.self, forCellReuseIdentifier: SettingsSwitchCell.reuseID)
         tableView.register(SettingsInfoCell.self, forCellReuseIdentifier: SettingsInfoCell.reuseID)
         tableView.dataSource = self
         tableView.delegate = self
@@ -127,6 +130,7 @@ extension SettingsViewController: UITableViewDataSource {
     func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
         switch Section(rawValue: section)! {
         case .permissions: return permissionItems.count
+        case .voice:       return 1
         case .appInfo:     return 1
         }
     }
@@ -134,6 +138,7 @@ extension SettingsViewController: UITableViewDataSource {
     func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
         switch Section(rawValue: section)! {
         case .permissions: return "권한"
+        case .voice:       return "운동"
         case .appInfo:     return "앱 정보"
         }
     }
@@ -145,6 +150,21 @@ extension SettingsViewController: UITableViewDataSource {
                 withIdentifier: SettingsPermissionCell.reuseID, for: indexPath
             ) as! SettingsPermissionCell
             cell.configure(with: permissionItems[indexPath.row])
+            return cell
+
+        case .voice:
+            let cell = tableView.dequeueReusableCell(
+                withIdentifier: SettingsSwitchCell.reuseID, for: indexPath
+            ) as! SettingsSwitchCell
+            cell.configure(
+                title: "운동 음성 안내",
+                iconName: "speaker.wave.2.fill",
+                isOn: voiceAnnouncementsEnabled
+            ) { [weak self] isOn in
+                guard let self else { return }
+                self.voiceAnnouncementsEnabled = isOn
+                WatchBridge.shared.sendVoiceAnnouncementsEnabled(isOn)
+            }
             return cell
 
         case .appInfo:
@@ -168,6 +188,78 @@ extension SettingsViewController: UITableViewDelegate {
     }
 
     func tableView(_ tableView: UITableView, heightForRowAt indexPath: IndexPath) -> CGFloat { 56 }
+}
+
+// MARK: - SettingsSwitchCell
+
+private final class SettingsSwitchCell: HTTableViewCell {
+    static let reuseID = "SettingsSwitchCell"
+
+    private let iconBackgroundView = UIView()
+    private let iconImageView = UIImageView()
+    private let titleLabel = UILabel()
+    private let toggle = UISwitch()
+    private var onToggle: ((Bool) -> Void)?
+
+    override func prepareForReuse() {
+        super.prepareForReuse()
+        onToggle = nil
+    }
+
+    override func configHierarchy() {
+        [iconBackgroundView, titleLabel, toggle].forEach { contentView.addSubview($0) }
+        iconBackgroundView.addSubview(iconImageView)
+    }
+
+    override func configLayout() {
+        iconBackgroundView.snp.makeConstraints { make in
+            make.leading.equalToSuperview().inset(16)
+            make.centerY.equalToSuperview()
+            make.width.height.equalTo(32)
+        }
+        iconImageView.snp.makeConstraints { make in
+            make.center.equalToSuperview()
+            make.width.height.equalTo(18)
+        }
+        titleLabel.snp.makeConstraints { make in
+            make.leading.equalTo(iconBackgroundView.snp.trailing).offset(12)
+            make.centerY.equalToSuperview()
+            make.trailing.lessThanOrEqualTo(toggle.snp.leading).offset(-12)
+        }
+        toggle.snp.makeConstraints { make in
+            make.trailing.equalToSuperview().inset(16)
+            make.centerY.equalToSuperview()
+        }
+    }
+
+    override func configView() {
+        backgroundColor = .white
+        selectionStyle = .none
+
+        iconBackgroundView.layer.cornerRadius = 8
+        iconBackgroundView.clipsToBounds = true
+        iconBackgroundView.backgroundColor = AppColor.UI.primary
+
+        iconImageView.contentMode = .scaleAspectFit
+        iconImageView.tintColor = .white
+
+        titleLabel.font = AppFont.UI.bodyLG
+        titleLabel.textColor = AppColor.UI.textPrimary
+
+        toggle.onTintColor = AppColor.UI.primary
+        toggle.addTarget(self, action: #selector(toggleChanged), for: .valueChanged)
+    }
+
+    func configure(title: String, iconName: String, isOn: Bool, onToggle: @escaping (Bool) -> Void) {
+        titleLabel.text = title
+        iconImageView.image = UIImage(systemName: iconName)
+        toggle.isOn = isOn
+        self.onToggle = onToggle
+    }
+
+    @objc private func toggleChanged() {
+        onToggle?(toggle.isOn)
+    }
 }
 
 // MARK: - SettingsPermissionCell

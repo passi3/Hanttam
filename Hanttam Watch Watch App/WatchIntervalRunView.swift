@@ -32,6 +32,7 @@ final class WatchIntervalSession: NSObject, ObservableObject {
     let totalSets: Int
     let lapDistance: Double
     let restDuration: TimeInterval
+    private let voiceEventSessionID = UUID().uuidString
 
     // Published state
     @Published var phase: Phase = .preparing
@@ -314,6 +315,36 @@ final class WatchIntervalSession: NSObject, ObservableObject {
         )
     }
 
+    private func makeLapCompletionSummary(completedSet: Int) -> IntervalLapCompletionSummary {
+        IntervalLapCompletionSummary(
+            eventID: "watch-\(voiceEventSessionID)-interval-lap-\(completedSet)-\(laps.count)",
+            completedSet: completedSet,
+            totalDistance: totalRunDistance,
+            totalDuration: elapsed,
+            avgPace: averageRunPace(),
+            lapPace: lastRunLapPace,
+            avgHeartRate: avgHeartRate,
+            lapHeartRate: lastRunLapAvgHeartRate
+        )
+    }
+
+    private func makeWorkoutCompletionSummary() -> WorkoutCompletionSummary {
+        let completedSets = laps.filter { $0.type == .run }.count
+        return WorkoutCompletionSummary(
+            eventID: "watch-\(voiceEventSessionID)-interval-workout",
+            completedSets: completedSets,
+            totalDistance: totalRunDistance,
+            totalDuration: elapsed,
+            avgPace: averageRunPace(),
+            avgHeartRate: avgHeartRate
+        )
+    }
+
+    private func averageRunPace() -> TimeInterval? {
+        guard totalRunDistance > 10, totalRunTime > 0 else { return nil }
+        return totalRunTime / (totalRunDistance / 1000)
+    }
+
     private func completeRunLapTransition(isFinalRunLap: Bool) {
         guard phase == .runningLap else { return }
 
@@ -323,6 +354,9 @@ final class WatchIntervalSession: NSObject, ObservableObject {
 
         recordLap(type: .run)
         recalcPace()
+        WorkoutVoiceAnnouncementService.shared.announceIntervalLapCompletion(
+            makeLapCompletionSummary(completedSet: currentSet)
+        )
 
         pendingRestTransition = !isFinalRunLap
         pendingFinishAfterOverlay = isFinalRunLap
@@ -343,6 +377,7 @@ final class WatchIntervalSession: NSObject, ObservableObject {
         pendingRestTransition = false
         pendingFinishAfterOverlay = false
         countdownEndsAt = nil
+        WorkoutVoiceAnnouncementService.shared.announceWorkoutCompletion(makeWorkoutCompletionSummary())
         phase = .finished
   
         timer?.invalidate()

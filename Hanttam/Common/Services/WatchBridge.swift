@@ -63,6 +63,7 @@ final class WatchBridge: NSObject, ObservableObject {
         static let startSets = "pendingStartSets"
         static let startLapDistance = "pendingStartLapDistance"
         static let startRestDuration = "pendingStartRestDuration"
+        static let voiceAnnouncementsEnabled = "voiceAnnouncementsEnabled"
     }
 
 #if os(watchOS)
@@ -118,6 +119,14 @@ final class WatchBridge: NSObject, ObservableObject {
     func sendLevel(_ level: UserRunningLevel) {
         guard WCSession.default.isWatchAppInstalled else { return }
         pendingLevel = level
+        if WCSession.default.activationState == .activated {
+            pushApplicationContext()
+        }
+    }
+
+    func sendVoiceAnnouncementsEnabled(_ isEnabled: Bool) {
+        guard WCSession.default.isWatchAppInstalled else { return }
+        WorkoutVoiceAnnouncementPreferences.isEnabled = isEnabled
         if WCSession.default.activationState == .activated {
             pushApplicationContext()
         }
@@ -246,7 +255,8 @@ final class WatchBridge: NSObject, ObservableObject {
 
     private func currentApplicationContext() -> [String: Any] {
         var context: [String: Any] = [
-            AppContextKey.level: (pendingLevel ?? RunningLevelManager.shared.level).rawValue
+            AppContextKey.level: (pendingLevel ?? RunningLevelManager.shared.level).rawValue,
+            AppContextKey.voiceAnnouncementsEnabled: WorkoutVoiceAnnouncementPreferences.isEnabled
         ]
         if let pendingStartRequest {
             pendingStartRequest.asApplicationContext.forEach { context[$0.key] = $0.value }
