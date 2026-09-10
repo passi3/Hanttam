@@ -16,6 +16,7 @@ final class DashboardViewController: HTViewController {
     private let viewModel          = DashboardViewModel()
     private let disposeBag         = DisposeBag()
     private let viewDidLoadTrigger = PublishSubject<Void>()
+    private let refreshTrigger     = PublishSubject<Void>()
     
     // MARK: - Colors (sPQ7E style)
 
@@ -30,6 +31,7 @@ final class DashboardViewController: HTViewController {
         let sv = UIScrollView()
         sv.showsVerticalScrollIndicator   = false
         sv.contentInsetAdjustmentBehavior = .always
+        sv.alwaysBounceVertical           = true
         return sv
     }()
     
@@ -126,10 +128,19 @@ final class DashboardViewController: HTViewController {
         chartPlaceholder.layer.shadowOpacity = 0.8
         calendarPlaceholder.layer.shadowPath = UIBezierPath(rect: calendarPlaceholder.bounds).cgPath
         calendarPlaceholder.layer.shadowOpacity = 0.8
+        
+        let refreshControl = UIRefreshControl()
+        scrollView.refreshControl = refreshControl
+        refreshControl.rx.controlEvent(.valueChanged)
+            .bind(to: refreshTrigger)
+            .disposed(by: disposeBag)
     }
     
     private func bind() {
-        let input  = DashboardViewModel.Input(viewDidLoad: viewDidLoadTrigger.asObservable())
+        let input  = DashboardViewModel.Input(
+            viewDidLoad: viewDidLoadTrigger.asObservable(),
+            refresh: refreshTrigger.asObservable()
+        )
         let output = viewModel.transform(input: input)
         
         output.level
@@ -172,6 +183,14 @@ final class DashboardViewController: HTViewController {
                                              progress: progress, remainingDistance: remaining)
         })
         .disposed(by: disposeBag)
+        
+        output.isLoading
+            .drive(onNext: { [weak self] loading in
+                if !loading {
+                    self?.scrollView.refreshControl?.endRefreshing()
+                }
+            })
+            .disposed(by: disposeBag)
         
         runningGradeView.tapEvent
             .subscribe(onNext: { [weak self] in

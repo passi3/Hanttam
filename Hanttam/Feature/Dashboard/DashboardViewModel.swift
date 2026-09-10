@@ -14,6 +14,7 @@ final class DashboardViewModel: HTReusableVMProtocol {
     
     struct Input {
         let viewDidLoad: Observable<Void>
+        let refresh    : Observable<Void>
     }
     
     struct Output {
@@ -45,7 +46,7 @@ final class DashboardViewModel: HTReusableVMProtocol {
     private let disposeBag   = DisposeBag()
     
     func transform(input: Input) -> Output {
-        input.viewDidLoad
+        Observable.merge(input.viewDidLoad, input.refresh)
             .subscribe(onNext: { [weak self] in self?.fetchData()})
             .disposed(by: disposeBag)
         
