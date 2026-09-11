@@ -44,8 +44,10 @@ final class RecordsViewController: HTViewController {
 
     private var dataSource: UITableViewDiffableDataSource<Section, Item>!
 
-    private let tableView = UITableView(frame: .zero, style: .plain)
+    private let tableView = VerticalPanTableView(frame: .zero, style: .plain)
+    private let refreshControl = UIRefreshControl()
     private var chartHosting: UIHostingController<RunningChartView>?
+    private var isLoadingRecords = false
 
     // MARK: - Lifecycle
 
@@ -99,11 +101,15 @@ final class RecordsViewController: HTViewController {
         tableView.separatorInset = UIEdgeInsets(top: 0, left: 20, bottom: 0, right: 20)
         tableView.delegate = self
         tableView.clipsToBounds = true
+        tableView.alwaysBounceVertical = true
+        tableView.isDirectionalLockEnabled = true
 
-        let refreshControl = UIRefreshControl()
         tableView.refreshControl = refreshControl
         
         refreshControl.rx.controlEvent(.valueChanged)
+            .do(onNext: { [weak self] in
+                self?.isLoadingRecords = true
+            })
             .bind(to: refreshSubject)
             .disposed(by: disposeBag)
     }
@@ -172,18 +178,13 @@ final class RecordsViewController: HTViewController {
         )
         let output = viewModel.transform(input: input)
 
-        // 전체 기록 로드 완료 시 캐시 초기화 + interval fetch
+        // 전체 기록 로드 완료 시 루트 캐시 초기화
         output.records
             .drive(onNext: { [weak self] records in
                 guard let self else { return }
                 self.allRecords = records
                 self.routeSnapshots.removeAll()
                 self.failedRouteDates.removeAll()
-                HealthKitStore.shared.fetchIntervalWorkouts { [weak self] intervals in
-                    guard let self else { return }
-                    self.intervalRecords = intervals
-                    self.applySnapshot(animated: false)
-                }
             })
             .disposed(by: disposeBag)
 
@@ -196,10 +197,22 @@ final class RecordsViewController: HTViewController {
                 self.applySnapshot(animated: true)
             })
             .disposed(by: disposeBag)
+
+        output.intervalRecords
+            .drive(onNext: { [weak self] records in
+                guard let self else { return }
+                self.intervalRecords = records
+                self.applySnapshot(animated: false)
+            })
+            .disposed(by: disposeBag)
         
         output.isLoading
             .drive(onNext: { [weak self] loading in
-                if !loading { self?.tableView.refreshControl?.endRefreshing() }
+                guard let self else { return }
+                self.isLoadingRecords = loading
+                if !loading {
+                    self.refreshControl.endRefreshing()
+                }
             })
             .disposed(by: disposeBag)
 
@@ -324,6 +337,12 @@ final class RecordsViewController: HTViewController {
 // MARK: - UITableViewDelegate
 
 extension RecordsViewController: UITableViewDelegate {
+    func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
+        if !isLoadingRecords {
+            refreshControl.endRefreshing()
+        }
+    }
+
     func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
         guard let item = dataSource.itemIdentifier(for: indexPath) else { return }
@@ -424,3 +443,14 @@ extension RecordsViewController: UITableViewDelegate {
     }
 }
 
+private final class VerticalPanTableView: UITableView {
+    override func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+        guard gestureRecognizer === panGestureRecognizer else {
+            return super.gestureRecognizerShouldBegin(gestureRecognizer)
+        }
+
+        let velocity = panGestureRecognizer.velocity(in: self)
+        guard abs(velocity.y) >= abs(velocity.x) else { return false }
+        return super.gestureRecognizerShouldBegin(gestureRecognizer)
+    }
+}

@@ -22,6 +22,7 @@ final class RecordsViewModel: HTReusableVMProtocol, ObservableObject {
     struct Output {
         let records        : Driver<[RunningRecord]>
         let filteredRecords: Driver<[RunningRecord]>
+        let intervalRecords: Driver<[IntervalRecord]>
         let isLoading      : Driver<Bool>
         let selectedRecord : Driver<RunningRecord>
     }
@@ -43,6 +44,7 @@ final class RecordsViewModel: HTReusableVMProtocol, ObservableObject {
 
     private let recordsRelay              = BehaviorRelay<[RunningRecord]>(value: [])
     private let filteredRecordsRelay      = BehaviorRelay<[RunningRecord]>(value: [])
+    private let intervalRecordsRelay      = BehaviorRelay<[IntervalRecord]>(value: [])
     private let periodRelay               = BehaviorRelay<ChartPeriod>(value: .monthly)
     private let offsetRelay               = BehaviorRelay<Int>(value: 0)
     private let selectedChartLabelRelay   = BehaviorRelay<String?>(value: nil)
@@ -51,6 +53,7 @@ final class RecordsViewModel: HTReusableVMProtocol, ObservableObject {
     private let disposeBag                = DisposeBag()
 
     private let store = HealthKitStore.shared
+    private var isFetching = false
 
     init() {
         recordsRelay
@@ -83,6 +86,7 @@ final class RecordsViewModel: HTReusableVMProtocol, ObservableObject {
         return Output(
             records        : recordsRelay.asDriver(),
             filteredRecords: filteredRecordsRelay.asDriver(),
+            intervalRecords: intervalRecordsRelay.asDriver(),
             isLoading      : isLoadingRelay.asDriver(),
             selectedRecord : selectedRecordRelay.asDriver(onErrorDriveWith: .empty())
         )
@@ -106,16 +110,48 @@ final class RecordsViewModel: HTReusableVMProtocol, ObservableObject {
     // MARK: - Private
 
     private func fetchRecords() {
+        guard !isFetching else { return }
+        isFetching = true
         isLoadingRelay.accept(true)
+
         store.requestAuthorization { [weak self] ok in
-            guard ok else { self?.isLoadingRelay.accept(false); return }
-            self?.store.debugAllRoutes()
-            self?.store.fetchRunningWorkouts { [weak self] (items: [RunningRecord]) in
-                self?.recordsRelay.accept(items)
-                RunningLevelManager.shared.update(with: items)
-                self?.isLoadingRelay.accept(false)
+            guard let self else { return }
+            guard ok else {
+                self.finishLoading()
+                return
+            }
+
+            self.store.debugAllRoutes()
+
+            let group = DispatchGroup()
+            var runningRecords: [RunningRecord] = []
+            var intervalRecords: [IntervalRecord] = []
+
+            group.enter()
+            self.store.fetchRunningWorkouts { records in
+                runningRecords = records
+                group.leave()
+            }
+
+            group.enter()
+            self.store.fetchIntervalWorkouts { records in
+                intervalRecords = records
+                group.leave()
+            }
+
+            group.notify(queue: .main) { [weak self] in
+                guard let self else { return }
+                self.recordsRelay.accept(runningRecords)
+                self.intervalRecordsRelay.accept(intervalRecords)
+                RunningLevelManager.shared.update(with: runningRecords)
+                self.finishLoading()
             }
         }
+    }
+
+    private func finishLoading() {
+        isFetching = false
+        isLoadingRelay.accept(false)
     }
 
     private static func filterRecords(
