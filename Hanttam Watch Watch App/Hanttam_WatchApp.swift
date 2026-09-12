@@ -152,8 +152,8 @@ final class WatchBridge: NSObject, ObservableObject {
         sendWorkoutMessage("started", kind: kind, extraInfo: extraInfo)
     }
 
-    func sendWorkoutStopped(kind: WorkoutKind = .freeRun) {
-        sendWorkoutMessage("stopped", kind: kind)
+    func sendWorkoutStopped(kind: WorkoutKind = .freeRun, extraInfo: [String: Any] = [:]) {
+        sendWorkoutMessage("stopped", kind: kind, extraInfo: extraInfo)
     }
 
     func sendWorkoutSnapshot(_ snapshot: WorkoutDataSnapshot) {
@@ -167,9 +167,13 @@ final class WatchBridge: NSObject, ObservableObject {
         }
     }
 
-    func sendSessionEvent(_ event: String) {
+    func sendSessionEvent(_ event: String, kind: WorkoutKind? = nil, extraInfo: [String: Any] = [:]) {
         guard WCSession.default.activationState == .activated else { return }
-        let message: [String: Any] = [event: true]
+        var message: [String: Any] = [event: true]
+        if let kind {
+            message["kind"] = kind.rawValue
+        }
+        extraInfo.forEach { message[$0.key] = $0.value }
         if WCSession.default.isReachable {
             WCSession.default.sendMessage(message, replyHandler: nil, errorHandler: nil)
         } else {

@@ -204,6 +204,14 @@ final class WatchIntervalSession: NSObject, ObservableObject {
         timer?.invalidate()
         hkManager.pauseSession()
         locationManager.stopUpdatingLocation()
+        WatchBridge.shared.sendSessionEvent(
+            WorkoutStreamKey.sessionPaused,
+            kind: .intervalRun,
+            extraInfo: [
+                "elapsed": elapsed,
+                "totalDistance": totalRunDistance
+            ]
+        )
         sendSnapshot()
     }
 
@@ -392,7 +400,13 @@ final class WatchIntervalSession: NSObject, ObservableObject {
             )
         )
         if didNotifyStarted {
-            WatchBridge.shared.sendWorkoutStopped(kind: .intervalRun)
+            WatchBridge.shared.sendWorkoutStopped(
+                kind: .intervalRun,
+                extraInfo: [
+                    "elapsed": elapsed,
+                    "totalDistance": totalRunDistance
+                ]
+            )
             WatchBridge.shared.sendSessionEvent(WorkoutStreamKey.sessionEnded)
         }
 

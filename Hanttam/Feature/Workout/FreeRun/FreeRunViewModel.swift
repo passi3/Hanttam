@@ -196,6 +196,12 @@ final class FreeRunViewModel: NSObject {
         phaseRelay.accept(.paused)
         locationManager.stopUpdatingLocation()
         HealthKitStore.shared.pausePhoneWorkout()
+        AnalyticsEventLogger.logWorkoutPause(
+            kind: "freeRun",
+            source: .phone,
+            elapsed: elapsed,
+            totalDistance: calculateTotalDistance()
+        )
     }
 
     private func handleResume() {
@@ -271,6 +277,13 @@ final class FreeRunViewModel: NSObject {
         phaseRelay.accept(.running)
         workoutStartDate = startDate
         resetSegmentState(startDate: startDate)
+        if !isWatchPrimary {
+            AnalyticsEventLogger.logWorkoutStart(
+                kind: "freeRun",
+                source: .phone,
+                isIndoor: isIndoor
+            )
+        }
         if !isWatchPrimary {
             locationManager.startUpdatingLocation()
         }
@@ -348,7 +361,15 @@ final class FreeRunViewModel: NSObject {
         let endDate = Date()
         let duration = endDate.timeIntervalSince(workoutStartDate ?? endDate)
 
-        guard HealthKitStore.shared.shouldSaveWorkout(duration: duration, distance: totalDistance) else {
+        let shouldSave = HealthKitStore.shared.shouldSaveWorkout(duration: duration, distance: totalDistance)
+        guard shouldSave else {
+            logWorkoutEndIfNeeded(
+                showResult: showResult,
+                totalDistance: totalDistance,
+                duration: duration,
+                shouldSave: false,
+                saveSucceeded: false
+            )
             HealthKitStore.shared.discardActivePhoneWorkout { [weak self] _, _ in
                 guard let self, showResult else { return }
                 self.emitResult(workout: nil)
@@ -363,6 +384,14 @@ final class FreeRunViewModel: NSObject {
             routeLocations: allLocations
         ) { [weak self] success, workout, error in
             guard let self else { return }
+            self.logWorkoutEndIfNeeded(
+                showResult: showResult,
+                totalDistance: totalDistance,
+                duration: duration,
+                shouldSave: true,
+                saveSucceeded: success,
+                error: error
+            )
             if success {
                 if let error {
                     self.showAlertRelay.accept(AlertInfo(
@@ -381,6 +410,26 @@ final class FreeRunViewModel: NSObject {
                 ))
             }
         }
+    }
+
+    private func logWorkoutEndIfNeeded(
+        showResult: Bool,
+        totalDistance: Double,
+        duration: TimeInterval,
+        shouldSave: Bool,
+        saveSucceeded: Bool,
+        error: Error? = nil
+    ) {
+        guard showResult else { return }
+        AnalyticsEventLogger.logWorkoutEnd(
+            kind: "freeRun",
+            source: .phone,
+            elapsed: duration,
+            totalDistance: totalDistance,
+            shouldSave: shouldSave,
+            saveSucceeded: saveSucceeded,
+            error: error
+        )
     }
 
     private func emitResult(workout: HKWorkout?) {

@@ -129,6 +129,14 @@ final class WatchRunSession: NSObject, ObservableObject {
         phase = .paused
         hkManager.pauseSession()
         locationManager.stopUpdatingLocation()
+        WatchBridge.shared.sendSessionEvent(
+            WorkoutStreamKey.sessionPaused,
+            kind: .freeRun,
+            extraInfo: [
+                "elapsed": elapsed,
+                "totalDistance": totalDistance
+            ]
+        )
         sendSnapshot()
     }
 
@@ -152,7 +160,13 @@ final class WatchRunSession: NSObject, ObservableObject {
         timer?.invalidate(); timer = nil
         countdownTimer?.invalidate(); countdownTimer = nil
         if didNotifyStarted {
-            WatchBridge.shared.sendWorkoutStopped(kind: .freeRun)
+            WatchBridge.shared.sendWorkoutStopped(
+                kind: .freeRun,
+                extraInfo: [
+                    "elapsed": elapsed,
+                    "totalDistance": totalDistance
+                ]
+            )
             WatchBridge.shared.sendSessionEvent(WorkoutStreamKey.sessionEnded)
         }
         sendSnapshot()

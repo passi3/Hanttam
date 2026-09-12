@@ -38,6 +38,7 @@ enum WorkoutStreamKey {
     static let commandResume = "resume"
     static let commandStop = "stop"
     static let sessionStarted = "sessionStarted"
+    static let sessionPaused = "sessionPaused"
     static let sessionEnded = "sessionEnded"
     static let sessionError = "sessionError"
 }

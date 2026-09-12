@@ -45,6 +45,7 @@ final class SupabaseShoeSearchService: ShoeSearchServicing, BrandServicing, Shoe
 
     func fetchInitialShoes(limit: Int, brand: String?, completion: @escaping (Result<[ShoeSearchResult], Error>) -> Void) {
         Task {
+            let startedAt = Date()
             do {
                 Diagnostics.log("Initial fetch source=\(Query.tableName) limit=\(limit) brand=\(brand ?? "-")")
                 var query = supabase
@@ -59,9 +60,23 @@ final class SupabaseShoeSearchService: ShoeSearchServicing, BrandServicing, Shoe
                     .limit(limit)
                     .execute()
                 let items = try decodeItems(from: response.data)
+                AnalyticsEventLogger.logSupabaseAPICall(
+                    operation: "fetch_initial_shoes",
+                    target: Query.tableName,
+                    status: .success,
+                    duration: Date().timeIntervalSince(startedAt),
+                    resultCount: items.count
+                )
                 DispatchQueue.main.async { completion(.success(items)) }
             } catch {
                 Diagnostics.log("Initial fetch failed: \(error.localizedDescription)")
+                AnalyticsEventLogger.logSupabaseAPICall(
+                    operation: "fetch_initial_shoes",
+                    target: Query.tableName,
+                    status: .failure,
+                    duration: Date().timeIntervalSince(startedAt),
+                    error: error
+                )
                 DispatchQueue.main.async { completion(.failure(error)) }
             }
         }
@@ -75,6 +90,7 @@ final class SupabaseShoeSearchService: ShoeSearchServicing, BrandServicing, Shoe
         }
 
         Task {
+            let startedAt = Date()
             do {
                 Diagnostics.log("Search source=\(Query.rpcName) keyword=\(trimmed) brand=\(brand ?? "-")")
                 let response = try await supabase
@@ -87,9 +103,23 @@ final class SupabaseShoeSearchService: ShoeSearchServicing, BrandServicing, Shoe
                 } else {
                     items = decodedItems
                 }
+                AnalyticsEventLogger.logSupabaseAPICall(
+                    operation: "search_shoes",
+                    target: Query.rpcName,
+                    status: .success,
+                    duration: Date().timeIntervalSince(startedAt),
+                    resultCount: items.count
+                )
                 DispatchQueue.main.async { completion(.success(items)) }
             } catch {
                 Diagnostics.log("Search failed: \(error.localizedDescription)")
+                AnalyticsEventLogger.logSupabaseAPICall(
+                    operation: "search_shoes",
+                    target: Query.rpcName,
+                    status: .failure,
+                    duration: Date().timeIntervalSince(startedAt),
+                    error: error
+                )
                 DispatchQueue.main.async { completion(.failure(error)) }
             }
         }
@@ -97,6 +127,7 @@ final class SupabaseShoeSearchService: ShoeSearchServicing, BrandServicing, Shoe
 
     func fetchBrands(completion: @escaping (Result<[BrandSummary], Error>) -> Void) {
         Task {
+            let startedAt = Date()
             do {
                 Diagnostics.log("Fetch brands source=\(Query.brandsTableName)")
                 let response = try await supabase
@@ -107,9 +138,23 @@ final class SupabaseShoeSearchService: ShoeSearchServicing, BrandServicing, Shoe
                     .execute()
                 let decoder = JSONDecoder()
                 let brands = try decoder.decode([BrandSummary].self, from: response.data)
+                AnalyticsEventLogger.logSupabaseAPICall(
+                    operation: "fetch_brands",
+                    target: Query.brandsTableName,
+                    status: .success,
+                    duration: Date().timeIntervalSince(startedAt),
+                    resultCount: brands.count
+                )
                 DispatchQueue.main.async { completion(.success(brands)) }
             } catch {
                 Diagnostics.log("Fetch brands failed: \(error.localizedDescription)")
+                AnalyticsEventLogger.logSupabaseAPICall(
+                    operation: "fetch_brands",
+                    target: Query.brandsTableName,
+                    status: .failure,
+                    duration: Date().timeIntervalSince(startedAt),
+                    error: error
+                )
                 DispatchQueue.main.async { completion(.failure(error)) }
             }
         }
@@ -121,6 +166,7 @@ final class SupabaseShoeSearchService: ShoeSearchServicing, BrandServicing, Shoe
         completion: @escaping (Result<[ShoeCatalogItem], Error>) -> Void
     ) {
         Task {
+            let startedAt = Date()
             do {
                 Diagnostics.log("Fetch variants brand=\(brandName) model=\(modelName)")
                 let response = try await supabase
@@ -132,9 +178,23 @@ final class SupabaseShoeSearchService: ShoeSearchServicing, BrandServicing, Shoe
                     .execute()
                 let results = try decodeItems(from: response.data)
                 let items = results.first?.catalogItems ?? []
+                AnalyticsEventLogger.logSupabaseAPICall(
+                    operation: "fetch_variants",
+                    target: Query.tableName,
+                    status: .success,
+                    duration: Date().timeIntervalSince(startedAt),
+                    resultCount: items.count
+                )
                 DispatchQueue.main.async { completion(.success(items)) }
             } catch {
                 Diagnostics.log("Fetch variants failed: \(error.localizedDescription)")
+                AnalyticsEventLogger.logSupabaseAPICall(
+                    operation: "fetch_variants",
+                    target: Query.tableName,
+                    status: .failure,
+                    duration: Date().timeIntervalSince(startedAt),
+                    error: error
+                )
                 DispatchQueue.main.async { completion(.failure(error)) }
             }
         }

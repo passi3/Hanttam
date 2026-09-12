@@ -138,7 +138,9 @@ final class WatchBridge: NSObject, ObservableObject {
     func sendWorkoutStarted(kind: WorkoutKind = .freeRun, extraInfo: [String: Any] = [:]) {
         sendWorkoutMessage("started", kind: kind, extraInfo: extraInfo)
     }
-    func sendWorkoutStopped(kind: WorkoutKind = .freeRun) { sendWorkoutMessage("stopped", kind: kind) }
+    func sendWorkoutStopped(kind: WorkoutKind = .freeRun, extraInfo: [String: Any] = [:]) {
+        sendWorkoutMessage("stopped", kind: kind, extraInfo: extraInfo)
+    }
 
     static let workoutActivityType = "com.passi3.hanttam.startWorkout"
 
@@ -310,9 +312,13 @@ final class WatchBridge: NSObject, ObservableObject {
         }
     }
 
-    func sendSessionEvent(_ event: String) {
+    func sendSessionEvent(_ event: String, kind: WorkoutKind? = nil, extraInfo: [String: Any] = [:]) {
         guard WCSession.default.activationState == .activated else { return }
-        let message: [String: Any] = [event: true]
+        var message: [String: Any] = [event: true]
+        if let kind {
+            message["kind"] = kind.rawValue
+        }
+        extraInfo.forEach { message[$0.key] = $0.value }
         if WCSession.default.isReachable {
             WCSession.default.sendMessage(message, replyHandler: nil, errorHandler: nil)
         }
@@ -386,6 +392,18 @@ extension WatchBridge: WCSessionDelegate {
             return
         }
         if message[WorkoutStreamKey.sessionStarted] != nil { return }
+        if message[WorkoutStreamKey.sessionPaused] != nil {
+            DispatchQueue.main.async {
+                let kind = self.workoutKind(from: message)
+                AnalyticsEventLogger.logWorkoutPause(
+                    kind: kind.rawValue,
+                    source: .watch,
+                    elapsed: message["elapsed"] as? Double,
+                    totalDistance: message["totalDistance"] as? Double
+                )
+            }
+            return
+        }
         if message[WorkoutStreamKey.sessionEnded] != nil {
             DispatchQueue.main.async {
                 self.setCollectionState(.idle)
@@ -442,8 +460,21 @@ extension WatchBridge: WCSessionDelegate {
                 self.watchStartTimeout?.cancel()
                 self.watchStartTimeout = nil
                 self.setCollectionState(.collectingOnWatch(kind))
+                AnalyticsEventLogger.logWorkoutStart(
+                    kind: kind.rawValue,
+                    source: .watch,
+                    totalSets: message["sets"] as? Int,
+                    lapDistance: message["lapDistance"] as? Double,
+                    restDuration: message["restDuration"] as? Double
+                )
             case "stopped":
                 self.setCollectionState(.idle)
+                AnalyticsEventLogger.logWorkoutEnd(
+                    kind: kind.rawValue,
+                    source: .watch,
+                    elapsed: (message["elapsed"] as? Double) ?? 0,
+                    totalDistance: (message["totalDistance"] as? Double) ?? 0
+                )
             default: break
             }
 #endif
@@ -503,7 +534,68 @@ extension WatchBridge: WCSessionDelegate {
                     userInfo: ["snapshot": snapshot]
                 )
             }
+            return
         }
+        if userInfo[WorkoutStreamKey.sessionPaused] != nil {
+            DispatchQueue.main.async {
+                let kind = self.workoutKind(from: userInfo)
+                AnalyticsEventLogger.logWorkoutPause(
+                    kind: kind.rawValue,
+                    source: .watch,
+                    elapsed: userInfo["elapsed"] as? Double,
+                    totalDistance: userInfo["totalDistance"] as? Double
+                )
+            }
+            return
+        }
+        if userInfo[WorkoutStreamKey.sessionEnded] != nil {
+            DispatchQueue.main.async {
+                self.setCollectionState(.idle)
+                NotificationCenter.default.post(name: Self.workoutStoppedNotification, object: nil)
+            }
+            return
+        }
+        guard let workout = userInfo["workout"] as? String else { return }
+        let kind = WorkoutKind(rawValue: (userInfo["kind"] as? String) ?? "") ?? .freeRun
+        DispatchQueue.main.async {
+            switch workout {
+            case "started":
+                self.watchStartTimeout?.cancel()
+                self.watchStartTimeout = nil
+                self.setCollectionState(.collectingOnWatch(kind))
+                AnalyticsEventLogger.logWorkoutStart(
+                    kind: kind.rawValue,
+                    source: .watch,
+                    totalSets: userInfo["sets"] as? Int,
+                    lapDistance: userInfo["lapDistance"] as? Double,
+                    restDuration: userInfo["restDuration"] as? Double
+                )
+            case "stopped":
+                self.setCollectionState(.idle)
+                AnalyticsEventLogger.logWorkoutEnd(
+                    kind: kind.rawValue,
+                    source: .watch,
+                    elapsed: (userInfo["elapsed"] as? Double) ?? 0,
+                    totalDistance: (userInfo["totalDistance"] as? Double) ?? 0
+                )
+            default:
+                break
+            }
+        }
+    }
+
+    private func workoutKind(from message: [String: Any]) -> WorkoutKind {
+        if let rawValue = message["kind"] as? String,
+           let kind = WorkoutKind(rawValue: rawValue) {
+            return kind
+        }
+        if case .collectingOnWatch(let kind) = collectionState {
+            return kind
+        }
+        if case .requesting(let kind) = collectionState {
+            return kind
+        }
+        return .freeRun
     }
 #endif
 

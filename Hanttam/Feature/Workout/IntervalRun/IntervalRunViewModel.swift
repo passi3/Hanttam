@@ -237,11 +237,13 @@ final class IntervalRunViewModel: NSObject {
             timer?.invalidate()
             locationManager.stopUpdatingLocation()
             HealthKitStore.shared.pausePhoneWorkout()
+            logWorkoutPause()
         case .resting:
             phase = .paused(prior: .resting)
             phaseRelay.accept(phase)
             timer?.invalidate()
             locationManager.stopUpdatingLocation()
+            logWorkoutPause()
         default:
             break
         }
@@ -350,6 +352,16 @@ final class IntervalRunViewModel: NSObject {
 
     private func startWorkoutFlow(startDate: Date) {
         workoutStartDate = startDate
+        if !isWatchPrimary {
+            AnalyticsEventLogger.logWorkoutStart(
+                kind: "intervalRun",
+                source: .phone,
+                isIndoor: isIndoor,
+                totalSets: totalSets,
+                lapDistance: lapDistance,
+                restDuration: restDuration
+            )
+        }
         startRunningLap()
     }
 
@@ -561,7 +573,15 @@ final class IntervalRunViewModel: NSObject {
         let endDate   = Date()
         let duration  = endDate.timeIntervalSince(workoutStartDate ?? endDate)
 
-        guard HealthKitStore.shared.shouldSaveWorkout(duration: duration, distance: totalDist) else {
+        let shouldSave = HealthKitStore.shared.shouldSaveWorkout(duration: duration, distance: totalDist)
+        guard shouldSave else {
+            logWorkoutEndIfNeeded(
+                showResult: showResult,
+                totalDistance: totalDist,
+                duration: duration,
+                shouldSave: false,
+                saveSucceeded: false
+            )
             HealthKitStore.shared.discardActivePhoneWorkout { [weak self] _, _ in
                 guard let self else { return }
                 completion?(nil)
@@ -578,6 +598,14 @@ final class IntervalRunViewModel: NSObject {
             laps: laps
         ) { [weak self] success, workout, error in
             guard let self else { return }
+            self.logWorkoutEndIfNeeded(
+                showResult: showResult,
+                totalDistance: totalDist,
+                duration: duration,
+                shouldSave: true,
+                saveSucceeded: success,
+                error: error
+            )
             let finish = {
                 completion?(workout)
                 if showResult { self.emitResult(workout: workout) }
@@ -600,6 +628,35 @@ final class IntervalRunViewModel: NSObject {
                 ))
             }
         }
+    }
+
+    private func logWorkoutPause() {
+        AnalyticsEventLogger.logWorkoutPause(
+            kind: "intervalRun",
+            source: .phone,
+            elapsed: elapsed,
+            totalDistance: completedRunDistance
+        )
+    }
+
+    private func logWorkoutEndIfNeeded(
+        showResult: Bool,
+        totalDistance: Double,
+        duration: TimeInterval,
+        shouldSave: Bool,
+        saveSucceeded: Bool,
+        error: Error? = nil
+    ) {
+        guard showResult else { return }
+        AnalyticsEventLogger.logWorkoutEnd(
+            kind: "intervalRun",
+            source: .phone,
+            elapsed: duration,
+            totalDistance: totalDistance,
+            shouldSave: shouldSave,
+            saveSucceeded: saveSucceeded,
+            error: error
+        )
     }
 
     private func finishAndEmitResult() {
