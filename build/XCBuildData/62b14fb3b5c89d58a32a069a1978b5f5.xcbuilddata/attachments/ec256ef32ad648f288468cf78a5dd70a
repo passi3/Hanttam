@@ -1,4 +1,0 @@
-module FirebaseCrashlytics {
-umbrella header "/Users/jejunlee/Library/Developer/Xcode/DerivedData/Hanttam-dimuhkkoyfupvyfqssgpmqggjsrv/SourcePackages/checkouts/firebase-ios-sdk/Crashlytics/Crashlytics/Public/FirebaseCrashlytics/FirebaseCrashlytics.h"
-export *
-}
