@@ -61,7 +61,6 @@
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "409833D12F7D5DFA0029B9CC"
             BuildableName = "Hanttam Watch Watch App.app"
-            BlueprintName = "Hanttam Watch Watch App"
             ReferencedContainer = "container:Hanttam.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
@@ -78,7 +77,6 @@
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "409833D12F7D5DFA0029B9CC"
             BuildableName = "Hanttam Watch Watch App.app"
-            BlueprintName = "Hanttam Watch Watch App"
             ReferencedContainer = "container:Hanttam.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>

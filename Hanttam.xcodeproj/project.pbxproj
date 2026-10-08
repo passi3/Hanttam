@@ -211,6 +211,7 @@
 				4091A37A2F8FC808007150D9 /* HanttamLogicTest */,
 				404E85F82F7FABFF00AC76ED /* Frameworks */,
 				4060D5462EEAAB2D00329FC8 /* Products */,
+				40AC0DA030778524003B8C06 /* Recovered References */,
 			);
 			sourceTree = "<group>";
 		};
@@ -247,6 +248,24 @@
 		4091E5392F98AB3400A77170 /* Products */ = {
 			isa = PBXGroup;
 			name = Products;
+			sourceTree = "<group>";
+		};
+		40AC0DA030778524003B8C06 /* Recovered References */ = {
+			isa = PBXGroup;
+			children = (
+				40B4BE502F97C926001FD03F /* Hanttam.xcodeproj */,
+				408B79762FF76E7F005CEE13 /* Hanttam.xcodeproj */,
+				406185D03008C447004F3016 /* Hanttam.xcodeproj */,
+				408B7A982FF77E33005CEE13 /* Hanttam.xcodeproj */,
+				405D4E6A2FD1811F000ABD58 /* Hanttam.xcodeproj */,
+				40B4BC142F97C823001FD03F /* Hanttam.xcodeproj */,
+				4091E5362F98AB3400A77170 /* Hanttam.xcodeproj */,
+				40B86A4D2FEDC4520017E879 /* Hanttam.xcodeproj */,
+				40354F592FF7801C00917FDE /* Hanttam.xcodeproj */,
+				4061812A3008BB8F004F3016 /* Hanttam.xcodeproj */,
+				405C991B2FB55D7C004F15AF /* Hanttam.xcodeproj */,
+			);
+			name = "Recovered References";
 			sourceTree = "<group>";
 		};
 		40B4BC172F97C823001FD03F /* Products */ = {
@@ -547,9 +566,10 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Hanttam/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "Dev_한땀";
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_NSCameraUsageDescription = "편집할 사진을 촬영하기 위해 카메라 접근이 필요합니다.";
-				INFOPLIST_KEY_NSHealthShareUsageDescription = "운동 기록 및 경로를 조회하기 위해 건강 데이터에 대한 접근이 필요합니다.";
-				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "운동 기록을 저장하기 위해 사용합니다.";
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "운동 기록과 경로를 건강 앱에서 읽어와 러닝 기록을 보여주기 위해 필요합니다.";
+				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "폰에서 시작한 러닝 운동을 건강 앱에 저장하기 위해 필요합니다.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "현재 위치를 지도에 표시하기 위해 접근이 필요합니다.";
 				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "편집된 사진을 사진첩에 저장하기 위해 접근이 필요합니다.";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "편집할 사진을 선택하기 위해 사진 라이브러리 접근이 필요합니다.";
@@ -564,7 +584,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.3.2;
+				MARKETING_VERSION = 1.4.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.passi3.Hanttam.Dev;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -594,10 +614,11 @@
 				DEVELOPMENT_TEAM = 29MZ57KJPA;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Hanttam/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "한땀";
+				INFOPLIST_KEY_CFBundleDisplayName = "Dev_한땀";
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_NSCameraUsageDescription = "편집할 사진을 촬영하기 위해 카메라 접근이 필요합니다.";
-				INFOPLIST_KEY_NSHealthShareUsageDescription = "운동 기록 및 경로를 조회하기 위해 건강 데이터에 대한 접근이 필요합니다.";
-				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "운동 기록을 저장하기 위해 사용합니다.";
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "운동 기록과 경로를 건강 앱에서 읽어와 러닝 기록을 보여주기 위해 필요합니다.";
+				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "폰에서 시작한 러닝 운동을 건강 앱에 저장하기 위해 필요합니다.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "현재 위치를 지도에 표시하기 위해 접근이 필요합니다.";
 				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "편집된 사진을 사진첩에 저장하기 위해 접근이 필요합니다.";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "편집할 사진을 선택하기 위해 사진 라이브러리 접근이 필요합니다.";
@@ -612,7 +633,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.3.2;
+				MARKETING_VERSION = 1.4.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.passi3.Hanttam;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
