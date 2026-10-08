@@ -7,6 +7,7 @@
 
 import Foundation
 import RealmSwift
+import Realm
 
 protocol GearLocalStoring: AnyObject {
     func fetchRegisteredShoes() -> [RegisteredShoe]
