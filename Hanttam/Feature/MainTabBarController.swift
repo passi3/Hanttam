@@ -48,10 +48,10 @@ final class MainTabBarController: UITabBarController {
         let gearNav = UINavigationController(rootViewController: GearListViewController())
         gearNav.tabBarItem = UITabBarItem(title: "장비", image: UIImage(systemName: "shoeprints.fill"), tag: 3)
 
-        let settingsNav = UINavigationController(rootViewController: SettingsViewController())
-        settingsNav.tabBarItem = UITabBarItem(title: "설정", image: UIImage(systemName: "gearshape.fill"), tag: 4)
+        let ectNav = UINavigationController(rootViewController: EctViewController())
+        ectNav.tabBarItem = UITabBarItem(title: "기타", image: UIImage(systemName: "ellipsis"), tag: 4)
 
-        viewControllers = [dashboardNav, workoutVC, recordsNav, gearNav, settingsNav]
+        viewControllers = [dashboardNav, workoutVC, recordsNav, gearNav, ectNav]
     }
 
     private func updateAppearance() {
